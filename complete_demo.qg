@@ -1,0 +1,115 @@
+# Complete Quick SFC v2.0 Demonstration
+# Showcases all implemented features:
+# - Named steps/transitions (@name)
+# - Comments (# inline and full-line)
+# - Jump operator (>>)
+# - OR branches (/\ and \/)
+# - AND branches (//\\ and \\/)
+# - Multiple legs
+# - Complex structures
+
+# ============================================================================
+# INITIALIZATION
+# ============================================================================
+
+SI@init(counters:=0; status:=IDLE; errors:=0;)  # Reset all system variables
+T@start(start_button AND NOT emergency_stop)    # Wait for safe start
+
+# ============================================================================
+# AND PARALLEL OPERATIONS - Both conveyors load simultaneously
+# ============================================================================
+
+S@load_ready(signal_conveyors; status:=LOADING;)
+T@begin_parallel(material_detected AND sensors_ok) //\\
+
+    # Conveyor A leg (left side)
+    S@conv_A_load(start_conveyor_A; position_A:=0;)
+    S@conv_A_position(wait_position_A;, 1000)
+    T@conv_A_done(sensor_A_confirms AND position_A_ok)
+
+  |  # Separator between parallel legs
+
+    # Conveyor B leg (right side)
+    S@conv_B_load(start_conveyor_B; position_B:=0;)
+    S@conv_B_position(wait_position_B;, 1000)
+    T@conv_B_done(sensor_B_confirms AND position_B_ok)
+
+  |
+
+    # Inspection leg (runs in parallel)
+    S@inspect_prep(setup_camera; calibrate_sensors;)
+    S@inspect_ready(signal_inspection_ready;)
+    T@inspect_ok(inspection_system_ready)
+
+\\// T@all_parallel_done(all_subsystems_ready)  # Wait for ALL legs
+
+# ============================================================================
+# OR MODE SELECTION - Operator chooses one path
+# ============================================================================
+
+S@mode_menu(display_menu; highlight_options;)
+T@mode_selected(operator_input_confirmed) /\
+
+    # Auto mode path
+    T@auto_selected(auto_button_pressed) -> S@auto_sequence(run_auto_program; speed:=100; monitor_sensors;)
+
+  |
+
+    # Manual mode path
+    T@manual_selected(manual_button_pressed) -> S@manual_sequence(await_operator_commands; speed:=50; enable_manual_controls;)
+
+  |
+
+    # Emergency path
+    T@emergency_selected(emergency_button_pressed) -> S@emergency_stop(halt_all_operations; status:=EMERGENCY; trigger_alarm;)
+
+\/ S@mode_complete(log_mode_choice; status:=MODE_DONE;)
+
+# ============================================================================
+# QUALITY CHECK WITH CONDITIONAL BRANCHING
+# ============================================================================
+
+S@quality_check(run_inspection; capture_images;, 2000)
+T@quality_decision(inspection_complete) /\
+    T@quality_pass(quality_ok AND no_defects) -> S@package(seal_package; label:=TRUE;)
+  |
+    T@quality_fail(defects_detected) -> S@reject(move_to_reject_bin; increment_reject_count;)
+\/ S@quality_done(finalize_quality_check;)
+
+# ============================================================================
+# BATCH COUNTER WITH LOOP
+# ============================================================================
+
+S@increment(batch_counter:=batch_counter+1; update_display;)
+T@check_batch(batch_counter < target_batch) >> @load_ready  # Loop back to loading
+T@batch_done(batch_counter >= target_batch)
+
+# ============================================================================
+# SHUTDOWN SEQUENCE
+# ============================================================================
+
+S@shutdown_prep(status:=SHUTTING_DOWN; notify_operator;)
+T@begin_shutdown(shutdown_confirmed) //\\
+    S@stop_motors(motor_A:=OFF; motor_B:=OFF;)
+    T@motors_stopped(all_motors_stopped)
+  |
+    S@stop_conveyors(conveyor_A:=OFF; conveyor_B:=OFF;)
+    T@conveyors_stopped(all_conveyors_stopped)
+\\// T@all_stopped(shutdown_complete)
+
+S@idle(status:=IDLE; log_cycle_complete;)
+T@restart(reset_button_pressed) >> @init  # Jump back to beginning
+
+END
+
+# ============================================================================
+# This file demonstrates:
+# - 18 steps (including SI)
+# - 21 transitions
+# - 4 branches (2 AND, 2 OR)
+# - Multiple legs (up to 3 in OR branch)
+# - Complex sequences within legs
+# - Comments throughout
+# - Jump back to start
+# - Timer presets on steps
+# ============================================================================

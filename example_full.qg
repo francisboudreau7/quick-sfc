@@ -1,0 +1,33 @@
+# Complete Quick SFC Example - Production Line Control
+# Demonstrates: comments, named steps/transitions, jumps, loops
+
+# Initialization
+SI@init(counters:=0; status:=IDLE; errors:=0;)
+T@start(start_button AND NOT emergency_stop)
+
+# Prepare for operation
+S@prepare(check_sensors; reset_timers;, 500)
+T@ready(all_sensors_ok)
+
+# Main cycle
+S@running(motor:=ON; conveyor:=ON;, 2000)
+T@timeout(Timer.DN)
+
+# Check quality
+S@inspect(run_inspection;)
+T@pass(quality_ok)
+S@package(seal_package; label:=TRUE;)
+T@done(packaging_complete)
+
+# Increment counter and loop
+S@count(batch_counter:=batch_counter+1;)
+T@check_batch(batch_counter < target_batch) >> @running  # Loop back
+T@batch_complete(batch_counter >= target_batch)
+
+# Shutdown sequence
+S@shutdown(motor:=OFF; conveyor:=OFF; cleanup:=TRUE;)
+T@safe(all_systems_stopped)
+S@idle(status:=COMPLETE;)
+T@restart(reset_button) >> @init  # Jump to init for new batch
+
+END

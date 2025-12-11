@@ -1,0 +1,10 @@
+SI@init(T:=2;)
+S@step1()
+T@beginsplit()//\\
+	S@do1()
+	|
+	S@do2()
+	|
+	S@do3()
+\\//T@finalize() >> @step1
+END

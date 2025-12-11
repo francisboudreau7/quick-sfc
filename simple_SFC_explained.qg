@@ -1,0 +1,36 @@
+S(T:=2;)
+T(a)
+S(D:=2;,2000)
+T(b)
+T(c,1)
+S(D:=2;,300)
+END
+
+
+
+RULES
+
+the first line of a Quick Grafcet file will always be a S(). It is the inital Step.
+The last line wil be the identifier END. it means that we do not need to parse further in the file.
+
+T() denotes a transition
+S() denotes a step 
+
+
+all the T() lines that follows a S() or SI() are an outgoing transition of that step.
+
+S can have one or two arguments S(ACTION, PRESET) PRESET is optional, if it is ommited, it means that PRESET = 0
+
+T can have one or two arguments T(CONDITION,LINE_OF_NEXT_STEP) 
+this one is more tricky. CONDITION is necessaty, NEXT_STEP is optional. 
+If it is ommited it means that it its next step is the next one defined in the file
+
+
+For example, in the code at the beginning of this file, at line 2, T(a) its next step is S(D:=2;,2000)
+At line 5, T(c,1) means that its condition is c and that its next step is at the step defined at line 1.
+
+a S() identifier is followed by one or multiple T() before the next S() and those transition are its outgoing transitions.
+It also mean that those transition have the S() before them as their incoming step.
+
+You can look in the folder L5X, there is a parser which follows a similar object architectures of relations.
+

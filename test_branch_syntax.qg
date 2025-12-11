@@ -1,0 +1,28 @@
+# Test file for branching syntax
+# Production line with both AND and OR branches
+
+SI@init(counters:=0; status:=IDLE;)
+T@start(start_button AND NOT e_stop)
+
+# AND parallel loading from two conveyors
+S@load_prep(signal_ready)
+T@begin_load(material_detected) //\\
+  S@conveyor_A(start_A; wait_A;)
+  T@loaded_A(sensor_A_ok)
+  |
+  S@conveyor_B(start_B; wait_B;)
+  T@loaded_B(sensor_B_ok)
+\\// T@both_loaded(all_loaded)
+
+# OR mode selection
+S@mode_menu(display_options)
+T@mode_ready(input_received) /\
+   T@auto_mode(auto_selected) -> S@auto_run(execute_auto_sequence)
+  |
+    T@manual_mode(manual_selected) -> S@manual_control(await_operator)
+  |
+    T@emergency(emergency_pressed) -> S@safe_stop(shutdown_all)
+\/ S@complete(finalize; log_data;)
+
+T@restart(reset_button) >> @init
+END

@@ -1,0 +1,21 @@
+SI@init()
+T@initdone()
+S@step1()
+T@step1done()
+S@step2()
+T@step2done()
+S@step3()
+/\
+	T@condition1() -> @step1
+	|
+	T@condition2()
+    S@do2()
+    T@do2done() -> @step2
+	|
+	T@condition3()
+    S@do3()
+    T@do3done() 
+
+S@step4()
+T@loop() -> @init
+END

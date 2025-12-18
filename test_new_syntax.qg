@@ -1,6 +1,0 @@
-# Test file for new Quick SFC syntax
-SI@init(counters:=0;)
-T@start(button_pressed)
-S@running(Motor:=ON;, 2000)
-T@timeout(Timer.DN) >> @init  # Jump back to init
-END

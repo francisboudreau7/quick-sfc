@@ -1,0 +1,13 @@
+SI@init()
+T@beginsplit() 
+//\\
+	S@do1()
+	|
+	S@do2()
+	T@do2done()
+	S@do5()
+	|
+	S@do3()
+\\//
+T@finalize() -> @init
+END

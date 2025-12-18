@@ -1,0 +1,26 @@
+# Simple production line
+SI@init(reset_all:=1;)#reinitialise
+T@start(start_btn AND safety_ok)#wait for user input
+
+# Load both sides at once
+S@ready()
+T@begin_load() 
+//\\
+    S@load_A(conveyor_A_start) 
+    |
+    S@load_B(conveyor_B_start)
+\\// 
+T@both_loaded(load_sensor_A AND load_sensor_B)
+
+# Pick operating mode
+S@select_mode()
+/\
+    T@auto(auto_mode)
+    S@run_auto(program_1)
+    |
+    T@manual(manual_mode)
+    S@run_manual(wait_for_commands)
+\/ S@done()
+
+T@cycle_complete() -> @init
+END

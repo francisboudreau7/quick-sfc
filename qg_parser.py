@@ -5,8 +5,9 @@ This module provides syntactic and semantic analysis for Quick Grafcet
 (.qg) files, building SFC objects from token streams.
 """
 
+from typing import List
 from .qg_tokenizer import QGTokenizer, TokenType
-from .qg_sfc import QGSFC, QGStep, QGTransition, QGBranch, QGLeg
+from .qg_sfc import QGSFC, QGDirectedLink, QGStep, QGTransition, QGBranch, QGLeg
 from .qg_errors import ErrorCollector, ParseError, TokenizeError, ValidationError
 
 
@@ -31,11 +32,23 @@ class QGParser:
         # Parsing state
         self.steps = []  # List[QGStep] - ordered by appearance
         self.transitions = []  # List[QGTransition]
-        self.branches = []  # List[QGBranch]
+        self.branches: List[QGBranch] = []   
         self.name_to_step = {}  # Map: name -> QGStep
         self.name_to_transition = {}  # Map: name -> QGTransition
         self.errors = ErrorCollector()
         self.current_step = None  # Track current step for transition linking
+        self.file_comments = {} #key is line number
+
+        # L5X export state
+        self.global_id_counter = 0  # Global ID counter for all objects
+        self.directed_links = []  # List[QGDirectedLink]
+        self.current_x = 100  # Current X coordinate (starting position)
+        self.current_y = 20   # Current Y coordinate (starting position)
+        self.y_increment = 20  # Y increment per element
+        self.x_spacing = 150   # Horizontal spacing for branch legs
+        self.last_parsed_element = None  # Last Step or Transition (for branch linking)
+        self.inside_branch = False  # Flag to track if we're inside a branch
+        self.after_convergence = False  # Flag to skip from_step linking after convergence
 
     def parse(self):
         """Parse the .qg file and return QGSFC object.
@@ -46,43 +59,64 @@ class QGParser:
         Raises:
             ParseError: If any syntax or semantic errors found
         """
-        # Phase 1: Tokenization
+        #  Tokenization
         try:
             self.tokens = self.tokenizer.tokenize()
         except TokenizeError as e:
             self.errors.add(e)
             self.errors.raise_if_errors()
 
-        # Phase 2: Syntax validation and object construction
-        self._parse_file()
-
-        # Phase 3: Relationship building
+        # Syntax validation, object construction, bidirectional links
         if not self.errors.has_errors():
-            self._build_relationships()
+            self._parse_file()
 
-        # Phase 4: Validation
+        #linking jumps after transitions
         if not self.errors.has_errors():
+            self._handle_jumps()
+
+        #linking comments
+        if not self.errors.has_errors():
+            self._link_comments()
+
+        #  DirectedLink generation
+        if not self.errors.has_errors():
+            pass
+        #   self._generate_directed_links()
+
+        #  Validation
+        if not self.errors.has_errors():
+            pass
             self._validate()
 
         # Raise if any errors collected
         self.errors.raise_if_errors()
 
-        return QGSFC(self.steps, self.transitions, self.branches)
+        return QGSFC(self.steps, self.transitions, self.branches, self.directed_links)
+
+    def _next_id(self):
+        """Allocate next global ID from counter.
+
+        Returns:
+            int: Next sequential ID
+        """
+        current_id = self.global_id_counter
+        self.global_id_counter += 1
+        return current_id
 
     def _parse_file(self):
         """Parse the entire file: SI ... (S | T)* ... END"""
         # Skip leading newlines
         self._skip_newlines()
 
-        # First meaningful token must be SI
-        if not self._check(TokenType.SI):
-            self._record_error(
-                "First line must be SI() (initial step)",
-                self._current_token().line_number if self._current_token() else 1
-            )
-            # Try to recover by finding SI
-            while not self._at_end() and not self._check(TokenType.SI):
-                self._advance()
+        # # First meaningful token must be SI
+        # if not self._check(TokenType.SI):
+        #     self._record_error(
+        #         "First line must be SI() (initial step)",
+        #         self._current_token().line_number if self._current_token() else 1
+        #     )
+        #     # Try to recover by finding SI
+        #     while not self._at_end() and not self._check(TokenType.SI):
+        #         self._advance()
 
         # Parse statements until END or EOF
         while not self._at_end() and not self._check(TokenType.END):
@@ -90,7 +124,9 @@ class QGParser:
 
             if self._at_end() or self._check(TokenType.END):
                 break
+            
 
+                    
             # Parse SI, S, or T
             if self._check(TokenType.SI):
                 self._parse_initial_step()
@@ -111,6 +147,19 @@ class QGParser:
             elif self._check(TokenType.LEG_SEPARATOR):
                 # Standalone | without branch context - skip
                 self._advance()
+            elif self._check(TokenType.HASH):
+                #If the line only contains a comment, we store it
+                if self._check_behind(TokenType.NEWLINE):
+                    self._advance()  # Skip HASH
+                    self.file_comments[self._current_token().line_number] = self._consume(TokenType.COMMENT)
+                    self._skip_newlines()
+                # if we are after another token, we keep it in the dict
+                else:
+                    self._advance()
+                    self.file_comments[self._current_token().line_number] = self._consume(TokenType.COMMENT)
+                    self._skip_newlines() 
+            
+                 
             else:
                 # Unexpected token
                 token = self._current_token()
@@ -129,6 +178,9 @@ class QGParser:
                 last_line
             )
 
+    def _parse_comment(self):
+        line_number = self._current_token().line_number
+
     def _parse_initial_step(self):
         """Parse SI@name(ACTION, [PRESET])"""
         line_number = self._current_token().line_number
@@ -139,71 +191,16 @@ class QGParser:
                 "Only one SI@name() (initial step) allowed",
                 line_number
             )
-
-        self._advance()  # Consume SI
-
-        # Expect @ symbol
-        if not self._expect(TokenType.AT):
-            return
-
-        # Expect NAME token
-        if not self._check(TokenType.NAME):
-            self._record_error(
-                f"Expected name after @, got {self._current_token().type.name if self._current_token() else 'EOF'}",
-                self._current_token().line_number if self._current_token() else line_number
-            )
-            name = f"unnamed_si_{len(self.steps)}"
-        else:
-            name = self._current_token().value
-            self._advance()
-
-        # Check for duplicate names
-        if name in self.name_to_step:
-            self._record_error(
-                f"Duplicate step name '@{name}'",
-                line_number
-            )
-
-        # Expect (
-        if not self._expect(TokenType.LPAREN):
-            return
-
-        # Expect ACTION token
-        if not self._check(TokenType.ACTION):
-            self._record_error(
-                f"Expected ACTION, got {self._current_token().type.name if self._current_token() else 'EOF'}",
-                self._current_token().line_number if self._current_token() else line_number
-            )
-            action = ""
-        else:
-            action = self._current_token().value
-            self._advance()
-
-        # Check for optional preset
-        preset = 0
-        if self._check(TokenType.COMMA):
-            self._advance()  # Consume comma
-            preset = self._parse_number()
-            if preset is None:
-                preset = 0  # Error already recorded
-
-        # Expect )
-        if not self._expect(TokenType.RPAREN):
-            return
-
-        # Create step object
-        step = QGStep(name, action, preset, is_initial=True, line_number=line_number)
-        step.operand = len(self.steps)  # Sequential: 0, 1, 2...
-        step.id = line_number           # Line number: 1, 3, 6...
-        self.steps.append(step)
-        self.name_to_step[name] = step
-        self.current_step = step
+        self._parse_step()
+        self.last_parsed_element.is_initial = True
+        
 
     def _parse_step(self):
         """Parse S@name(ACTION, [PRESET])"""
         line_number = self._current_token().line_number
         self._advance()  # Consume S
-
+        comments = []
+        action = None
         # Expect @ symbol
         if not self._expect(TokenType.AT):
             return
@@ -230,15 +227,12 @@ class QGParser:
         if not self._expect(TokenType.LPAREN):
             return
 
-        # Expect ACTION token
-        if not self._check(TokenType.ACTION):
-            self._record_error(
-                f"Expected ACTION, got {self._current_token().type.name if self._current_token() else 'EOF'}",
-                self._current_token().line_number if self._current_token() else line_number
-            )
-            action = ""
-        else:
+        # Expect ACTION or COMMENT token
+        if self._check(TokenType.ACTION):
             action = self._current_token().value
+            self._advance()
+        if self._check(TokenType.COMMENT):
+            comments.append(self._current_token().value)
             self._advance()
 
         # Check for optional preset
@@ -254,19 +248,35 @@ class QGParser:
             return
 
         # Create step object
-        step = QGStep(name, action, preset, is_initial=False, line_number=line_number)
-        step.operand = len(self.steps)  # Sequential: 0, 1, 2...
-        step.id = line_number            # Line number: 1, 3, 6...
+        step = QGStep(name, action, preset, line_number, comments=comments, is_initial=False)
+
+        # Assign IDs
+        step.id = self._next_id()  # Global ID
+        step.operand = len(self.steps)  # Sequential step counter: 0, 1, 2...
+
+        # Assign coordinates
+        step.x = self.current_x
+        step.y = self.current_y
+        self.current_y += self.y_increment
+
+        #link step to preceding transition
+        if self.last_parsed_element is not None and not self.inside_branch and not self.after_convergence:
+            preceding_transition = self.last_parsed_element
+            step.add_incoming_transition(preceding_transition)
+            preceding_transition.add_outgoing_step(step)
+
         self.steps.append(step)
         self.name_to_step[name] = step
         self.current_step = step
+        self.last_parsed_element = step  # Track for branch linking
 
     def _parse_transition(self):
         """Parse T@name(CONDITION) [>> @target]"""
         line_number = self._current_token().line_number
+        comment = None
 
-        # Check if transition appears before any step
-        if self.current_step is None:
+        # Check if transition appears before any step (unless inside a branch)
+        if self.current_step is None and not self.inside_branch:
             self._record_error(
                 "Transition T@name() cannot appear before any step (S or SI)",
                 line_number
@@ -331,17 +341,46 @@ class QGParser:
             else:
                 target_name = self._current_token().value
                 self._advance()
+        # #Check for a comment after transition definition
+        # while not self._check(TokenType.NEWLINE):
+        #     if self._check(TokenType.HASH):
+        #         self._advance()
+        #         if self._check(TokenType.COMMENT):
+        #             comment = self._current_token().value
+        #     self._advance()
+                
 
         # Create transition object
-        transition = QGTransition(name, condition, target_name, line_number=line_number)
-        transition.operand = len(self.transitions)  # Sequential: 0, 1, 2...
-        transition.id = line_number                 # Line number: 2, 4, 5...
+        transition = QGTransition(name, condition, target_name, line_number,comment)
+        
+        # Assign IDs
+        transition.id = self._next_id()  # Global ID
+        transition.operand = len(self.transitions)  # Sequential transition counter: 0, 1, 2...
+
+        # Assign coordinates
+        transition.x = self.current_x
+        transition.y = self.current_y
+        self.current_y += self.y_increment
+
         self.transitions.append(transition)
         self.name_to_transition[name] = transition
 
-        # Link transition to current step (from_step)
-        if self.current_step is not None:
-            transition.set_from_step(self.current_step)
+
+        self.last_parsed_element = transition 
+
+        # Link transition to current step ( which is the step on the line just before the transition)  - but not if inside a branch or after convergence
+        if self.current_step is not None and not self.inside_branch and not self.after_convergence:
+            transition.add_incoming_step(self.current_step)
+            self.current_step.add_outgoing_transition(transition)
+        elif self.current_step is None:
+            # Debug: transition with no current_step outside of branch
+            if not self.inside_branch and not self.after_convergence and line_number > 1:
+                # This transition appears after first line but has no current_step
+                pass  # Will/should be caught in validation
+
+        # Reset after_convergence flag after using it
+        if self.after_convergence:
+            self.after_convergence = False
 
     def _parse_branch(self):
         """Parse branch structure: /\\ ... \\/ or //\\\\ ... \\\\//
@@ -375,6 +414,25 @@ class QGParser:
         # Create divergence branch
         diverge_branch = QGBranch("DIVERGE", flow_type, line_number)
 
+        # Assign ID and coordinates to divergence branch
+        diverge_branch.id = self._next_id()
+        diverge_branch.x = self.current_x
+        diverge_branch.y = self.current_y
+        self.current_y += self.y_increment
+
+        # Create reference of last element to divergence branch, it is the root
+        if self.last_parsed_element:
+            diverge_branch.root = self.last_parsed_element
+
+        # Track Y position and X offset for legs
+        saved_x = self.current_x
+        leg_start_y = self.current_y
+        max_y_in_legs = leg_start_y
+        leg_index = 0
+
+        # Set flag to indicate we're inside a branch
+        self.inside_branch = True
+
         # Parse legs until convergence
         current_leg = QGLeg()
         diverge_branch.legs.append(current_leg)
@@ -389,19 +447,25 @@ class QGParser:
             if self._check(TokenType.LEG_SEPARATOR):
                 self._advance()
                 self._skip_newlines()
+
+                # Track max Y across legs and reset for next leg
+                max_y_in_legs = max(max_y_in_legs, self.current_y)
+                self.current_y = leg_start_y
+
                 # Start new leg
+                leg_index += 1
+                self.current_x = saved_x + (leg_index * self.x_spacing)
+
                 current_leg = QGLeg()
+                # Legs don't have IDs - they're just organizational containers
                 diverge_branch.legs.append(current_leg)
                 continue
 
             # Parse leg content based on branch type
-            if self._check(TokenType.S) or self._check(TokenType.SI):
+            if self._check(TokenType.S):
                 # Parse step and add to current leg
                 step_before_count = len(self.steps)
-                if self._check(TokenType.SI):
-                    self._parse_initial_step()
-                else:
-                    self._parse_step()
+                self._parse_step()
                 # Add newly created step to leg
                 if len(self.steps) > step_before_count:
                     current_leg.steps.append(self.steps[-1])
@@ -415,11 +479,11 @@ class QGParser:
                     current_leg.transitions.append(self.transitions[-1])
 
                 # For OR branches, check for -> operator
-                if not is_and_branch and self._check(TokenType.ARROW):
+                if not is_and_branch and self._check(TokenType.JUMP):
                     self._advance()  # Consume ->
                     self._skip_newlines()
 
-                    # Check for jump (-> @target) or new step (-> S@name)
+                    # Check for jump (-> @target)
                     if self._check(TokenType.AT):
                         # Jump to existing step: -> @target
                         self._advance()  # Consume @
@@ -463,6 +527,25 @@ class QGParser:
                 )
                 self._advance()
 
+        # Update max Y one final time
+        max_y_in_legs = max(max_y_in_legs, self.current_y)
+
+        
+
+        # Recalculate X coordinates to center all legs
+        num_legs = len(diverge_branch.legs)
+        for idx, leg in enumerate(diverge_branch.legs):
+            leg_x = saved_x + (idx - (num_legs - 1) / 2) * self.x_spacing
+            for step in leg.steps:
+                step.x = leg_x
+            for trans in leg.transitions:
+                trans.x = leg_x
+
+
+        # Reset coordinates after branch
+        self.current_y = max_y_in_legs
+        self.current_x = saved_x
+
         # Validate branch structure according to IEC 61131-3
         if is_and_branch:
             self._validate_and_divergence_structure(diverge_branch)
@@ -474,6 +557,9 @@ class QGParser:
 
         # Expect convergence operator (but optional if all legs jump in OR)
         if not self._check(converge_token):
+            # No convergence - reset flag here
+            self.inside_branch = False
+
             if is_and_branch:
                 # AND branches ALWAYS need convergence
                 converge_op = r"\//"
@@ -497,31 +583,137 @@ class QGParser:
             # Create convergence branch
             converge_branch = QGBranch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
 
-            # Validate convergence is at a Transition (IEC 61131-3 rule)
-            if not self._check(TokenType.T):
-                self._record_error(
-                    f"Convergence must be followed by a step S@name, not transition",
-                    self._current_token().line_number if self._current_token() else line_number
-                )
+            # Assign ID and coordinates to convergence branch
+            converge_branch.id = self._next_id()
+            converge_branch.x = self.current_x
+            converge_branch.y = self.current_y
+            self.current_y += self.y_increment
+
+            #The legs of the converge branch are the legs of the diverge branch if parallel branch (no jump allowed)
+            if is_and_branch: 
+                converge_branch.legs = diverge_branch.legs
+            else: 
+                #if a the last transition of a diverge branch leg has no jump, then it is a leg of the converge branch
+                converge_branch.legs =  list(filter(lambda leg: not(leg.transitions[-1].target_name), diverge_branch.legs))
+                
+#this should be in creating directed steps
+                    # if not has_jump:
+                    #     # Create link from last element directly to converge branch
+                    #     if is_and_branch:
+                    #         # AND branch: last Step in leg → converge_branch
+                    #         if leg.steps:
+                    #             link = QGDirectedLink(from_id=leg.steps[-1].id, to_id=converge_branch.id, show=True)
+                    #             self.directed_links.append(link)
+                    #     else:
+                    #         # OR branch: last Transition in leg → converge_branch
+                    #         if leg.transitions:
+                    #             link = QGDirectedLink(from_id=leg.transitions[-1].id, to_id=converge_branch.id, show=True)
+                    #             self.directed_links.append(link)
+
+            # Validate convergence follows IEC 61131-3 rules
+            if is_and_branch:
+                # AND (parallel) convergence → Transition
+                if not self._check(TokenType.T):
+                    self._record_error(
+                        f"AND convergence must be followed by a transition T@name",
+                        self._current_token().line_number if self._current_token() else line_number
+                    )
+            else:
+                # OR (selection) convergence → Step
+                if not self._check(TokenType.S):
+                    self._record_error(
+                        f"OR convergence must be followed by a step S@name",
+                        self._current_token().line_number if self._current_token() else line_number
+                    )
+
+            # Reset inside_branch flag BEFORE parsing the element after convergence
+            # The element after convergence is NOT inside the branch
+            self.inside_branch = False
+
+            # Set after_convergence flag so transitions don't get linked to branch internals
+            # This prevents incorrect from_step for transitions after convergence
+            self.after_convergence = True
 
             # Parse the element after convergence
+            following_element = None
             if self._check(TokenType.T):
                 trans_before_count = len(self.transitions)
                 self._parse_transition()
                 # Link convergence to this transition
                 if len(self.transitions) > trans_before_count:
-                    converge_branch.name = self.transitions[-1].name
+                    converge_branch.root = self.transitions[-1]
+                    following_element = self.transitions[-1]
 
             elif self._check(TokenType.S):
                 step_before_count = len(self.steps)
                 self._parse_step()
                 # Link convergence to this step
                 if len(self.steps) > step_before_count:
-                    converge_branch.name = self.steps[-1].name
+                    converge_branch.root = self.steps[-1]
+                    following_element = self.steps[-1]
                     # Update current_step so next transition can link to it
                     self.current_step = self.steps[-1]
+                    # Reset after_convergence flag now that we've parsed the step after convergence
+                    # Next transitions should link normally to this step
+                    self.after_convergence = False
+            
+            
+           
 
+
+            for leg in converge_branch.legs:
+                if is_and_branch:
+                    # add the transition the outgoing transitions of each last step of a leg and vice versa
+                    root: QGTransition = converge_branch.get_root()
+                    last_step: QGStep = leg.steps[-1]
+                    
+                    last_step.add_outgoing_transition(root)
+                    root.add_incoming_step(last_step)
+                else: 
+                    root: QGStep = converge_branch.get_root()
+                    last_transition: QGTransition = leg.transitions[-1]
+                    last_transition.add_outgoing_step(root)
+                    root.add_incoming_transition(last_transition)
             self.branches.append(converge_branch)
+        
+        
+        for leg in diverge_branch.legs:
+        #adding links between elements of legs
+            for i in  range(len(leg.elements)-1):
+                from_elem:QGStep|QGTransition = leg.elements_sorted_by_line_number()[i]
+                to_elem:QGStep|QGTransition = leg.elements_sorted_by_line_number()[i+1]
+
+                if isinstance(from_elem,QGStep):
+                    from_elem.add_outgoing_transition(to_elem)
+                    to_elem.add_incoming_step(from_elem)
+                elif isinstance(from_elem,QGTransition):
+                    from_elem.add_outgoing_step(to_elem)
+                    to_elem.add_incoming_transition(from_elem)
+                else:
+                    self._record_error(
+                f"Unexpected type in branch leg, should be only steps or transitions")
+            #now we link references between legs and root 
+            if is_and_branch:    
+                root: QGTransition = diverge_branch.get_root()
+                first_step: QGStep = leg.steps[0]
+                first_step.add_incoming_transition(root)
+                root.add_outgoing_step(first_step)
+            else:
+                root: QGStep = diverge_branch.get_root()
+                first_transition: QGTransition = leg.transitions[0]
+                first_transition.add_incoming_step(root)
+                root.add_outgoing_transition(first_transition)
+
+
+#this should be in creating directed steps
+            # # Create DirectedLink from convergence to following element
+            # if following_element:
+            #     link = QGDirectedLink(from_id=converge_branch.id, to_id=following_element.id, show=True)
+            #     self.directed_links.append(link)
+
+
+
+            
 
         # Store divergence branch
         self.branches.append(diverge_branch)
@@ -617,39 +809,47 @@ class QGParser:
         self._advance()
         return number
 
-    def _build_relationships(self):
+    def _handle_jumps(self):
         """Build bidirectional Step ↔ Transition relationships."""
+        elements_in_branches = []
+        for branch in self.branches:
+            elements_in_branches+=branch.elements_in_branch
+        
         for transition in self.transitions:
-            # from_step already set during parsing
+            # from_step already set during parsing (for non-branch transitions)
 
             # Resolve to_step
             if transition.target_name is not None:
                 # Explicit target name specified (>> @target)
-                to_step = self.name_to_step.get(transition.target_name)
-                if to_step is None:
+                target_step = self.name_to_step.get(transition.target_name)
+                if target_step is None:
                     self._record_error(
                         f"Invalid step reference: step '@{transition.target_name}' not found",
                         transition.line_number
                     )
                 else:
-                    transition.set_to_step(to_step)
-            else:
-                # Implicit next step - find next step after this transition
-                next_step = self._find_next_step_from(transition.line_number)
-                if next_step is None:
-                    self._record_error(
-                        "Transition has no target step (no >> @target and no following step)",
-                        transition.line_number
-                    )
-                else:
-                    transition.set_to_step(next_step)
+                    transition.add_outgoing_step(target_step)
+                    target_step.add_incoming_transition(transition)
+            # elif transition not in elements_in_branches:
+            #     next_step = self._find_next_step_from(transition.line_number)
+            #     # Don't set to_step if next_step is inside a branch (connected via branch structure)
+            #     if next_step is None:
+            #         self._record_error(
+            #             "Transition has no target step (no >> @target and no following step)",
+            #             transition.line_number
+            #         )
+            #     elif next_step not in elements_in_branches:
+            #         transition.add_outgoing_step(next_step)
 
-            # Update step relationships
-            if transition.from_step is not None:
-                transition.from_step.add_outgoing_transition(transition)
+    def _link_comments(self,):
+        "Link comments that are after a Transition or Step to it's respective owner"
+        for step in self.steps:
+            if step.line_number in self.file_comments:
+                step.comments.append(self.file_comments[step.line_number])
 
-            if transition.to_step is not None:
-                transition.to_step.add_incoming_transition(transition)
+        for trans in self.transitions:
+            if trans.line_number in self.file_comments:
+                trans.comment= self.file_comments[trans.line_number]     
 
     def _find_next_step_from(self, line_number: int):
         """Find the next step (S or SI) after given line number.
@@ -671,25 +871,98 @@ class QGParser:
 
         return next_step
 
+    def _generate_directed_links(self):
+        """Generate DirectedLink objects for all connections in the SFC.
+
+        Creates links for normal sequential flow (Step→Transition, Transition→Step).
+        Also creates links for elements within branch legs.
+        Branch divergence/convergence links are already created during _parse_branch.
+        Deduplicates all links at the end.
+        """
+        from .qg_sfc import QGDirectedLink
+
+        # Collect branch IDs and leg IDs to detect branch connections
+        branch_ids = set(b.id for b in self.branches)
+        leg_ids = set()
+        for branch in self.branches:
+            if branch.branch_type == "DIVERGE":
+                for leg in branch.legs:
+                    leg_ids.add(leg.id)
+
+        # Generate DirectedLinks for elements within branch legs
+        for branch in self.branches:
+            if branch.branch_type == "DIVERGE":
+                for leg in branch.legs:
+                    # Create links for sequential flow within each leg
+                    leg_elements = []
+                    # Collect all elements in leg with their line numbers
+                    for step in leg.steps:
+                        leg_elements.append((step.line_number, 'step', step))
+                    for trans in leg.transitions:
+                        leg_elements.append((trans.line_number, 'trans', trans))
+
+                    # Sort by line number to get sequential order
+                    leg_elements.sort(key=lambda x: x[0])
+
+                    # Create links between consecutive elements
+                    for i in range(len(leg_elements) - 1):
+                        from_elem = leg_elements[i][2]
+                        to_elem = leg_elements[i + 1][2]
+                        link = QGDirectedLink(from_id=from_elem.id, to_id=to_elem.id, show=True)
+                        self.directed_links.append(link)
+
+        # Generate DirectedLinks for normal sequential flow (outside branches)
+        for step in self.steps:
+            # Check if this step is already connected to a branch or leg (as source)
+            has_outgoing_branch_link = any(link.from_id == step.id and (link.to_id in branch_ids or link.to_id in leg_ids)
+                                           for link in self.directed_links)
+
+            if not has_outgoing_branch_link:
+                # Only create links to outgoing transitions if not connected to a branch
+                for trans in step.outgoing_transitions:
+                    link = QGDirectedLink(from_id=step.id, to_id=trans.id, show=True)
+                    self.directed_links.append(link)
+
+        for trans in self.transitions:
+            # Check if this transition is already connected to a branch or leg
+            has_branch_link = any(link.from_id == trans.id and (link.to_id in branch_ids or link.to_id in leg_ids)
+                                 for link in self.directed_links)
+
+            # if not has_branch_link and trans.to_step:
+            #     # Only create link to to_step if not connected to a branch
+            #     link = QGDirectedLink(from_id=trans.id, to_id=trans.to_step.id, show=True)
+            #     self.directed_links.append(link)
+
+        # Deduplicate links (same from_id and to_id)
+        seen = set()
+        unique_links = []
+        for link in self.directed_links:
+            key = (link.from_id, link.to_id)
+            if key not in seen:
+                seen.add(key)
+                unique_links.append(link)
+        self.directed_links = unique_links
+
     def _validate(self):
         """Validate the parsed SFC."""
         # Check for initial step
         if not any(step.is_initial for step in self.steps):
             self._record_error("No initial step (SI) found", None)
 
-        # Check all transitions have from and to steps
+        # Check all transitions have from and to steps (or are connected via branches)
         for transition in self.transitions:
-            if transition.from_step is None:
+            # Transitions in branches or after branches don't need from_step
+            if transition.incoming_steps ==[]:
                 self._record_error(
-                    "Transition has no incoming step",
+                    f"Transition {transition.name}  has no incoming step",
                     transition.line_number
                 )
-            if transition.to_step is None:
+            # Transitions in branches or before branches don't need to_step
+            if transition.outgoing_steps ==[]:
                 self._record_error(
-                    "Transition has no outgoing step",
+                    f"Transition {transition.name} has no outgoing step",
                     transition.line_number
                 )
-
     # Token navigation helpers
 
     def _current_token(self):
@@ -734,6 +1007,22 @@ class QGParser:
             True if current token matches, False otherwise
         """
         if self._at_end():
+            return False
+        return self._current_token().type == token_type
+    
+    def _consume(self,token_type:TokenType):
+        if not self._current_token().type == token_type:
+            self._record_error(
+                    f"Expected to consume {token_type.name}, got {current.type.name if current else 'EOF'}",
+                    current.line_number if current else self.tokens[-1].line_number
+                )    
+        consumed_token =self._current_token().value
+        self._advance()
+
+        return consumed_token
+    
+    def _check_behind(self, token_type:TokenType):
+        if self.current == 0:
             return False
         return self._current_token().type == token_type
 

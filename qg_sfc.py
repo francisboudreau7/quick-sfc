@@ -3,6 +3,7 @@
 This module provides classes for representing Sequential Function Charts
 parsed from Quick Grafcet (.qg) files.
 """
+from typing import List
 
 
 class QGStep:
@@ -22,15 +23,20 @@ class QGStep:
         line_number: 1-indexed line number from .qg file (same as id)
     """
 
-    def __init__(self, name: str, action: str, preset: int = 0, is_initial: bool = False,
-                 line_number: int = None):
+    def __init__(self, name: str, action: str, preset: int = 0,
+                 line_number: int = None, comments:List = None, is_initial: bool = False):
         self.name = name  # Mandatory identifier
-        self.id = None  # Line number - assigned by parser
+        self.id = None  # Global ID - assigned by parser
         self.operand = None  # Sequential ID - assigned by parser
         self.action = action
         self.preset = preset
         self.is_initial = is_initial
         self.line_number = line_number
+        self.comments = comments
+
+        # L5X export attributes (set by parser)
+        self.x = None  # X coordinate for visual layout
+        self.y = None  # Y coordinate for visual layout
 
         # Bidirectional relationships (private)
         self._incoming_transitions = []
@@ -85,88 +91,137 @@ class QGTransition:
     """
 
     def __init__(self, name: str, condition: str, target_name: str = None,
-                 line_number: int = None):
+                 line_number: int = None, comment:str =None):
         self.name = name  # Mandatory identifier
-        self.id = None  # Line number - assigned by parser
+        self.id = None  # Global ID - assigned by parser
         self.operand = None  # Sequential ID - assigned by parser
         self.condition = condition
         self.target_name = target_name  # For >> jumps
         self.line_number = line_number
+        self.comment = comment
+
+        # L5X export attributes (set by parser)
+        self.x = None  # X coordinate for visual layout
+        self.y = None  # Y coordinate for visual layout
 
         # Bidirectional relationships (private)
-        self._from_step = None
-        self._to_step = None
+        self._incoming_steps = []
+        self._outgoing_steps = []
 
     @property
-    def from_step(self):
-        """Return the incoming Step object."""
-        return self._from_step
+    def incoming_steps(self):
+        """Return a list of incoming Step objects."""
+        return self._incoming_steps
 
     @property
-    def to_step(self):
-        """Return the outgoing Step object."""
-        return self._to_step
+    def outgoing_steps(self):
+        """Return a list of outgoing Step objects."""
+        return self._outgoing_steps
 
-    def set_from_step(self, step):
-        """Set the incoming step (called by parser).
+    def add_incoming_step(self, step):
+        """add step to incoming steps
 
         Args:
             step: QGStep object
         """
-        self._from_step = step
+        self._incoming_steps.append(step)
 
-    def set_to_step(self, step):
-        """Set the outgoing step (called by parser).
+    def add_outgoing_step(self, step):
+        """add step to outgoing steps
 
         Args:
             step: QGStep object
         """
-        self._to_step = step
+        self._outgoing_steps.append(step)
 
     def __repr__(self):
         target = f"->@{self.target_name}" if self.target_name else "->next"
         return f"T@{self.name}(operand={self.operand}, id={self.id}, condition={self.condition!r}, {target})"
 
 
-class QGBranch:
+class QGBranch():
     """Represents a branch (divergence or convergence) in Quick SFC.
 
     Attributes:
+        id: Global sequential ID (set by parser)
         branch_type: "DIVERGE" or "CONVERGE"
         flow_type: "AND" or "OR"
+        x: X coordinate for visual layout
+        y: Y coordinate for visual layout
         legs: List of QGLeg objects (for divergence branches)
         name: Optional identifier
         line_number: Line number where branch starts
     """
 
     def __init__(self, branch_type: str, flow_type: str, line_number: int = None):
+        self.id = None  # Global ID - assigned by parser
         self.branch_type = branch_type  # "DIVERGE" or "CONVERGE"
         self.flow_type = flow_type      # "AND" or "OR"
-        self.legs = []                   # List[QGLeg]
+        self.x = None  # X coordinate for L5X export
+        self.y = None  # Y coordinate for L5X export
+        self.legs :List[QGLeg] = []                    # List[QGLeg]
         self.name = None
-        self.line_number = line_number
+        self.line_number = line_number  
+        self.root = None
+
+        
 
     def add_leg(self, leg):
         """Add a leg to this branch."""
         self.legs.append(leg)
 
+    @property
+    def branch_type_l5x(self):
+        """Return L5X-compatible branch type: 'Selection' or 'Parallel'."""
+        return "Parallel" if self.flow_type == "AND" else "Selection"
+
+    @property
+    def branch_flow_l5x(self):
+        """Return L5X-compatible flow direction: 'Diverge' or 'Converge'."""
+        return self.branch_type.capitalize()  # "DIVERGE" -> "Diverge"
+
+    @property
+    def priority(self):
+        """Return L5X priority (always 'Default')."""
+        return "Default"
+    
+    @property
+    def elements_in_branch(self):
+        branch_elements = []
+        for leg in self.legs:
+           branch_elements += leg.elements
+        return branch_elements
+
+        
+    def get_root(self) -> QGStep | QGTransition:
+        return self.root
+
     def __repr__(self):
         flow_sym = "//\\\\" if self.flow_type == "AND" else "/\\"
-        return f"Branch({self.branch_type}, {flow_sym}, {len(self.legs)} legs)"
+        return f"Branch(id={self.id}, {self.branch_type}, {flow_sym}, {len(self.legs)} legs)"
 
 
 class QGLeg:
     """Represents a single leg (path) in a parallel or selection branch.
 
     Attributes:
+        id: Global sequential ID (set by parser)
         steps: List of QGStep objects in this leg
         transitions: List of QGTransition objects in this leg
     """
 
     def __init__(self):
+        self.id = None  # Global ID - assigned by parser
         self.steps = []
         self.transitions = []
 
+    @property
+    def elements(self) -> List[QGStep|QGBranch]:
+        return self.steps + self.transitions
+
+    def elements_sorted_by_line_number(self):
+        return sorted(self.elements,key=lambda x: x.line_number)
+    
     def add_step(self, step):
         """Add a step to this leg."""
         self.steps.append(step)
@@ -174,9 +229,32 @@ class QGLeg:
     def add_transition(self, transition):
         """Add a transition to this leg."""
         self.transitions.append(transition)
+    
 
     def __repr__(self):
-        return f"Leg({len(self.steps)} steps, {len(self.transitions)} transitions)"
+        return f"Leg(id={self.id}, {len(self.steps)} steps, {len(self.transitions)} transitions)"
+    
+
+
+class QGDirectedLink:
+    """Represents a directed connection between SFC elements for L5X export.
+
+    DirectedLinks are auto-generated during parsing to represent all
+    connections in the SFC graph structure.
+
+    Attributes:
+        from_id: ID of source object (Step, Transition, or Branch)
+        to_id: ID of target object
+        show: Visibility flag for L5X export (default True)
+    """
+
+    def __init__(self, from_id: int, to_id: int, show: bool = True):
+        self.from_id = from_id
+        self.to_id = to_id
+        self.show = show
+
+    def __repr__(self):
+        return f"DirectedLink(from={self.from_id}, to={self.to_id}, show={self.show})"
 
 
 class QGSFC:
@@ -185,13 +263,15 @@ class QGSFC:
     Provides access to steps, transitions, and their relationships.
     """
 
-    def __init__(self, steps: list, transitions: list, branches: list = None):
-        """Initialize QGSFC with lists of steps, transitions, and branches.
+    def __init__(self, steps: list, transitions: list, branches: list = None,
+                 directed_links: list = None):
+        """Initialize QGSFC with lists of steps, transitions, branches, and links.
 
         Args:
             steps: List of QGStep objects
             transitions: List of QGTransition objects
             branches: Optional list of QGBranch objects
+            directed_links: Optional list of QGDirectedLink objects
         """
         # Triple indexing for flexibility (by name, id, operand)
         self._steps_by_name = {step.name: step for step in steps}
@@ -201,6 +281,7 @@ class QGSFC:
         self._transitions_by_id = {trans.id: trans for trans in transitions}
         self._transitions_by_operand = {trans.operand: trans for trans in transitions}
         self.branches = branches or []
+        self.directed_links = directed_links or []
 
     @property
     def steps(self):
@@ -213,12 +294,20 @@ class QGSFC:
         return list(self._transitions_by_operand.values())
 
     @property
+    def links(self):
+        """Return list of all DirectedLink objects."""
+        return list(self.directed_links)
+
+    @property
     def initial_step(self):
         """Return the initial step (SI)."""
         for step in self._steps_by_operand.values():
             if step.is_initial:
                 return step
         return None
+    
+    def get_node_by_id(self,id:int) -> QGStep | QGTransition:
+        return self._transitions_by_id | self._steps_by_id
 
     def get_step_by_name(self, name: str):
         """Get step by name.
@@ -285,6 +374,28 @@ class QGSFC:
             QGTransition object or None if not found
         """
         return self._transitions_by_operand.get(operand)
+
+    def get_links_from(self, from_id: int):
+        """Get all DirectedLinks originating from given ID.
+
+        Args:
+            from_id: Source object ID
+
+        Returns:
+            List of QGDirectedLink objects
+        """
+        return [link for link in self.directed_links if link.from_id == from_id]
+
+    def get_links_to(self, to_id: int):
+        """Get all DirectedLinks targeting given ID.
+
+        Args:
+            to_id: Target object ID
+
+        Returns:
+            List of QGDirectedLink objects
+        """
+        return [link for link in self.directed_links if link.to_id == to_id]
 
     def get_step_by_line(self, line_number: int):
         """Get step by line number in .qg file.

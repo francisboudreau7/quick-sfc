@@ -26,16 +26,17 @@ class TokenType(Enum):
     CONDITION = auto()
     NUMBER = auto()
     NAME = auto()  # Identifier names (after @)
+    COMMENT = auto()
 
     # Operators
     AT = auto()  # @ symbol for naming
-    JUMP = auto()  # >> operator for explicit jumps
-    ARROW = auto()  # -> operator for OR branch connections
+    JUMP = auto()  # -> operator for OR branch connections
     LEG_SEPARATOR = auto()  # | separator for parallel legs
     OR_DIVERGE = auto()  # /\ operator for OR branching
     OR_CONVERGE = auto()  # \/ operator for OR convergence
     AND_DIVERGE = auto()  # //\\ operator for AND branching
     AND_CONVERGE = auto()  # \\// operator for AND convergence
+    HASH = auto() # "#" symbol for comment
 
     # Special
     NEWLINE = auto()
@@ -97,7 +98,7 @@ class QGTokenizer:
 
             # Handle comments (# to end of line)
             if self._current_char() == '#':
-                self._skip_comment()
+                self._handle_comment()
                 continue
 
             # Handle newlines (significant for line tracking)
@@ -141,7 +142,11 @@ class QGTokenizer:
                     # Check token before @ to determine type
                     keyword_token = self._find_recent_keyword()
                     if keyword_token and keyword_token.type in [TokenType.S, TokenType.SI]:
-                        self._emit_token(TokenType.ACTION, content)
+                        #check for an action or comment
+                        if ';' in content:
+                            self._emit_token(TokenType.ACTION, content)
+                        elif content.strip()!="":
+                            self._emit_token(TokenType.COMMENT, content)
                     elif keyword_token and keyword_token.type == TokenType.T:
                         self._emit_token(TokenType.CONDITION, content)
                     else:
@@ -214,6 +219,18 @@ class QGTokenizer:
         while not self._at_end() and self._current_char() in ' \t\r':
             self._advance()
 
+    def _handle_comment(self):
+        self._emit_token(TokenType.HASH,'#')
+        self._advance()
+        comment = []
+        # capture until newline or end of file
+        while not self._at_end() and self._current_char() != '\n':
+            comment.append(self._current_char())
+            self._advance()
+        full_comment = ''.join(comment)
+        self._emit_token(TokenType.COMMENT,full_comment)    
+        self._advance
+        
     def _skip_comment(self):
         """Skip from # to end of line."""
         # Skip the # character
@@ -221,7 +238,6 @@ class QGTokenizer:
         # Skip until newline or end of file
         while not self._at_end() and self._current_char() != '\n':
             self._advance()
-
     def _find_recent_keyword(self):
         """Find the most recent S, SI, or T keyword token.
 
@@ -274,7 +290,7 @@ class QGTokenizer:
 
         # Check for arrow operator: ->
         if self._match_text_exact("->"):
-            self._emit_token(TokenType.ARROW, "->")
+            self._emit_token(TokenType.JUMP, "->")
             return True
 
         # Check for OR divergence: /\

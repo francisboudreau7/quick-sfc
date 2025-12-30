@@ -12,7 +12,7 @@ sys.path.insert(0, WORKSPACE_DIR)
 
 from QuickSFC.qg_tokenizer import QGTokenizer, TokenType, Token
 from QuickSFC.qg_tokenizer import QGTokenizer, TokenType
-from QuickSFC.qg_sfc import QGStep, QGTransition, QGSFC, QGBranch, QGLeg
+from QuickSFC.qg_sfc import QStep, QTransition, QSFC, QBranch, QLeg
 from QuickSFC.qg_parser import QGParser
 from QuickSFC.qg_errors import TokenizeError, ParseError
 
@@ -166,7 +166,7 @@ def test_tokenize_invalid_character_raises_error():
 
 def test_step_creation():
     """Test QGStep creation and attributes."""
-    step = QGStep("init", "x:=0", preset=100, is_initial=True, line_number=1)
+    step = QStep("init", "x:=0", preset=100, is_initial=True, line_number=1)
 
     assert step.name == "init"
     assert step.action == "x:=0"
@@ -179,7 +179,7 @@ def test_step_creation():
 
 def test_transition_creation():
     """Test QGTransition creation and attributes."""
-    trans = QGTransition("start", "button_pressed", target_name="running", line_number=2)
+    trans = QTransition("start", "button_pressed", target_name="running", line_number=2)
 
     assert trans.name == "start"
     assert trans.condition == "button_pressed"
@@ -189,9 +189,9 @@ def test_transition_creation():
 
 def test_step_transition_bidirectional_relationship():
     """Test bidirectional linking between steps and transitions."""
-    step1 = QGStep("step1", "action1")
-    trans = QGTransition("trans", "condition")
-    step2 = QGStep("step2", "action2")
+    step1 = QStep("step1", "action1")
+    trans = QTransition("trans", "condition")
+    step2 = QStep("step2", "action2")
 
     step1.add_outgoing_transition(trans)
     trans.add_incoming_step(step1)
@@ -206,19 +206,19 @@ def test_step_transition_bidirectional_relationship():
 
 def test_qgsfc_query_methods():
     """Test QGSFC query methods (by name, id, operand)."""
-    step1 = QGStep("init", "x:=0", is_initial=True)
+    step1 = QStep("init", "x:=0", is_initial=True)
     step1.id = 0
     step1.operand = 0
 
-    step2 = QGStep("running", "x:=x+1")
+    step2 = QStep("running", "x:=x+1")
     step2.id = 2
     step2.operand = 1
 
-    trans = QGTransition("start", "button")
+    trans = QTransition("start", "button")
     trans.id = 1
     trans.operand = 0
 
-    sfc = QGSFC([step1, step2], [trans])
+    sfc = QSFC([step1, step2], [trans])
 
     assert sfc.get_step_by_name("init") == step1
     assert sfc.get_step_by_name("running") == step2
@@ -235,29 +235,29 @@ def test_qgsfc_query_methods():
 
 def test_qgsfc_initial_step_property():
     """Test QGSFC can identify initial step."""
-    step1 = QGStep("init", "x:=0", is_initial=True)
+    step1 = QStep("init", "x:=0", is_initial=True)
     step1.operand = 0
-    step2 = QGStep("running", "x:=x+1")
+    step2 = QStep("running", "x:=x+1")
     step2.operand = 1
 
-    sfc = QGSFC([step1, step2], [])
+    sfc = QSFC([step1, step2], [])
 
     assert sfc.initial_step == step1
 
 
 def test_branch_and_leg_structure():
     """Test QGBranch and QGLeg structure."""
-    branch = QGBranch("DIVERGE", "OR", line_number=5)
+    branch = QBranch("DIVERGE", "OR", line_number=5)
     branch.id = 10
 
-    leg1 = QGLeg()
+    leg1 = QLeg()
     leg1.id = 11
-    step1 = QGStep("leg1_step", "a")
+    step1 = QStep("leg1_step", "a")
     leg1.add_step(step1)
 
-    leg2 = QGLeg()
+    leg2 = QLeg()
     leg2.id = 12
-    step2 = QGStep("leg2_step", "b")
+    step2 = QStep("leg2_step", "b")
     leg2.add_step(step2)
 
     branch.add_leg(leg1)
@@ -266,8 +266,7 @@ def test_branch_and_leg_structure():
     assert len(branch.legs) == 2
     assert branch.branch_type == "DIVERGE"
     assert branch.flow_type == "OR"
-    assert branch.branch_type_l5x == "Selection"
-    assert branch.branch_flow_l5x == "Diverge"
+
 
 
 # =============================================================================

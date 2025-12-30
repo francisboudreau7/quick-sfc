@@ -22,7 +22,7 @@ Example usage:
         print(f"Transition {trans.condition} → Step {trans.to_step.id}")
 """
 
-from .qg_sfc import QGSFC, QGStep, QGTransition, QGBranch, QGLeg, QGDirectedLink
+from .qg_sfc import QSFC, QStep, QTransition, QBranch, QLeg, QDirectedLink
 from .qg_parser import QGParser
 from .qg_errors import QGError, ParseError, TokenizeError, ValidationError
 
@@ -65,12 +65,12 @@ def parse_qg_string(content: str):
 
 
 __all__ = [
-    'QGSFC',
-    'QGStep',
-    'QGTransition',
-    'QGBranch',
-    'QGLeg',
-    'QGDirectedLink',
+    'QSFC',
+    'QStep',
+    'QTransition',
+    'QBranch',
+    'QLeg',
+    'QDirectedLink',
     'QGParser',
     'QGError',
     'ParseError',

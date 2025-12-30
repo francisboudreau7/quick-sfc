@@ -6,7 +6,7 @@ parsed from Quick Grafcet (.qg) files.
 from typing import List
 
 
-class QGStep:
+class QStep:
     """Represents a step in Quick SFC.
 
     A step has a name, an action (structured text), optional timer preset,
@@ -75,7 +75,7 @@ class QGStep:
         return f"{initial}@{self.name}(operand={self.operand}, id={self.id}, action={self.action!r}, preset={self.preset}ms)"
 
 
-class QGTransition:
+class QTransition:
     """Represents a transition in Quick SFC.
 
     A transition has a name, a condition (boolean expression), and connects
@@ -139,7 +139,7 @@ class QGTransition:
         return f"T@{self.name}(operand={self.operand}, id={self.id}, condition={self.condition!r}, {target})"
 
 
-class QGBranch():
+class QBranch():
     """Represents a branch (divergence or convergence) in Quick SFC.
 
     Attributes:
@@ -149,7 +149,6 @@ class QGBranch():
         x: X coordinate for visual layout
         y: Y coordinate for visual layout
         legs: List of QGLeg objects (for divergence branches)
-        name: Optional identifier
         line_number: Line number where branch starts
     """
 
@@ -159,7 +158,7 @@ class QGBranch():
         self.flow_type = flow_type      # "AND" or "OR"
         self.x = None  # X coordinate for L5X export
         self.y = None  # Y coordinate for L5X export
-        self.legs :List[QGLeg] = []                    # List[QGLeg]
+        self.legs :List[QLeg] = []                    # List[QGLeg]
         self.name = None
         self.line_number = line_number  
         self.root = None
@@ -171,21 +170,6 @@ class QGBranch():
         self.legs.append(leg)
 
     @property
-    def branch_type_l5x(self):
-        """Return L5X-compatible branch type: 'Selection' or 'Parallel'."""
-        return "Parallel" if self.flow_type == "AND" else "Selection"
-
-    @property
-    def branch_flow_l5x(self):
-        """Return L5X-compatible flow direction: 'Diverge' or 'Converge'."""
-        return self.branch_type.capitalize()  # "DIVERGE" -> "Diverge"
-
-    @property
-    def priority(self):
-        """Return L5X priority (always 'Default')."""
-        return "Default"
-    
-    @property
     def elements_in_branch(self):
         branch_elements = []
         for leg in self.legs:
@@ -193,7 +177,7 @@ class QGBranch():
         return branch_elements
 
         
-    def get_root(self) -> QGStep | QGTransition:
+    def get_root(self) -> QStep | QTransition:
         return self.root
 
     def __repr__(self):
@@ -201,7 +185,7 @@ class QGBranch():
         return f"Branch(id={self.id}, {self.branch_type}, {flow_sym}, {len(self.legs)} legs)"
 
 
-class QGLeg:
+class QLeg:
     """Represents a single leg (path) in a parallel or selection branch.
 
     Attributes:
@@ -211,12 +195,11 @@ class QGLeg:
     """
 
     def __init__(self):
-        self.id = None  # Global ID - assigned by parser
         self.steps = []
         self.transitions = []
 
     @property
-    def elements(self) -> List[QGStep|QGBranch]:
+    def elements(self) -> List[QStep|QBranch]:
         return self.steps + self.transitions
 
     def elements_sorted_by_line_number(self):
@@ -236,7 +219,7 @@ class QGLeg:
     
 
 
-class QGDirectedLink:
+class QDirectedLink:
     """Represents a directed connection between SFC elements for L5X export.
 
     DirectedLinks are auto-generated during parsing to represent all
@@ -257,7 +240,7 @@ class QGDirectedLink:
         return f"DirectedLink(from={self.from_id}, to={self.to_id}, show={self.show})"
 
 
-class QGSFC:
+class QSFC:
     """Container for a parsed Quick Grafcet SFC.
 
     Provides access to steps, transitions, and their relationships.
@@ -306,7 +289,7 @@ class QGSFC:
                 return step
         return None
     
-    def get_node_by_id(self,id:int) -> QGStep | QGTransition:
+    def get_node_by_id(self,id:int) -> QStep | QTransition:
         return self._transitions_by_id | self._steps_by_id
 
     def get_step_by_name(self, name: str):

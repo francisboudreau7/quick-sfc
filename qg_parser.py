@@ -7,7 +7,7 @@ This module provides syntactic and semantic analysis for Quick Grafcet
 
 from typing import List
 from .qg_tokenizer import QGTokenizer, TokenType
-from .qg_sfc import QGSFC, QGDirectedLink, QGStep, QGTransition, QGBranch, QGLeg
+from .qg_sfc import QSFC, QDirectedLink, QStep, QTransition, QBranch, QLeg
 from .qg_errors import ErrorCollector, ParseError, TokenizeError, ValidationError
 
 
@@ -32,7 +32,7 @@ class QGParser:
         # Parsing state
         self.steps = []  # List[QGStep] - ordered by appearance
         self.transitions = []  # List[QGTransition]
-        self.branches: List[QGBranch] = []   
+        self.branches: List[QBranch] = []   
         self.name_to_step = {}  # Map: name -> QGStep
         self.name_to_transition = {}  # Map: name -> QGTransition
         self.errors = ErrorCollector()
@@ -91,7 +91,7 @@ class QGParser:
         # Raise if any errors collected
         self.errors.raise_if_errors()
 
-        return QGSFC(self.steps, self.transitions, self.branches, self.directed_links)
+        return QSFC(self.steps, self.transitions, self.branches, self.directed_links)
 
     def _next_id(self):
         """Allocate next global ID from counter.
@@ -248,7 +248,7 @@ class QGParser:
             return
 
         # Create step object
-        step = QGStep(name, action, preset, line_number, comments=comments, is_initial=False)
+        step = QStep(name, action, preset, line_number, comments=comments, is_initial=False)
 
         # Assign IDs
         step.id = self._next_id()  # Global ID
@@ -351,7 +351,7 @@ class QGParser:
                 
 
         # Create transition object
-        transition = QGTransition(name, condition, target_name, line_number,comment)
+        transition = QTransition(name, condition, target_name, line_number,comment)
         
         # Assign IDs
         transition.id = self._next_id()  # Global ID
@@ -412,29 +412,20 @@ class QGParser:
         self._skip_newlines()
 
         # Create divergence branch
-        diverge_branch = QGBranch("DIVERGE", flow_type, line_number)
+        diverge_branch = QBranch("DIVERGE", flow_type, line_number)
 
         # Assign ID and coordinates to divergence branch
         diverge_branch.id = self._next_id()
-        diverge_branch.x = self.current_x
-        diverge_branch.y = self.current_y
-        self.current_y += self.y_increment
 
         # Create reference of last element to divergence branch, it is the root
         if self.last_parsed_element:
             diverge_branch.root = self.last_parsed_element
 
-        # Track Y position and X offset for legs
-        saved_x = self.current_x
-        leg_start_y = self.current_y
-        max_y_in_legs = leg_start_y
-        leg_index = 0
-
         # Set flag to indicate we're inside a branch
         self.inside_branch = True
 
         # Parse legs until convergence
-        current_leg = QGLeg()
+        current_leg = QLeg()
         diverge_branch.legs.append(current_leg)
 
         while not self._at_end() and not self._check(converge_token) and not self._check(TokenType.END):
@@ -448,15 +439,8 @@ class QGParser:
                 self._advance()
                 self._skip_newlines()
 
-                # Track max Y across legs and reset for next leg
-                max_y_in_legs = max(max_y_in_legs, self.current_y)
-                self.current_y = leg_start_y
 
-                # Start new leg
-                leg_index += 1
-                self.current_x = saved_x + (leg_index * self.x_spacing)
-
-                current_leg = QGLeg()
+                current_leg = QLeg()
                 # Legs don't have IDs - they're just organizational containers
                 diverge_branch.legs.append(current_leg)
                 continue
@@ -527,25 +511,6 @@ class QGParser:
                 )
                 self._advance()
 
-        # Update max Y one final time
-        max_y_in_legs = max(max_y_in_legs, self.current_y)
-
-        
-
-        # Recalculate X coordinates to center all legs
-        num_legs = len(diverge_branch.legs)
-        for idx, leg in enumerate(diverge_branch.legs):
-            leg_x = saved_x + (idx - (num_legs - 1) / 2) * self.x_spacing
-            for step in leg.steps:
-                step.x = leg_x
-            for trans in leg.transitions:
-                trans.x = leg_x
-
-
-        # Reset coordinates after branch
-        self.current_y = max_y_in_legs
-        self.current_x = saved_x
-
         # Validate branch structure according to IEC 61131-3
         if is_and_branch:
             self._validate_and_divergence_structure(diverge_branch)
@@ -581,7 +546,7 @@ class QGParser:
             self._skip_newlines()
 
             # Create convergence branch
-            converge_branch = QGBranch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
+            converge_branch = QBranch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
 
             # Assign ID and coordinates to convergence branch
             converge_branch.id = self._next_id()
@@ -664,14 +629,14 @@ class QGParser:
             for leg in converge_branch.legs:
                 if is_and_branch:
                     # add the transition the outgoing transitions of each last step of a leg and vice versa
-                    root: QGTransition = converge_branch.get_root()
-                    last_step: QGStep = leg.steps[-1]
+                    root: QTransition = converge_branch.get_root()
+                    last_step: QStep = leg.steps[-1]
                     
                     last_step.add_outgoing_transition(root)
                     root.add_incoming_step(last_step)
                 else: 
-                    root: QGStep = converge_branch.get_root()
-                    last_transition: QGTransition = leg.transitions[-1]
+                    root: QStep = converge_branch.get_root()
+                    last_transition: QTransition = leg.transitions[-1]
                     last_transition.add_outgoing_step(root)
                     root.add_incoming_transition(last_transition)
             self.branches.append(converge_branch)
@@ -680,13 +645,13 @@ class QGParser:
         for leg in diverge_branch.legs:
         #adding links between elements of legs
             for i in  range(len(leg.elements)-1):
-                from_elem:QGStep|QGTransition = leg.elements_sorted_by_line_number()[i]
-                to_elem:QGStep|QGTransition = leg.elements_sorted_by_line_number()[i+1]
+                from_elem:QStep|QTransition = leg.elements_sorted_by_line_number()[i]
+                to_elem:QStep|QTransition = leg.elements_sorted_by_line_number()[i+1]
 
-                if isinstance(from_elem,QGStep):
+                if isinstance(from_elem,QStep):
                     from_elem.add_outgoing_transition(to_elem)
                     to_elem.add_incoming_step(from_elem)
-                elif isinstance(from_elem,QGTransition):
+                elif isinstance(from_elem,QTransition):
                     from_elem.add_outgoing_step(to_elem)
                     to_elem.add_incoming_transition(from_elem)
                 else:
@@ -694,13 +659,13 @@ class QGParser:
                 f"Unexpected type in branch leg, should be only steps or transitions")
             #now we link references between legs and root 
             if is_and_branch:    
-                root: QGTransition = diverge_branch.get_root()
-                first_step: QGStep = leg.steps[0]
+                root: QTransition = diverge_branch.get_root()
+                first_step: QStep = leg.steps[0]
                 first_step.add_incoming_transition(root)
                 root.add_outgoing_step(first_step)
             else:
-                root: QGStep = diverge_branch.get_root()
-                first_transition: QGTransition = leg.transitions[0]
+                root: QStep = diverge_branch.get_root()
+                first_transition: QTransition = leg.transitions[0]
                 first_transition.add_incoming_step(root)
                 root.add_outgoing_transition(first_transition)
 
@@ -879,7 +844,7 @@ class QGParser:
         Branch divergence/convergence links are already created during _parse_branch.
         Deduplicates all links at the end.
         """
-        from .qg_sfc import QGDirectedLink
+        from .qg_sfc import QDirectedLink
 
         # Collect branch IDs and leg IDs to detect branch connections
         branch_ids = set(b.id for b in self.branches)
@@ -908,7 +873,7 @@ class QGParser:
                     for i in range(len(leg_elements) - 1):
                         from_elem = leg_elements[i][2]
                         to_elem = leg_elements[i + 1][2]
-                        link = QGDirectedLink(from_id=from_elem.id, to_id=to_elem.id, show=True)
+                        link = QDirectedLink(from_id=from_elem.id, to_id=to_elem.id, show=True)
                         self.directed_links.append(link)
 
         # Generate DirectedLinks for normal sequential flow (outside branches)
@@ -920,7 +885,7 @@ class QGParser:
             if not has_outgoing_branch_link:
                 # Only create links to outgoing transitions if not connected to a branch
                 for trans in step.outgoing_transitions:
-                    link = QGDirectedLink(from_id=step.id, to_id=trans.id, show=True)
+                    link = QDirectedLink(from_id=step.id, to_id=trans.id, show=True)
                     self.directed_links.append(link)
 
         for trans in self.transitions:

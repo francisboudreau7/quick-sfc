@@ -35,18 +35,18 @@ def test_parallel_branch():
 # Print all steps with IDs and coordinates
     print(f"STEPS ({len(sfc.steps)}):")
     print("-"*70)
-    print(f"{'Name':<15} {'ID':<5} {'Operand':<8} {'X':<6} {'Y':<6} {'Incoming Transitions':<20} {'Outgoing Transitions':<6}")
+    print(f"{'Name':<15} {'ID':<5} {'Operand':<8} {'Incoming Transitions':<20} {'Outgoing Transitions':<6}")
     print("-"*70)
     for step in sorted(sfc.steps, key=lambda s: s.id):
-        print(f"@{step.name:<14} {step.id:<5} {step.operand:<8} {step.x:<6} {step.y:<6} {str(list(map(lambda t:t.name,step.incoming_transitions))):<20} {str(list(map(lambda t:t.name,step.outgoing_transitions))):<6}")
+        print(f"@{step.name:<14} {step.id:<5} {step.operand:<8} {str(list(map(lambda t:t.name,step.incoming_transitions))):<20} {str(list(map(lambda t:t.name,step.outgoing_transitions))):<6}")
 
     print(f"\nTRANSITIONS ({len(sfc.transitions)}):")
     print("-"*70)
-    print(f"{'Name':<15} {'ID':<5} {'Operand':<8} {'X':<6} {'Y':<6} {'Target':<15} {'Incoming Steps':<20} {'Outgoing Steps':<6} ")
+    print(f"{'Name':<15} {'ID':<5} {'Operand':<8} {'Target':<15} {'Incoming Steps':<20} {'Outgoing Steps':<6} ")
     print("-"*70)
     for trans in sorted(sfc.transitions, key=lambda t: t.id):
         target = f"@{trans.target_name}" if trans.target_name else ""
-        print(f"@{trans.name:<14} {trans.id:<5} {trans.operand:<8} {trans.x:<6} {trans.y:<6} {target:<15} {str(list(map(lambda s:s.name,trans.incoming_steps))):<20} {str(list(map(lambda s:s.name,trans.outgoing_steps))):<6}")
+        print(f"@{trans.name:<14} {trans.id:<5} {trans.operand:<8} {target:<15} {str(list(map(lambda s:s.name,trans.incoming_steps))):<20} {str(list(map(lambda s:s.name,trans.outgoing_steps))):<6}")
     print("\nBRANCHES:")
     for branch in sfc.branches:
         print(f"  ID={branch.id:<3} {branch.branch_type} {branch.flow_type}")

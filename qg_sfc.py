@@ -34,10 +34,6 @@ class QStep:
         self.line_number = line_number
         self.comments = comments
 
-        # L5X export attributes (set by parser)
-        self.x = None  # X coordinate for visual layout
-        self.y = None  # Y coordinate for visual layout
-
         # Bidirectional relationships (private)
         self._incoming_transitions = []
         self._outgoing_transitions = []
@@ -100,10 +96,6 @@ class QTransition:
         self.line_number = line_number
         self.comment = comment
 
-        # L5X export attributes (set by parser)
-        self.x = None  # X coordinate for visual layout
-        self.y = None  # Y coordinate for visual layout
-
         # Bidirectional relationships (private)
         self._incoming_steps = []
         self._outgoing_steps = []
@@ -156,8 +148,6 @@ class QBranch():
         self.id = None  # Global ID - assigned by parser
         self.branch_type = branch_type  # "DIVERGE" or "CONVERGE"
         self.flow_type = flow_type      # "AND" or "OR"
-        self.x = None  # X coordinate for L5X export
-        self.y = None  # Y coordinate for L5X export
         self.legs :List[QLeg] = []                    # List[QGLeg]
         self.name = None
         self.line_number = line_number  
@@ -219,42 +209,19 @@ class QLeg:
     
 
 
-class QDirectedLink:
-    """Represents a directed connection between SFC elements for L5X export.
-
-    DirectedLinks are auto-generated during parsing to represent all
-    connections in the SFC graph structure.
-
-    Attributes:
-        from_id: ID of source object (Step, Transition, or Branch)
-        to_id: ID of target object
-        show: Visibility flag for L5X export (default True)
-    """
-
-    def __init__(self, from_id: int, to_id: int, show: bool = True):
-        self.from_id = from_id
-        self.to_id = to_id
-        self.show = show
-
-    def __repr__(self):
-        return f"DirectedLink(from={self.from_id}, to={self.to_id}, show={self.show})"
-
-
 class QSFC:
     """Container for a parsed Quick Grafcet SFC.
 
     Provides access to steps, transitions, and their relationships.
     """
 
-    def __init__(self, steps: list, transitions: list, branches: list = None,
-                 directed_links: list = None):
-        """Initialize QGSFC with lists of steps, transitions, branches, and links.
+    def __init__(self, steps: list, transitions: list, branches: list = None):
+        """Initialize QGSFC with lists of steps, transitions, and branches.
 
         Args:
             steps: List of QGStep objects
             transitions: List of QGTransition objects
             branches: Optional list of QGBranch objects
-            directed_links: Optional list of QGDirectedLink objects
         """
         # Triple indexing for flexibility (by name, id, operand)
         self._steps_by_name = {step.name: step for step in steps}
@@ -264,7 +231,6 @@ class QSFC:
         self._transitions_by_id = {trans.id: trans for trans in transitions}
         self._transitions_by_operand = {trans.operand: trans for trans in transitions}
         self.branches = branches or []
-        self.directed_links = directed_links or []
 
     @property
     def steps(self):
@@ -275,11 +241,6 @@ class QSFC:
     def transitions(self):
         """Return list of all Transition objects."""
         return list(self._transitions_by_operand.values())
-
-    @property
-    def links(self):
-        """Return list of all DirectedLink objects."""
-        return list(self.directed_links)
 
     @property
     def initial_step(self):
@@ -357,28 +318,6 @@ class QSFC:
             QGTransition object or None if not found
         """
         return self._transitions_by_operand.get(operand)
-
-    def get_links_from(self, from_id: int):
-        """Get all DirectedLinks originating from given ID.
-
-        Args:
-            from_id: Source object ID
-
-        Returns:
-            List of QGDirectedLink objects
-        """
-        return [link for link in self.directed_links if link.from_id == from_id]
-
-    def get_links_to(self, to_id: int):
-        """Get all DirectedLinks targeting given ID.
-
-        Args:
-            to_id: Target object ID
-
-        Returns:
-            List of QGDirectedLink objects
-        """
-        return [link for link in self.directed_links if link.to_id == to_id]
 
     def get_step_by_line(self, line_number: int):
         """Get step by line number in .qg file.

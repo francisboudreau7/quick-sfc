@@ -45,11 +45,11 @@ def test_selection_branch():
     # Print all transitions with IDs and coordinates
     print(f"\nTRANSITIONS ({len(sfc.transitions)}):")
     print("-"*70)
-    print(f"{'Name':<15} {'ID':<5} {'Operand':<8}  {'Target':<15} {'Incoming Steps':<20} {'Outgoing Steps':<30}{'Comments':<20} ")
+    print(f"{'Name':<15} {'ID':<5} {'Operand':<8} {'Target':<15} {'Incoming Steps':<20} {'Outgoing Steps':<30}{'Comments':<20} ")
     print("-"*70)
     for trans in sorted(sfc.transitions, key=lambda t: t.id):
         target = f"@{trans.target_name}" if trans.target_name else ""
-        print(f"@{trans.name:<14} {trans.id:<5} {trans.operand:<8} {trans.x:<6} {trans.y:<6} {target:<15} {str(list(map(lambda s:s.name,trans.incoming_steps))):<20} {str(list(map(lambda s:s.name,trans.outgoing_steps))):<{30}}{str(trans.comment):<30}")
+        print(f"@{trans.name:<14} {trans.id:<5} {trans.operand:<8} {target:<15} {str(list(map(lambda s:s.name,trans.incoming_steps))):<20} {str(list(map(lambda s:s.name,trans.outgoing_steps))):<{30}}{str(trans.comment):<30}")
 
     # Print all branches with IDs and L5X properties
     print(f"\nBRANCHES ({len(sfc.branches)}):")

@@ -7,7 +7,7 @@ This module provides syntactic and semantic analysis for Quick Grafcet
 
 from typing import List
 from .qg_tokenizer import QGTokenizer, TokenType
-from .qg_sfc import QSFC, QDirectedLink, QStep, QTransition, QBranch, QLeg
+from .qg_sfc import QSFC, QStep, QTransition, QBranch, QLeg
 from .qg_errors import ErrorCollector, ParseError, TokenizeError, ValidationError
 
 
@@ -39,13 +39,8 @@ class QGParser:
         self.current_step = None  # Track current step for transition linking
         self.file_comments = {} #key is line number
 
-        # L5X export state
+        # ID counter state
         self.global_id_counter = 0  # Global ID counter for all objects
-        self.directed_links = []  # List[QGDirectedLink]
-        self.current_x = 100  # Current X coordinate (starting position)
-        self.current_y = 20   # Current Y coordinate (starting position)
-        self.y_increment = 20  # Y increment per element
-        self.x_spacing = 150   # Horizontal spacing for branch legs
         self.last_parsed_element = None  # Last Step or Transition (for branch linking)
         self.inside_branch = False  # Flag to track if we're inside a branch
         self.after_convergence = False  # Flag to skip from_step linking after convergence
@@ -78,11 +73,6 @@ class QGParser:
         if not self.errors.has_errors():
             self._link_comments()
 
-        #  DirectedLink generation
-        if not self.errors.has_errors():
-            pass
-        #   self._generate_directed_links()
-
         #  Validation
         if not self.errors.has_errors():
             pass
@@ -91,7 +81,7 @@ class QGParser:
         # Raise if any errors collected
         self.errors.raise_if_errors()
 
-        return QSFC(self.steps, self.transitions, self.branches, self.directed_links)
+        return QSFC(self.steps, self.transitions, self.branches)
 
     def _next_id(self):
         """Allocate next global ID from counter.
@@ -254,11 +244,6 @@ class QGParser:
         step.id = self._next_id()  # Global ID
         step.operand = len(self.steps)  # Sequential step counter: 0, 1, 2...
 
-        # Assign coordinates
-        step.x = self.current_x
-        step.y = self.current_y
-        self.current_y += self.y_increment
-
         #link step to preceding transition
         if self.last_parsed_element is not None and not self.inside_branch and not self.after_convergence:
             preceding_transition = self.last_parsed_element
@@ -356,11 +341,6 @@ class QGParser:
         # Assign IDs
         transition.id = self._next_id()  # Global ID
         transition.operand = len(self.transitions)  # Sequential transition counter: 0, 1, 2...
-
-        # Assign coordinates
-        transition.x = self.current_x
-        transition.y = self.current_y
-        self.current_y += self.y_increment
 
         self.transitions.append(transition)
         self.name_to_transition[name] = transition
@@ -548,11 +528,8 @@ class QGParser:
             # Create convergence branch
             converge_branch = QBranch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
 
-            # Assign ID and coordinates to convergence branch
+            # Assign ID to convergence branch
             converge_branch.id = self._next_id()
-            converge_branch.x = self.current_x
-            converge_branch.y = self.current_y
-            self.current_y += self.y_increment
 
             #The legs of the converge branch are the legs of the diverge branch if parallel branch (no jump allowed)
             if is_and_branch: 
@@ -835,78 +812,6 @@ class QGParser:
                 min_line = step.line_number
 
         return next_step
-
-    def _generate_directed_links(self):
-        """Generate DirectedLink objects for all connections in the SFC.
-
-        Creates links for normal sequential flow (Step→Transition, Transition→Step).
-        Also creates links for elements within branch legs.
-        Branch divergence/convergence links are already created during _parse_branch.
-        Deduplicates all links at the end.
-        """
-        from .qg_sfc import QDirectedLink
-
-        # Collect branch IDs and leg IDs to detect branch connections
-        branch_ids = set(b.id for b in self.branches)
-        leg_ids = set()
-        for branch in self.branches:
-            if branch.branch_type == "DIVERGE":
-                for leg in branch.legs:
-                    leg_ids.add(leg.id)
-
-        # Generate DirectedLinks for elements within branch legs
-        for branch in self.branches:
-            if branch.branch_type == "DIVERGE":
-                for leg in branch.legs:
-                    # Create links for sequential flow within each leg
-                    leg_elements = []
-                    # Collect all elements in leg with their line numbers
-                    for step in leg.steps:
-                        leg_elements.append((step.line_number, 'step', step))
-                    for trans in leg.transitions:
-                        leg_elements.append((trans.line_number, 'trans', trans))
-
-                    # Sort by line number to get sequential order
-                    leg_elements.sort(key=lambda x: x[0])
-
-                    # Create links between consecutive elements
-                    for i in range(len(leg_elements) - 1):
-                        from_elem = leg_elements[i][2]
-                        to_elem = leg_elements[i + 1][2]
-                        link = QDirectedLink(from_id=from_elem.id, to_id=to_elem.id, show=True)
-                        self.directed_links.append(link)
-
-        # Generate DirectedLinks for normal sequential flow (outside branches)
-        for step in self.steps:
-            # Check if this step is already connected to a branch or leg (as source)
-            has_outgoing_branch_link = any(link.from_id == step.id and (link.to_id in branch_ids or link.to_id in leg_ids)
-                                           for link in self.directed_links)
-
-            if not has_outgoing_branch_link:
-                # Only create links to outgoing transitions if not connected to a branch
-                for trans in step.outgoing_transitions:
-                    link = QDirectedLink(from_id=step.id, to_id=trans.id, show=True)
-                    self.directed_links.append(link)
-
-        for trans in self.transitions:
-            # Check if this transition is already connected to a branch or leg
-            has_branch_link = any(link.from_id == trans.id and (link.to_id in branch_ids or link.to_id in leg_ids)
-                                 for link in self.directed_links)
-
-            # if not has_branch_link and trans.to_step:
-            #     # Only create link to to_step if not connected to a branch
-            #     link = QGDirectedLink(from_id=trans.id, to_id=trans.to_step.id, show=True)
-            #     self.directed_links.append(link)
-
-        # Deduplicate links (same from_id and to_id)
-        seen = set()
-        unique_links = []
-        for link in self.directed_links:
-            key = (link.from_id, link.to_id)
-            if key not in seen:
-                seen.add(key)
-                unique_links.append(link)
-        self.directed_links = unique_links
 
     def _validate(self):
         """Validate the parsed SFC."""

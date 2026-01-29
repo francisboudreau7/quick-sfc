@@ -265,7 +265,7 @@ Visual representation:
 
 - Every step and transition needs a unique `@name`
 - Names can use letters, numbers, underscores but need to start with a letter
-- You must have exactly one `SI` initial step
+- You must have exactly one `SI` initial step, which need to be the first line
 - File must end with `END`
 - Actions and conditions use Structured Text syntax
 

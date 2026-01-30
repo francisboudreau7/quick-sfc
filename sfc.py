@@ -1,12 +1,12 @@
-"""Quick Grafcet SFC object model.
+"""QuickSFC SFC object model.
 
 This module provides classes for representing Sequential Function Charts
-parsed from Quick Grafcet (.qg) files.
+parsed from QuickSFC (.qsfc) files.
 """
 from typing import List
 
 
-class QStep:
+class Step:
     """Represents a step in Quick SFC.
 
     A step has a name, an action (structured text), optional timer preset,
@@ -15,12 +15,12 @@ class QStep:
 
     Attributes:
         name: Identifier name (e.g., "init", "running") - mandatory
-        id: Line number from .qg file (1-indexed)
+        id: Line number from .qsfc file (1-indexed)
         operand: Sequential numbering (0, 1, 2, ...)
         action: Structured text action string (e.g., "T:=2;")
         preset: Timer preset in milliseconds (default 0)
         is_initial: True if this is the initial step (SI), False for regular steps (S)
-        line_number: 1-indexed line number from .qg file (same as id)
+        line_number: 1-indexed line number from .qsfc file (same as id)
     """
 
     def __init__(self, name: str, action: str, preset: int = 0,
@@ -52,7 +52,7 @@ class QStep:
         """Add an incoming transition (called by parser).
 
         Args:
-            transition: QGTransition object to add
+            transition: Transition object to add
         """
         if transition not in self._incoming_transitions:
             self._incoming_transitions.append(transition)
@@ -61,7 +61,7 @@ class QStep:
         """Add an outgoing transition (called by parser).
 
         Args:
-            transition: QGTransition object to add
+            transition: Transition object to add
         """
         if transition not in self._outgoing_transitions:
             self._outgoing_transitions.append(transition)
@@ -71,7 +71,7 @@ class QStep:
         return f"{initial}@{self.name}(operand={self.operand}, id={self.id}, action={self.action!r}, preset={self.preset}ms)"
 
 
-class QTransition:
+class Transition:
     """Represents a transition in Quick SFC.
 
     A transition has a name, a condition (boolean expression), and connects
@@ -79,11 +79,11 @@ class QTransition:
 
     Attributes:
         name: Identifier name (e.g., "start", "timeout") - mandatory
-        id: Line number from .qg file (1-indexed)
+        id: Line number from .qsfc file (1-indexed)
         operand: Sequential numbering (0, 1, 2, ...)
         condition: Boolean expression string (e.g., "a", "b", "Step_001.DN")
         target_name: Optional explicit target step name (for >> jumps)
-        line_number: 1-indexed line number from .qg file (same as id)
+        line_number: 1-indexed line number from .qsfc file (same as id)
     """
 
     def __init__(self, name: str, condition: str, target_name: str = None,
@@ -114,7 +114,7 @@ class QTransition:
         """add step to incoming steps
 
         Args:
-            step: QGStep object
+            step: Step object
         """
         self._incoming_steps.append(step)
 
@@ -122,7 +122,7 @@ class QTransition:
         """add step to outgoing steps
 
         Args:
-            step: QGStep object
+            step: Step object
         """
         self._outgoing_steps.append(step)
 
@@ -131,7 +131,7 @@ class QTransition:
         return f"T@{self.name}(operand={self.operand}, id={self.id}, condition={self.condition!r}, {target})"
 
 
-class QBranch():
+class Branch():
     """Represents a branch (divergence or convergence) in Quick SFC.
 
     Attributes:
@@ -140,7 +140,7 @@ class QBranch():
         flow_type: "AND" or "OR"
         x: X coordinate for visual layout
         y: Y coordinate for visual layout
-        legs: List of QGLeg objects (for divergence branches)
+        legs: List of Leg objects (for divergence branches)
         line_number: Line number where branch starts
     """
 
@@ -148,7 +148,7 @@ class QBranch():
         self.id = None  # Global ID - assigned by parser
         self.branch_type = branch_type  # "DIVERGE" or "CONVERGE"
         self.flow_type = flow_type      # "AND" or "OR"
-        self.legs :List[QLeg] = []                    # List[QGLeg]
+        self.legs :List[Leg] = []                    # List[Leg]
         self.name = None
         self.line_number = line_number  
         self.root = None
@@ -167,7 +167,7 @@ class QBranch():
         return branch_elements
 
         
-    def get_root(self) -> QStep | QTransition:
+    def get_root(self) -> Step | Transition:
         return self.root
 
     def __repr__(self):
@@ -175,13 +175,13 @@ class QBranch():
         return f"Branch(id={self.id}, {self.branch_type}, {flow_sym}, {len(self.legs)} legs)"
 
 
-class QLeg:
+class Leg:
     """Represents a single leg (path) in a parallel or selection branch.
 
     Attributes:
         id: Global sequential ID (set by parser)
-        steps: List of QGStep objects in this leg
-        transitions: List of QGTransition objects in this leg
+        steps: List of Step objects in this leg
+        transitions: List of Transition objects in this leg
     """
 
     def __init__(self):
@@ -189,7 +189,7 @@ class QLeg:
         self.transitions = []
 
     @property
-    def elements(self) -> List[QStep|QBranch]:
+    def elements(self) -> List[Step|Branch]:
         return self.steps + self.transitions
 
     def elements_sorted_by_line_number(self):
@@ -209,19 +209,19 @@ class QLeg:
     
 
 
-class QSFC:
-    """Container for a parsed Quick Grafcet SFC.
+class SFC:
+    """Container for a parsed QuickSFC SFC.
 
     Provides access to steps, transitions, and their relationships.
     """
 
     def __init__(self, steps: list, transitions: list, branches: list = None):
-        """Initialize QGSFC with lists of steps, transitions, and branches.
+        """Initialize SFC with lists of steps, transitions, and branches.
 
         Args:
-            steps: List of QGStep objects
-            transitions: List of QGTransition objects
-            branches: Optional list of QGBranch objects
+            steps: List of Step objects
+            transitions: List of Transition objects
+            branches: Optional list of Branch objects
         """
         # Triple indexing for flexibility (by name, id, operand)
         self._steps_by_name = {step.name: step for step in steps}
@@ -250,7 +250,7 @@ class QSFC:
                 return step
         return None
     
-    def get_node_by_id(self,id:int) -> QStep | QTransition:
+    def get_node_by_id(self,id:int) -> Step | Transition:
         return self._transitions_by_id | self._steps_by_id
 
     def get_step_by_name(self, name: str):
@@ -260,7 +260,7 @@ class QSFC:
             name: Step name (without @ prefix)
 
         Returns:
-            QGStep object or None if not found
+            Step object or None if not found
         """
         return self._steps_by_name.get(name)
 
@@ -271,7 +271,7 @@ class QSFC:
             id_: Step line number ID (1-indexed)
 
         Returns:
-            QGStep object or None if not found
+            Step object or None if not found
         """
         return self._steps_by_id.get(id_)
 
@@ -282,7 +282,7 @@ class QSFC:
             operand: Sequential operand (0, 1, 2, ...)
 
         Returns:
-            QGStep object or None if not found
+            Step object or None if not found
         """
         return self._steps_by_operand.get(operand)
 
@@ -293,7 +293,7 @@ class QSFC:
             name: Transition name (without @ prefix)
 
         Returns:
-            QGTransition object or None if not found
+            Transition object or None if not found
         """
         return self._transitions_by_name.get(name)
 
@@ -304,7 +304,7 @@ class QSFC:
             id_: Transition line number ID (1-indexed)
 
         Returns:
-            QGTransition object or None if not found
+            Transition object or None if not found
         """
         return self._transitions_by_id.get(id_)
 
@@ -315,12 +315,12 @@ class QSFC:
             operand: Sequential operand (0, 1, 2, ...)
 
         Returns:
-            QGTransition object or None if not found
+            Transition object or None if not found
         """
         return self._transitions_by_operand.get(operand)
 
     def get_step_by_line(self, line_number: int):
-        """Get step by line number in .qg file.
+        """Get step by line number in .qsfc file.
 
         This is an alias for get_step() for backwards compatibility.
 
@@ -328,14 +328,14 @@ class QSFC:
             line_number: 1-indexed line number
 
         Returns:
-            QGStep object or None if not found
+            Step object or None if not found
         """
         return self.get_step(line_number)
 
     def print_summary(self):
         """Print a human-readable summary of the SFC."""
         print("\n" + "=" * 70)
-        print("Quick Grafcet SFC Summary")
+        print("QuickSFC SFC Summary")
         print("=" * 70 + "\n")
 
         print(f"STEPS: {len(self.steps)}")

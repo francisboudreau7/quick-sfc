@@ -1,11 +1,11 @@
-"""Tokenizer for Quick Grafcet language.
+"""Tokenizer for QuickSFC language.
 
-This module provides lexical analysis for Quick Grafcet (.qg) files,
+This module provides lexical analysis for QuickSFC (.qsfc) files,
 converting text into a stream of tokens for the parser.
 """
 
 from enum import Enum, auto
-from .qg_errors import TokenizeError
+from .errors import TokenizeError
 
 
 class TokenType(Enum):
@@ -44,7 +44,7 @@ class TokenType(Enum):
 
 
 class Token:
-    """Represents a single token in the Quick Grafcet language.
+    """Represents a single token in the QuickSFC language.
 
     Attributes:
         type: TokenType enum value
@@ -61,10 +61,10 @@ class Token:
         return f"Token({self.type.name}, {self.value!r}, line={self.line_number})"
 
 
-class QGTokenizer:
-    """Tokenizer for Quick Grafcet language.
+class Tokenizer:
+    """Tokenizer for QuickSFC language.
 
-    Converts .qg file content into a stream of tokens using a
+    Converts .qsfc file content into a stream of tokens using a
     context-sensitive state machine approach.
     """
 
@@ -72,7 +72,7 @@ class QGTokenizer:
         """Initialize tokenizer with file content.
 
         Args:
-            content: Full text content of .qg file
+            content: Full text content of .qsfc file
         """
         self.content = content
         self.pos = 0

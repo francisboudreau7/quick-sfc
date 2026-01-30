@@ -1,13 +1,13 @@
-"""Quick Grafcet parser for Sequential Function Charts.
+"""QuickSFC parser for Sequential Function Charts.
 
-This module provides a parser for Quick Grafcet (.qg) files, a simplified
-language for describing Sequential Function Charts (Grafcets).
+This module provides a parser for QuickSFC (.qsfc) files, a simplified
+language for describing Sequential Function Charts (SFCs).
 
 Example usage:
-    from l5x.FastSFC import parse_qg_file
+    from QuickSFC import parse_file
 
-    # Parse a .qg file
-    sfc = parse_qg_file("path/to/file.qg")
+    # Parse a .qsfc file
+    sfc = parse_file("path/to/file.qsfc")
 
     # Access the parsed SFC
     print(f"Steps: {len(sfc.steps)}")
@@ -22,19 +22,19 @@ Example usage:
         print(f"Transition {trans.condition} → Step {trans.to_step.id}")
 """
 
-from .qg_sfc import QSFC, QStep, QTransition, QBranch, QLeg
-from .qg_parser import QGParser
-from .qg_errors import QGError, ParseError, TokenizeError, ValidationError
+from .sfc import SFC, Step, Transition, Branch, Leg
+from .parser import Parser
+from .errors import SFCError, ParseError, TokenizeError, ValidationError
 
 
-def parse_qg_file(file_path: str):
-    """Parse a Quick Grafcet .qg file and return QGSFC object.
+def parse_file(file_path: str):
+    """Parse a QuickSFC .qsfc file and return SFC object.
 
     Args:
-        file_path: Path to .qg file
+        file_path: Path to .qsfc file
 
     Returns:
-        QGSFC object containing parsed steps and transitions
+        SFC object containing parsed steps and transitions
 
     Raises:
         ParseError: If file contains syntax or semantic errors
@@ -44,37 +44,37 @@ def parse_qg_file(file_path: str):
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    parser = QGParser(content)
+    parser = Parser(content)
     return parser.parse()
 
 
-def parse_qg_string(content: str):
-    """Parse Quick Grafcet content from a string.
+def parse_string(content: str):
+    """Parse QuickSFC content from a string.
 
     Args:
-        content: Quick Grafcet file content as string
+        content: QuickSFC file content as string
 
     Returns:
-        QGSFC object containing parsed steps and transitions
+        SFC object containing parsed steps and transitions
 
     Raises:
         ParseError: If content contains syntax or semantic errors
     """
-    parser = QGParser(content)
+    parser = Parser(content)
     return parser.parse()
 
 
 __all__ = [
-    'QSFC',
-    'QStep',
-    'QTransition',
-    'QBranch',
-    'QLeg',
-    'QGParser',
-    'QGError',
+    'SFC',
+    'Step',
+    'Transition',
+    'Branch',
+    'Leg',
+    'Parser',
+    'SFCError',
     'ParseError',
     'TokenizeError',
     'ValidationError',
-    'parse_qg_file',
-    'parse_qg_string',
+    'parse_file',
+    'parse_string',
 ]

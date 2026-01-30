@@ -10,8 +10,8 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_parser import QGParser
-from QuickSFC.qg_errors import ParseError
+from QuickSFC.parser import Parser
+from QuickSFC.errors import ParseError
 
 
 class TestParserBasics:
@@ -21,7 +21,7 @@ class TestParserBasics:
         """Test parsing minimal valid SFC."""
         content = """SI@init()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         assert len(sfc.steps) == 1
@@ -35,7 +35,7 @@ END"""
 T@start(button_pressed)
 S@running(x:=x+1, 100)
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         assert len(sfc.steps) == 2
@@ -62,7 +62,7 @@ T@start()
 S@step1()
 T@loop() >> @init
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         loop = sfc.get_transition_by_name("loop")
@@ -86,7 +86,7 @@ S@choice()
     T@opt2() -> S@step2()
 \\/ S@merge()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         assert len(sfc.branches) == 2  # diverge + converge
@@ -107,7 +107,7 @@ T@split()
     S@leg2()
 \\\\// T@join()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         assert len(sfc.branches) == 2
@@ -127,7 +127,7 @@ S@choice()
     |
     T@opt2() >> @init
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         # Should parse without errors
@@ -145,7 +145,7 @@ T@trans1()
 S@step1()
 T@trans2()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         # IDs should be sequential starting from 0
@@ -169,7 +169,7 @@ class TestParserErrors:
 S@step1()
 S@step1()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
 
         with pytest.raises(ParseError) as exc_info:
             parser.parse()
@@ -180,7 +180,7 @@ END"""
         """Test that missing SI raises error."""
         content = """S@step1()
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
 
         with pytest.raises(ParseError) as exc_info:
             parser.parse()
@@ -190,7 +190,7 @@ END"""
     def test_parse_error_missing_end(self):
         """Test that missing END raises error."""
         content = """SI@init()"""
-        parser = QGParser(content)
+        parser = Parser(content)
 
         with pytest.raises(ParseError) as exc_info:
             parser.parse()
@@ -202,7 +202,7 @@ END"""
         content = """SI@init()
 T@trans() >> @nonexistent
 END"""
-        parser = QGParser(content)
+        parser = Parser(content)
 
         with pytest.raises(ParseError) as exc_info:
             parser.parse()
@@ -219,7 +219,7 @@ class TestParserIntegration:
         with open(test_file, 'r') as f:
             content = f.read()
 
-        parser = QGParser(content)
+        parser = Parser(content)
         sfc = parser.parse()
 
         # Basic sanity checks

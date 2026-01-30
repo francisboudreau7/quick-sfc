@@ -10,7 +10,7 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_sfc import QStep, QTransition, QSFC, QBranch, QLeg
+from QuickSFC.sfc import Step, Transition, SFC, Branch, Leg
 
 
 class TestDataModelBasics:
@@ -18,7 +18,7 @@ class TestDataModelBasics:
 
     def test_step_creation(self):
         """Test QGStep creation and attributes."""
-        step = QStep("init", "x:=0", preset=100, is_initial=True, line_number=1)
+        step = Step("init", "x:=0", preset=100, is_initial=True, line_number=1)
 
         assert step.name == "init"
         assert step.action == "x:=0"
@@ -30,7 +30,7 @@ class TestDataModelBasics:
 
     def test_transition_creation(self):
         """Test QGTransition creation and attributes."""
-        trans = QTransition("start", "button_pressed", target_name="running", line_number=2)
+        trans = Transition("start", "button_pressed", target_name="running", line_number=2)
 
         assert trans.name == "start"
         assert trans.condition == "button_pressed"
@@ -43,9 +43,9 @@ class TestDataModelRelationships:
 
     def test_step_transition_bidirectional_relationship(self):
         """Test bidirectional linking between steps and transitions."""
-        step1 = QStep("step1", "action1")
-        trans = QTransition("trans", "condition")
-        step2 = QStep("step2", "action2")
+        step1 = Step("step1", "action1")
+        trans = Transition("trans", "condition")
+        step2 = Step("step2", "action2")
 
         # Link: step1 -> trans -> step2
         step1.add_outgoing_transition(trans)
@@ -60,20 +60,20 @@ class TestDataModelRelationships:
         assert trans in step2.incoming_transitions
 
     def test_qgsfc_query_methods(self):
-        """Test QGSFC query methods (by name, id, operand)."""
-        step1 = QStep("init", "x:=0", is_initial=True)
+        """Test SFC query methods (by name, id, operand)."""
+        step1 = Step("init", "x:=0", is_initial=True)
         step1.id = 0
         step1.operand = 0
 
-        step2 = QStep("running", "x:=x+1")
+        step2 = Step("running", "x:=x+1")
         step2.id = 2
         step2.operand = 1
 
-        trans = QTransition("start", "button")
+        trans = Transition("start", "button")
         trans.id = 1
         trans.operand = 0
 
-        sfc = QSFC([step1, step2], [trans])
+        sfc = SFC([step1, step2], [trans])
 
         # Test query by name
         assert sfc.get_step_by_name("init") == step1
@@ -91,29 +91,29 @@ class TestDataModelRelationships:
         assert sfc.get_transition_by_operand(0) == trans
 
     def test_qgsfc_initial_step_property(self):
-        """Test QGSFC can identify initial step."""
-        step1 = QStep("init", "x:=0", is_initial=True)
+        """Test SFC can identify initial step."""
+        step1 = Step("init", "x:=0", is_initial=True)
         step1.operand = 0
-        step2 = QStep("running", "x:=x+1")
+        step2 = Step("running", "x:=x+1")
         step2.operand = 1
 
-        sfc = QSFC([step1, step2], [])
+        sfc = SFC([step1, step2], [])
 
         assert sfc.initial_step == step1
 
     def test_branch_and_leg_structure(self):
         """Test QGBranch and QGLeg structure."""
-        branch = QBranch("DIVERGE", "OR", line_number=5)
+        branch = Branch("DIVERGE", "OR", line_number=5)
         branch.id = 10
 
-        leg1 = QLeg()
+        leg1 = Leg()
         leg1.id = 11
-        step1 = QStep("leg1_step", "a")
+        step1 = Step("leg1_step", "a")
         leg1.add_step(step1)
 
-        leg2 = QLeg()
+        leg2 = Leg()
         leg2.id = 12
-        step2 = QStep("leg2_step", "b")
+        step2 = Step("leg2_step", "b")
         leg2.add_step(step2)
 
         branch.add_leg(leg1)

@@ -9,7 +9,7 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_parser import QGParser
+from QuickSFC.parser import Parser
 
 
 def test_parse_simple_selection():
@@ -18,7 +18,7 @@ def test_parse_simple_selection():
     with open(test_file, 'r') as f:
         content = f.read()
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     # Verify structure counts

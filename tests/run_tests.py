@@ -10,11 +10,11 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_tokenizer import QGTokenizer, TokenType, Token
-from QuickSFC.qg_tokenizer import QGTokenizer, TokenType
-from QuickSFC.qg_sfc import QStep, QTransition, QSFC, QBranch, QLeg
-from QuickSFC.qg_parser import QGParser
-from QuickSFC.qg_errors import TokenizeError, ParseError
+from QuickSFC.tokenizer import Tokenizer, TokenType, Token
+from QuickSFC.tokenizer import Tokenizer, TokenType
+from QuickSFC.sfc import Step, Transition, SFC, Branch, Leg
+from QuickSFC.parser import Parser
+from QuickSFC.errors import TokenizeError, ParseError
 
 
 def run_test(test_name, test_func):
@@ -51,7 +51,7 @@ def assert_in(substring, string):
 
 def test_tokenize_simple_step():
     """Test tokenizing a basic step."""
-    tokenizer = QGTokenizer("S@step1(action)")
+    tokenizer = Tokenizer("S@step1(action)")
     tokens = tokenizer.tokenize()
 
     assert tokens[0].type == TokenType.S
@@ -78,19 +78,19 @@ def test_tokenize_multi_char_operators():
     ]
 
     for text, expected_type in test_cases:
-        tokenizer = QGTokenizer(text)
+        tokenizer = Tokenizer(text)
         tokens = tokenizer.tokenize()
         assert tokens[0].type == expected_type, f"Failed for {text}"
 
 
 def test_tokenize_keywords_si_vs_s():
     """Test that SI is recognized before S."""
-    tokenizer = QGTokenizer("SI@init()")
+    tokenizer = Tokenizer("SI@init()")
     tokens = tokenizer.tokenize()
     assert tokens[0].type == TokenType.SI
     assert tokens[0].value == "SI"
 
-    tokenizer = QGTokenizer("S@step()")
+    tokenizer = Tokenizer("S@step()")
     tokens = tokenizer.tokenize()
     assert tokens[0].type == TokenType.S
 
@@ -100,7 +100,7 @@ def test_tokenize_with_comments():
     content = """# This is a comment
 S@step1(action)  # inline comment
 """
-    tokenizer = QGTokenizer(content)
+    tokenizer = Tokenizer(content)
     tokens = tokenizer.tokenize()
 
     token_types = [t.type for t in tokens]
@@ -110,7 +110,7 @@ S@step1(action)  # inline comment
 
 def test_tokenize_nested_parentheses_in_action():
     """Test actions can contain nested parentheses."""
-    tokenizer = QGTokenizer("S@step(func(a, b))")
+    tokenizer = Tokenizer("S@step(func(a, b))")
     tokens = tokenizer.tokenize()
 
     action_token = [t for t in tokens if t.type == TokenType.ACTION][0]
@@ -119,11 +119,11 @@ def test_tokenize_nested_parentheses_in_action():
 
 def test_tokenize_action_vs_condition():
     """Test that S produces ACTION and T produces CONDITION."""
-    tokenizer = QGTokenizer("S@step(x:=1)")
+    tokenizer = Tokenizer("S@step(x:=1)")
     tokens = tokenizer.tokenize()
     assert any(t.type == TokenType.ACTION for t in tokens)
 
-    tokenizer = QGTokenizer("T@trans(x>5)")
+    tokenizer = Tokenizer("T@trans(x>5)")
     tokens = tokenizer.tokenize()
     assert any(t.type == TokenType.CONDITION for t in tokens)
 
@@ -133,7 +133,7 @@ def test_tokenize_line_numbers():
     content = """S@step1(a)
 T@trans(b)
 S@step2(c)"""
-    tokenizer = QGTokenizer(content)
+    tokenizer = Tokenizer(content)
     tokens = tokenizer.tokenize()
 
     line1_tokens = [t for t in tokens if t.line_number == 1]
@@ -148,7 +148,7 @@ S@step2(c)"""
 def test_tokenize_invalid_character_raises_error():
     """Test that invalid characters raise TokenizeError."""
     # Use & outside of action context - should be invalid
-    tokenizer = QGTokenizer("S@step() &")
+    tokenizer = Tokenizer("S@step() &")
 
     def test_func():
         tokenizer.tokenize()
@@ -166,7 +166,7 @@ def test_tokenize_invalid_character_raises_error():
 
 def test_step_creation():
     """Test QGStep creation and attributes."""
-    step = QStep("init", "x:=0", preset=100, is_initial=True, line_number=1)
+    step = Step("init", "x:=0", preset=100, is_initial=True, line_number=1)
 
     assert step.name == "init"
     assert step.action == "x:=0"
@@ -179,7 +179,7 @@ def test_step_creation():
 
 def test_transition_creation():
     """Test QGTransition creation and attributes."""
-    trans = QTransition("start", "button_pressed", target_name="running", line_number=2)
+    trans = Transition("start", "button_pressed", target_name="running", line_number=2)
 
     assert trans.name == "start"
     assert trans.condition == "button_pressed"
@@ -189,9 +189,9 @@ def test_transition_creation():
 
 def test_step_transition_bidirectional_relationship():
     """Test bidirectional linking between steps and transitions."""
-    step1 = QStep("step1", "action1")
-    trans = QTransition("trans", "condition")
-    step2 = QStep("step2", "action2")
+    step1 = Step("step1", "action1")
+    trans = Transition("trans", "condition")
+    step2 = Step("step2", "action2")
 
     step1.add_outgoing_transition(trans)
     trans.add_incoming_step(step1)
@@ -205,20 +205,20 @@ def test_step_transition_bidirectional_relationship():
 
 
 def test_qgsfc_query_methods():
-    """Test QGSFC query methods (by name, id, operand)."""
-    step1 = QStep("init", "x:=0", is_initial=True)
+    """Test SFC query methods (by name, id, operand)."""
+    step1 = Step("init", "x:=0", is_initial=True)
     step1.id = 0
     step1.operand = 0
 
-    step2 = QStep("running", "x:=x+1")
+    step2 = Step("running", "x:=x+1")
     step2.id = 2
     step2.operand = 1
 
-    trans = QTransition("start", "button")
+    trans = Transition("start", "button")
     trans.id = 1
     trans.operand = 0
 
-    sfc = QSFC([step1, step2], [trans])
+    sfc = SFC([step1, step2], [trans])
 
     assert sfc.get_step_by_name("init") == step1
     assert sfc.get_step_by_name("running") == step2
@@ -234,30 +234,30 @@ def test_qgsfc_query_methods():
 
 
 def test_qgsfc_initial_step_property():
-    """Test QGSFC can identify initial step."""
-    step1 = QStep("init", "x:=0", is_initial=True)
+    """Test SFC can identify initial step."""
+    step1 = Step("init", "x:=0", is_initial=True)
     step1.operand = 0
-    step2 = QStep("running", "x:=x+1")
+    step2 = Step("running", "x:=x+1")
     step2.operand = 1
 
-    sfc = QSFC([step1, step2], [])
+    sfc = SFC([step1, step2], [])
 
     assert sfc.initial_step == step1
 
 
 def test_branch_and_leg_structure():
     """Test QGBranch and QGLeg structure."""
-    branch = QBranch("DIVERGE", "OR", line_number=5)
+    branch = Branch("DIVERGE", "OR", line_number=5)
     branch.id = 10
 
-    leg1 = QLeg()
+    leg1 = Leg()
     leg1.id = 11
-    step1 = QStep("leg1_step", "a")
+    step1 = Step("leg1_step", "a")
     leg1.add_step(step1)
 
-    leg2 = QLeg()
+    leg2 = Leg()
     leg2.id = 12
-    step2 = QStep("leg2_step", "b")
+    step2 = Step("leg2_step", "b")
     leg2.add_step(step2)
 
     branch.add_leg(leg1)
@@ -277,7 +277,7 @@ def test_parse_minimal_sfc():
     """Test parsing minimal valid SFC."""
     content = """SI@init()
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     assert len(sfc.steps) == 1
@@ -292,7 +292,7 @@ def test_parse_simple_sequence():
 T@start(button_pressed)
 S@running(x:=x+1, 100)
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     assert len(sfc.steps) == 2
@@ -318,7 +318,7 @@ T@start()
 S@step1()
 T@loop() >> @init
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     loop = sfc.get_transition_by_name("loop")
@@ -340,7 +340,7 @@ S@step3()
     |
     T@condition2() -> @step3
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     # Successfully parsed
@@ -359,7 +359,7 @@ T@split()
 \\\\//
 T@join() -> @init
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     # AND branches create DIVERGE and CONVERGE branches
@@ -380,7 +380,7 @@ S@choice()
     |
     T@opt2() -> @init
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     assert len(sfc.branches) >= 1
@@ -395,7 +395,7 @@ T@trans1()
 S@step1()
 T@trans2() >> @init
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     all_elements = sfc.steps + sfc.transitions
@@ -416,7 +416,7 @@ S@step1()
 T@trans2()
 S@step1()
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
 
     try:
         parser.parse()
@@ -429,7 +429,7 @@ def test_parse_error_missing_si():
     """Test that missing SI raises error."""
     content = """S@step1()
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
 
     try:
         parser.parse()
@@ -441,7 +441,7 @@ END"""
 def test_parse_error_missing_end():
     """Test that missing END raises error."""
     content = """SI@init()"""
-    parser = QGParser(content)
+    parser = Parser(content)
 
     try:
         parser.parse()
@@ -455,7 +455,7 @@ def test_parse_error_invalid_jump_target():
     content = """SI@init()
 T@trans() >> @nonexistent
 END"""
-    parser = QGParser(content)
+    parser = Parser(content)
 
     try:
         parser.parse()
@@ -470,7 +470,7 @@ def test_parse_with_existing_qsfc_file():
     with open(test_file, 'r') as f:
         content = f.read()
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     assert len(sfc.steps) > 0
@@ -489,7 +489,7 @@ def test_integration_simple_parallel():
     with open(test_file, 'r') as f:
         content = f.read()
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     # Verify structure counts
@@ -530,7 +530,7 @@ def test_integration_simple_selection():
     with open(test_file, 'r') as f:
         content = f.read()
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     # Verify structure counts

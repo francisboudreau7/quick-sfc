@@ -1,18 +1,18 @@
 
-"""Parser for Quick Grafcet language.
+"""Parser for QuickSFC language.
 
-This module provides syntactic and semantic analysis for Quick Grafcet
-(.qg) files, building SFC objects from token streams.
+This module provides syntactic and semantic analysis for QuickSFC
+(.qsfc) files, building SFC objects from token streams.
 """
 
 from typing import List
-from .qg_tokenizer import QGTokenizer, TokenType
-from .qg_sfc import QSFC, QStep, QTransition, QBranch, QLeg
-from .qg_errors import ErrorCollector, ParseError, TokenizeError, ValidationError
+from .tokenizer import Tokenizer, TokenType
+from .sfc import SFC, Step, Transition, Branch, Leg
+from .errors import ErrorCollector, ParseError, TokenizeError, ValidationError
 
 
-class QGParser:
-    """Parser for Quick Grafcet language.
+class Parser:
+    """Parser for QuickSFC language.
 
     Consumes tokens from the tokenizer and builds SFC objects with
     proper relationships. Collects all errors for batch reporting.
@@ -22,19 +22,19 @@ class QGParser:
         """Initialize parser with file content.
 
         Args:
-            content: Full text content of .qg file
+            content: Full text content of .qsfc file
         """
         self.content = content
-        self.tokenizer = QGTokenizer(content)
+        self.tokenizer = Tokenizer(content)
         self.tokens = []
         self.current = 0
 
         # Parsing state
-        self.steps = []  # List[QGStep] - ordered by appearance
-        self.transitions = []  # List[QGTransition]
-        self.branches: List[QBranch] = []   
-        self.name_to_step = {}  # Map: name -> QGStep
-        self.name_to_transition = {}  # Map: name -> QGTransition
+        self.steps = []  # List[Step] - ordered by appearance
+        self.transitions = []  # List[Transition]
+        self.branches: List[Branch] = []   
+        self.name_to_step = {}  # Map: name -> Step
+        self.name_to_transition = {}  # Map: name -> Transition
         self.errors = ErrorCollector()
         self.current_step = None  # Track current step for transition linking
         self.file_comments = {} #key is line number
@@ -46,10 +46,10 @@ class QGParser:
         self.after_convergence = False  # Flag to skip from_step linking after convergence
 
     def parse(self):
-        """Parse the .qg file and return QGSFC object.
+        """Parse the .qsfc file and return SFC object.
 
         Returns:
-            QGSFC object containing parsed steps and transitions
+            SFC object containing parsed steps and transitions
 
         Raises:
             ParseError: If any syntax or semantic errors found
@@ -81,7 +81,7 @@ class QGParser:
         # Raise if any errors collected
         self.errors.raise_if_errors()
 
-        return QSFC(self.steps, self.transitions, self.branches)
+        return SFC(self.steps, self.transitions, self.branches)
 
     def _next_id(self):
         """Allocate next global ID from counter.
@@ -238,7 +238,7 @@ class QGParser:
             return
 
         # Create step object
-        step = QStep(name, action, preset, line_number, comments=comments, is_initial=False)
+        step = Step(name, action, preset, line_number, comments=comments, is_initial=False)
 
         # Assign IDs
         step.id = self._next_id()  # Global ID
@@ -336,7 +336,7 @@ class QGParser:
                 
 
         # Create transition object
-        transition = QTransition(name, condition, target_name, line_number,comment)
+        transition = Transition(name, condition, target_name, line_number,comment)
         
         # Assign IDs
         transition.id = self._next_id()  # Global ID
@@ -392,7 +392,7 @@ class QGParser:
         self._skip_newlines()
 
         # Create divergence branch
-        diverge_branch = QBranch("DIVERGE", flow_type, line_number)
+        diverge_branch = Branch("DIVERGE", flow_type, line_number)
 
         # Assign ID and coordinates to divergence branch
         diverge_branch.id = self._next_id()
@@ -405,7 +405,7 @@ class QGParser:
         self.inside_branch = True
 
         # Parse legs until convergence
-        current_leg = QLeg()
+        current_leg = Leg()
         diverge_branch.legs.append(current_leg)
 
         while not self._at_end() and not self._check(converge_token) and not self._check(TokenType.END):
@@ -420,7 +420,7 @@ class QGParser:
                 self._skip_newlines()
 
 
-                current_leg = QLeg()
+                current_leg = Leg()
                 # Legs don't have IDs - they're just organizational containers
                 diverge_branch.legs.append(current_leg)
                 continue
@@ -526,7 +526,7 @@ class QGParser:
             self._skip_newlines()
 
             # Create convergence branch
-            converge_branch = QBranch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
+            converge_branch = Branch("CONVERGE", flow_type, self._current_token().line_number if self._current_token() else line_number)
 
             # Assign ID to convergence branch
             converge_branch.id = self._next_id()
@@ -606,14 +606,14 @@ class QGParser:
             for leg in converge_branch.legs:
                 if is_and_branch:
                     # add the transition the outgoing transitions of each last step of a leg and vice versa
-                    root: QTransition = converge_branch.get_root()
-                    last_step: QStep = leg.steps[-1]
+                    root: Transition = converge_branch.get_root()
+                    last_step: Step = leg.steps[-1]
                     
                     last_step.add_outgoing_transition(root)
                     root.add_incoming_step(last_step)
                 else: 
-                    root: QStep = converge_branch.get_root()
-                    last_transition: QTransition = leg.transitions[-1]
+                    root: Step = converge_branch.get_root()
+                    last_transition: Transition = leg.transitions[-1]
                     last_transition.add_outgoing_step(root)
                     root.add_incoming_transition(last_transition)
             self.branches.append(converge_branch)
@@ -622,13 +622,13 @@ class QGParser:
         for leg in diverge_branch.legs:
         #adding links between elements of legs
             for i in  range(len(leg.elements)-1):
-                from_elem:QStep|QTransition = leg.elements_sorted_by_line_number()[i]
-                to_elem:QStep|QTransition = leg.elements_sorted_by_line_number()[i+1]
+                from_elem:Step|Transition = leg.elements_sorted_by_line_number()[i]
+                to_elem:Step|Transition = leg.elements_sorted_by_line_number()[i+1]
 
-                if isinstance(from_elem,QStep):
+                if isinstance(from_elem,Step):
                     from_elem.add_outgoing_transition(to_elem)
                     to_elem.add_incoming_step(from_elem)
-                elif isinstance(from_elem,QTransition):
+                elif isinstance(from_elem,Transition):
                     from_elem.add_outgoing_step(to_elem)
                     to_elem.add_incoming_transition(from_elem)
                 else:
@@ -636,13 +636,13 @@ class QGParser:
                 f"Unexpected type in branch leg, should be only steps or transitions")
             #now we link references between legs and root 
             if is_and_branch:    
-                root: QTransition = diverge_branch.get_root()
-                first_step: QStep = leg.steps[0]
+                root: Transition = diverge_branch.get_root()
+                first_step: Step = leg.steps[0]
                 first_step.add_incoming_transition(root)
                 root.add_outgoing_step(first_step)
             else:
-                root: QStep = diverge_branch.get_root()
-                first_transition: QTransition = leg.transitions[0]
+                root: Step = diverge_branch.get_root()
+                first_transition: Transition = leg.transitions[0]
                 first_transition.add_incoming_step(root)
                 root.add_outgoing_transition(first_transition)
 
@@ -800,7 +800,7 @@ class QGParser:
             line_number: 1-indexed line number
 
         Returns:
-            QGStep object or None if not found
+            Step object or None if not found
         """
         # Find step with smallest line number greater than line_number
         next_step = None

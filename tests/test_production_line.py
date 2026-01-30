@@ -10,7 +10,7 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_parser import QGParser
+from QuickSFC.parser import Parser
 
 def test_selection_branch():
 
@@ -20,7 +20,7 @@ def test_selection_branch():
 
     print(f"\nInput file:\n{content}\n")
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     print(f"\n{'='*70}")

@@ -10,8 +10,8 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_tokenizer import QGTokenizer, TokenType, Token
-from QuickSFC.qg_errors import TokenizeError
+from QuickSFC.tokenizer import Tokenizer, TokenType, Token
+from QuickSFC.errors import TokenizeError
 
 
 class TestTokenizerBasics:
@@ -19,7 +19,7 @@ class TestTokenizerBasics:
 
     def test_tokenize_simple_step(self):
         """Test tokenizing a basic step."""
-        tokenizer = QGTokenizer("S@step1(action)")
+        tokenizer = Tokenizer("S@step1(action)")
         tokens = tokenizer.tokenize()
 
         # Verify token sequence
@@ -46,20 +46,20 @@ class TestTokenizerBasics:
         ]
 
         for text, expected_type in test_cases:
-            tokenizer = QGTokenizer(text)
+            tokenizer = Tokenizer(text)
             tokens = tokenizer.tokenize()
             assert tokens[0].type == expected_type, f"Failed for {text}"
 
     def test_tokenize_keywords_si_vs_s(self):
         """Test that SI is recognized before S."""
         # SI should be recognized as SI, not S then I
-        tokenizer = QGTokenizer("SI@init()")
+        tokenizer = Tokenizer("SI@init()")
         tokens = tokenizer.tokenize()
         assert tokens[0].type == TokenType.SI
         assert tokens[0].value == "SI"
 
         # S should be recognized as S
-        tokenizer = QGTokenizer("S@step()")
+        tokenizer = Tokenizer("S@step()")
         tokens = tokenizer.tokenize()
         assert tokens[0].type == TokenType.S
 
@@ -68,7 +68,7 @@ class TestTokenizerBasics:
         content = """# This is a comment
 S@step1(action)  # inline comment
 """
-        tokenizer = QGTokenizer(content)
+        tokenizer = Tokenizer(content)
         tokens = tokenizer.tokenize()
 
         # Should have: NEWLINE, S, AT, NAME, LPAREN, ACTION, RPAREN, NEWLINE, EOF
@@ -83,7 +83,7 @@ class TestTokenizerEdgeCases:
 
     def test_tokenize_nested_parentheses_in_action(self):
         """Test actions can contain nested parentheses."""
-        tokenizer = QGTokenizer("S@step(func(a, b))")
+        tokenizer = Tokenizer("S@step(func(a, b))")
         tokens = tokenizer.tokenize()
 
         action_token = [t for t in tokens if t.type == TokenType.ACTION][0]
@@ -92,12 +92,12 @@ class TestTokenizerEdgeCases:
     def test_tokenize_action_vs_condition(self):
         """Test that S produces ACTION and T produces CONDITION."""
         # Step produces ACTION
-        tokenizer = QGTokenizer("S@step(x:=1)")
+        tokenizer = Tokenizer("S@step(x:=1)")
         tokens = tokenizer.tokenize()
         assert any(t.type == TokenType.ACTION for t in tokens)
 
         # Transition produces CONDITION
-        tokenizer = QGTokenizer("T@trans(x>5)")
+        tokenizer = Tokenizer("T@trans(x>5)")
         tokens = tokenizer.tokenize()
         assert any(t.type == TokenType.CONDITION for t in tokens)
 
@@ -106,7 +106,7 @@ class TestTokenizerEdgeCases:
         content = """S@step1(a)
 T@trans(b)
 S@step2(c)"""
-        tokenizer = QGTokenizer(content)
+        tokenizer = Tokenizer(content)
         tokens = tokenizer.tokenize()
 
         # Find tokens on each line
@@ -120,7 +120,7 @@ S@step2(c)"""
 
     def test_tokenize_invalid_character_raises_error(self):
         """Test that invalid characters raise TokenizeError."""
-        tokenizer = QGTokenizer("S@step($invalid)")
+        tokenizer = Tokenizer("S@step($invalid)")
 
         with pytest.raises(TokenizeError) as exc_info:
             tokenizer.tokenize()

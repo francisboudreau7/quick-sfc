@@ -10,12 +10,12 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC.qg_parser import QGParser
+from QuickSFC.parser import Parser
 
 def test_parallel_branch():
     """Test parsing of parallel (AND) branch."""
     print("="*70)
-    print("Testing: simple_parallel_branch_SFC.qg")
+    print("Testing: simple_parallel_branch_SFC.qsfc")
     print("="*70)
 
     test_file = os.path.join(TEST_DIR, 'simple_parallel.qsfc')
@@ -25,7 +25,7 @@ def test_parallel_branch():
 
     print(f"\nInput file:\n{content}\n")
 
-    parser = QGParser(content)
+    parser = Parser(content)
     sfc = parser.parse()
 
     print(f"\n{'='*70}")

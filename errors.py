@@ -1,12 +1,12 @@
-"""Error handling for Quick Grafcet parser.
+"""Error handling for QuickSFC parser.
 
 This module provides exception classes and error collection utilities
-for the Quick Grafcet tokenizer and parser.
+for the QuickSFC tokenizer and parser.
 """
 
 
-class QGError(Exception):
-    """Base exception for Quick Grafcet parsing errors.
+class SFCError(Exception):
+    """Base exception for QuickSFC parsing errors.
 
     Attributes:
         message: Error description
@@ -25,17 +25,17 @@ class QGError(Exception):
         return self.message
 
 
-class TokenizeError(QGError):
+class TokenizeError(SFCError):
     """Lexical analysis error during tokenization."""
     pass
 
 
-class ParseError(QGError):
+class ParseError(SFCError):
     """Syntax or semantic error during parsing."""
     pass
 
 
-class ValidationError(QGError):
+class ValidationError(SFCError):
     """Error during validation phase."""
     pass
 
@@ -50,11 +50,11 @@ class ErrorCollector:
     def __init__(self):
         self.errors = []
 
-    def add(self, error: QGError):
+    def add(self, error: SFCError):
         """Add an error to the collection.
 
         Args:
-            error: QGError instance to add
+            error: SFCError instance to add
         """
         self.errors.append(error)
 
@@ -81,7 +81,7 @@ class ErrorCollector:
         )
 
         # Format error message
-        lines = ["Quick Grafcet parsing failed with the following errors:\n"]
+        lines = ["QuickSFC parsing failed with the following errors:\n"]
         for i, err in enumerate(sorted_errors, 1):
             lines.append(f"  {i}. {err._format_message()}")
 

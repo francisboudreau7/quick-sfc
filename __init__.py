@@ -20,11 +20,16 @@ Example usage:
     initial = sfc.initial_step
     for trans in initial.outgoing_transitions:
         print(f"Transition {trans.condition} → Step {trans.to_step.id}")
+
+    # Export to L5X
+    from QuickSFC.L5X_exporter import L5XExporter
+    L5XExporter(sfc).export("output.L5X")
 """
 
 from .sfc import SFC, Step, Transition, Branch, Leg
 from .parser import Parser
 from .errors import SFCError, ParseError, TokenizeError, ValidationError
+from .L5X_exporter import L5XExporter, L5XExportError
 
 
 def parse_file(file_path: str):
@@ -75,6 +80,8 @@ __all__ = [
     'ParseError',
     'TokenizeError',
     'ValidationError',
+    'L5XExporter',
+    'L5XExportError',
     'parse_file',
     'parse_string',
 ]

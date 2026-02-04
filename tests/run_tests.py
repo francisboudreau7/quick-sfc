@@ -15,6 +15,10 @@ from QuickSFC.tokenizer import Tokenizer, TokenType
 from QuickSFC.sfc import Step, Transition, SFC, Branch, Leg
 from QuickSFC.parser import Parser
 from QuickSFC.errors import TokenizeError, ParseError
+from QuickSFC import parse_file, parse_string
+from QuickSFC.L5X_exporter import L5XExporter, L5XExportError
+import xml.etree.ElementTree as ET
+import tempfile
 
 
 def run_test(test_name, test_func):
@@ -570,6 +574,136 @@ def test_integration_simple_selection():
 
 
 # =============================================================================
+# L5X EXPORTER TESTS
+# =============================================================================
+
+def test_l5x_export_simple_sfc():
+    """Test exporting a simple SFC creates valid XML."""
+    content = """SI@init(action:=1;)
+T@done(cond)
+S@final()
+T@loop() -> @init
+END
+"""
+    sfc = parse_string(content)
+    exporter = L5XExporter(sfc)
+
+    xml_str = exporter.to_string()
+
+    # Parse to verify validity
+    root = ET.fromstring(xml_str)
+    assert root.tag == "RSLogix5000Content"
+
+    # Check structure
+    steps = root.findall('.//Step')
+    trans = root.findall('.//Transition')
+
+    assert len(steps) == 2  # init, final
+    assert len(trans) == 2  # done, loop
+
+
+def test_l5x_export_with_metadata():
+    """Test setting custom program/controller names."""
+    content = """SI@init()
+T@done()
+S@end()
+T@loop() -> @init
+END
+"""
+    sfc = parse_string(content)
+    exporter = (
+        L5XExporter(sfc)
+        .set_program_name("TestProgram")
+        .set_controller_name("TestPLC")
+        .set_software_revision("33.00")
+    )
+
+    xml_str = exporter.to_string()
+    root = ET.fromstring(xml_str)
+
+    assert root.get("TargetName") == "TestProgram"
+    assert root.get("SoftwareRevision") == "33.00"
+
+    controller = root.find('.//Controller')
+    assert controller.get("Name") == "TestPLC"
+
+
+def test_l5x_export_to_file():
+    """Test exporting to a file."""
+    content = """SI@init()
+T@done()
+S@end()
+T@loop() -> @init
+END
+"""
+    sfc = parse_string(content)
+
+    with tempfile.NamedTemporaryFile(suffix=".L5X", delete=False) as f:
+        filepath = f.name
+
+    try:
+        exporter = L5XExporter(sfc)
+        result = exporter.export(filepath)
+
+        assert result == filepath
+        assert os.path.exists(filepath)
+
+        # Verify file content
+        tree = ET.parse(filepath)
+        root = tree.getroot()
+        assert root.tag == "RSLogix5000Content"
+    finally:
+        if os.path.exists(filepath):
+            os.unlink(filepath)
+
+
+def test_l5x_export_production_line():
+    """Test exporting the production_line.qsfc file."""
+    qsfc_file = os.path.join(TEST_DIR, "production_line.qsfc")
+
+    sfc = parse_file(qsfc_file)
+    exporter = L5XExporter(sfc)
+
+    xml_str = exporter.to_string()
+    root = ET.fromstring(xml_str)
+
+    # Verify expected elements
+    steps = root.findall('.//Step')
+    trans = root.findall('.//Transition')
+    branches = root.findall('.//Branch')
+
+    assert len(steps) == 8
+    assert len(trans) == 6
+    assert len(branches) == 4  # 2 diverge, 2 converge
+
+
+def test_l5x_export_creates_tags():
+    """Test that tags are created for steps, actions, and transitions."""
+    content = """SI@init(code:=1;)
+T@done()
+S@end()
+T@loop() -> @init
+END
+"""
+    sfc = parse_string(content)
+    exporter = L5XExporter(sfc)
+
+    xml_str = exporter.to_string()
+    root = ET.fromstring(xml_str)
+
+    # Find program-level tags
+    tags = root.findall('.//Program/Tags/Tag')
+    tag_names = [t.get("Name") for t in tags]
+
+    # Check for step, action, and transition tags
+    assert "Step_000" in tag_names
+    assert "Step_001" in tag_names
+    assert "Action_000" in tag_names  # Only init has action
+    assert "Tran_000" in tag_names
+    assert "Tran_001" in tag_names
+
+
+# =============================================================================
 # MAIN TEST RUNNER
 # =============================================================================
 
@@ -619,11 +753,20 @@ def main():
         ("test_integration_simple_selection", test_integration_simple_selection),
     ]
 
+    l5x_exporter_tests = [
+        ("test_l5x_export_simple_sfc", test_l5x_export_simple_sfc),
+        ("test_l5x_export_with_metadata", test_l5x_export_with_metadata),
+        ("test_l5x_export_to_file", test_l5x_export_to_file),
+        ("test_l5x_export_production_line", test_l5x_export_production_line),
+        ("test_l5x_export_creates_tags", test_l5x_export_creates_tags),
+    ]
+
     all_tests = [
         ("\nTokenizer Tests (8)", tokenizer_tests),
         ("\nSFC Data Model Tests (6)", sfc_tests),
         ("\nParser Tests (12)", parser_tests),
         ("\nIntegration Tests (2)", integration_tests),
+        ("\nL5X Exporter Tests (5)", l5x_exporter_tests),
     ]
 
     total_passed = 0

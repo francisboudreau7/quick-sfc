@@ -137,7 +137,8 @@ class L5XBuilder:
         for step in self.sfc.steps:
             operand = self.id_manager.get_step_operand(step)
             if operand:
-                self._create_step_tag(tags, operand, step.preset)
+                description = f"@{step.name}" if step.name else None
+                self._create_step_tag(tags, operand, step.preset, description)
 
         # Create Action tags for steps with actions
         for step in self.sfc.steps:
@@ -145,15 +146,18 @@ class L5XBuilder:
             if step.action and step.action != "None" and step.action.strip():
                 operand = self.id_manager.get_action_operand(step)
                 if operand:
-                    self._create_action_tag(tags, operand)
+                    description = f"@{step.name}" if step.name else None
+                    self._create_action_tag(tags, operand, description)
 
         # Create Transition tags (BOOL)
         for trans in self.sfc.transitions:
             operand = self.id_manager.get_transition_operand(trans)
             if operand:
-                self._create_transition_tag(tags, operand)
+                description = f"@{trans.name}" if trans.name else None
+                self._create_transition_tag(tags, operand, description)
 
-    def _create_step_tag(self, tags: ET.Element, name: str, preset: int = 0):
+    def _create_step_tag(self, tags: ET.Element, name: str, preset: int = 0,
+                         description: str = None):
         """Create SFC_STEP tag."""
         tag = ET.SubElement(
             tags, "Tag",
@@ -163,6 +167,10 @@ class L5XBuilder:
             Constant="false",
             ExternalAccess="Read/Write"
         )
+
+        if description:
+            desc = ET.SubElement(tag, "Description")
+            self._set_cdata_text(desc, description)
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
@@ -191,7 +199,8 @@ class L5XBuilder:
         self._add_data_member(struct, "LimitLow", "DINT", "Decimal", "0")
         self._add_data_member(struct, "LimitHigh", "DINT", "Decimal", "0")
 
-    def _create_action_tag(self, tags: ET.Element, name: str):
+    def _create_action_tag(self, tags: ET.Element, name: str,
+                           description: str = None):
         """Create SFC_ACTION tag."""
         tag = ET.SubElement(
             tags, "Tag",
@@ -201,6 +210,10 @@ class L5XBuilder:
             Constant="false",
             ExternalAccess="Read/Write"
         )
+
+        if description:
+            desc = ET.SubElement(tag, "Description")
+            self._set_cdata_text(desc, description)
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
@@ -218,7 +231,8 @@ class L5XBuilder:
         self._add_data_member(struct, "T", "DINT", "Decimal", "0")
         self._add_data_member(struct, "Count", "DINT", "Decimal", "0")
 
-    def _create_transition_tag(self, tags: ET.Element, name: str):
+    def _create_transition_tag(self, tags: ET.Element, name: str,
+                               description: str = None):
         """Create BOOL tag for transition."""
         tag = ET.SubElement(
             tags, "Tag",
@@ -229,6 +243,10 @@ class L5XBuilder:
             Constant="false",
             ExternalAccess="Read/Write"
         )
+
+        if description:
+            desc = ET.SubElement(tag, "Description")
+            self._set_cdata_text(desc, description)
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
@@ -305,11 +323,6 @@ class L5XBuilder:
                 ShowActions="true"
             )
 
-            # Add description with original name
-            if step.name:
-                desc = ET.SubElement(step_elem, "Description")
-                desc.text = f"@{step.name}"
-
             # Add action if present (check for None and empty string)
             if step.action and step.action != "None" and step.action.strip():
                 action_id = self.id_manager.get_action_id(step)
@@ -353,11 +366,6 @@ class L5XBuilder:
                 DescY=str(y - 20),
                 DescWidth="0"
             )
-
-            # Add description with original name
-            if trans.name:
-                desc = ET.SubElement(trans_elem, "Description")
-                desc.text = f"@{trans.name}"
 
             # Add condition
             condition_elem = ET.SubElement(trans_elem, "Condition")

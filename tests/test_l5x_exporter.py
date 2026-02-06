@@ -155,7 +155,7 @@ def test_export_selection_branches():
 
 
 def test_step_description_contains_name():
-    """Test that step descriptions contain original @names."""
+    """Test that step tag descriptions contain original @names."""
     content = """SI@my_init_step(action:=1;)
 T@transition1()
 S@my_second_step()
@@ -168,9 +168,9 @@ END
     xml_str = exporter.to_string()
     root = ET.fromstring(xml_str)
 
-    # Find steps and check descriptions
-    steps = root.findall('.//Step')
-    descriptions = [step.findtext('Description') for step in steps if step.find('Description') is not None]
+    # Find step tags and check descriptions (descriptions live on Tag elements)
+    step_tags = [t for t in root.findall('.//Tags/Tag') if t.get('DataType') == 'SFC_STEP']
+    descriptions = [t.findtext('Description', '').strip() for t in step_tags]
 
     assert "@my_init_step" in descriptions
     assert "@my_second_step" in descriptions

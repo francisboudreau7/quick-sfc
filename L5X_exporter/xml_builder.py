@@ -166,7 +166,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        self._set_cdata_text(l5k_data, f"[[136314881,{preset},0,0,0,0,0]]")
+        self._set_cdata_text(l5k_data, f"[136314881,{preset},0,0,0,0,0]")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")
@@ -204,7 +204,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        self._set_cdata_text(l5k_data, "[[2097152,0,0,0]]")
+        self._set_cdata_text(l5k_data, "[2097152,0,0,0]")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")
@@ -232,7 +232,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        self._set_cdata_text(l5k_data, "[[0]]")
+        self._set_cdata_text(l5k_data, "0")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")

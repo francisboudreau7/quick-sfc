@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Fri Feb 06 17:53:32 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Fri Feb 06 17:58:54 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
   <Controller Use="Context" Name="Controller">
     <DataTypes Use="Context"/>
     <Modules Use="Context"/>
@@ -9,7 +9,7 @@
         <Tags>
           <Tag Name="Step_000" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -36,7 +36,7 @@
           </Tag>
           <Tag Name="Step_001" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -63,7 +63,7 @@
           </Tag>
           <Tag Name="Step_002" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -90,7 +90,7 @@
           </Tag>
           <Tag Name="Step_003" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -117,7 +117,7 @@
           </Tag>
           <Tag Name="Step_004" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -144,7 +144,7 @@
           </Tag>
           <Tag Name="Step_005" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -171,7 +171,7 @@
           </Tag>
           <Tag Name="Step_006" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[136314881,0,0,0,0,0,0]]]]>
+              <![CDATA[[136314881,0,0,0,0,0,0]]]>
             </Data>
             <Data Format="Decorated">
               <Structure DataType="SFC_STEP">
@@ -198,7 +198,7 @@
           </Tag>
           <Tag Name="Tran_000" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -206,7 +206,7 @@
           </Tag>
           <Tag Name="Tran_001" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -214,7 +214,7 @@
           </Tag>
           <Tag Name="Tran_002" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -222,7 +222,7 @@
           </Tag>
           <Tag Name="Tran_003" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -230,7 +230,7 @@
           </Tag>
           <Tag Name="Tran_004" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -238,7 +238,7 @@
           </Tag>
           <Tag Name="Tran_005" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -246,7 +246,7 @@
           </Tag>
           <Tag Name="Tran_006" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -254,7 +254,7 @@
           </Tag>
           <Tag Name="Tran_007" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
@@ -262,7 +262,7 @@
           </Tag>
           <Tag Name="Tran_008" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
             <Data Format="L5K">
-              <![CDATA[[[0]]]]>
+              <![CDATA[0]]>
             </Data>
             <Data Format="Decorated">
               <DataValue DataType="BOOL" Radix="Decimal" Value="0"/>

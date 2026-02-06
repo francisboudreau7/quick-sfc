@@ -115,7 +115,9 @@ def test_export_production_line():
 
     assert len(steps) == 8
     assert len(trans) == 6
-    assert len(branches) == 4  # 2 diverge, 2 converge
+    # Graph topology branches: ready(conv), done(conv), select_mode(div),
+    # begin_load(div), both_loaded(conv), auto(div), manual(div)
+    assert len(branches) == 7
 
 
 def test_export_parallel_branches():

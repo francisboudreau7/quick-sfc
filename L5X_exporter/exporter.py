@@ -152,11 +152,9 @@ class L5XExporter:
         for trans in self.sfc.transitions:
             self._id_manager.allocate_transition_id(trans)
 
-        # Allocate branch and leg IDs
-        for branch in self.sfc.branches:
-            self._id_manager.allocate_branch_id(branch)
-            for leg in branch.legs:
-                self._id_manager.allocate_leg_id(leg)
+        # L5X branch and leg IDs are allocated later by the XML builder
+        # based on graph topology (fan-in/fan-out analysis), not the
+        # QSFC branch syntax.
 
     def _calculate_layout(self):
         """Calculate positions for all elements."""

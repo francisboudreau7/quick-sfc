@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Fri Feb 06 18:12:05 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Fri Feb 06 23:25:22 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
   <Controller Use="Context" Name="Controller">
     <DataTypes Use="Context"/>
     <Modules Use="Context"/>
@@ -408,33 +408,40 @@
                   </STContent>
                 </Condition>
               </Transition>
-              <Branch ID="16" Y="980" BranchType="Selection" BranchFlow="Diverge" Priority="Default">
+              <Branch ID="16" Y="700" BranchType="Selection" BranchFlow="Converge">
                 <Leg ID="17"/>
                 <Leg ID="18"/>
-                <Leg ID="19"/>
+              </Branch>
+              <Branch ID="19" Y="940" BranchType="Selection" BranchFlow="Converge">
+                <Leg ID="20"/>
+                <Leg ID="21"/>
+              </Branch>
+              <Branch ID="22" Y="940" BranchType="Selection" BranchFlow="Diverge" Priority="Default">
+                <Leg ID="23"/>
+                <Leg ID="24"/>
+                <Leg ID="25"/>
               </Branch>
               <DirectedLink FromID="0" ToID="7" Show="true"/>
               <DirectedLink FromID="1" ToID="8" Show="true"/>
               <DirectedLink FromID="2" ToID="9" Show="true"/>
-              <DirectedLink FromID="3" ToID="10" Show="true"/>
-              <DirectedLink FromID="3" ToID="11" Show="true"/>
-              <DirectedLink FromID="3" ToID="13" Show="true"/>
+              <DirectedLink FromID="23" ToID="10" Show="true"/>
+              <DirectedLink FromID="24" ToID="11" Show="true"/>
+              <DirectedLink FromID="25" ToID="13" Show="true"/>
               <DirectedLink FromID="4" ToID="12" Show="true"/>
               <DirectedLink FromID="5" ToID="14" Show="true"/>
               <DirectedLink FromID="6" ToID="15" Show="true"/>
-              <DirectedLink FromID="7" ToID="1" Show="true"/>
-              <DirectedLink FromID="8" ToID="2" Show="true"/>
+              <DirectedLink FromID="7" ToID="17" Show="true"/>
+              <DirectedLink FromID="8" ToID="20" Show="true"/>
               <DirectedLink FromID="9" ToID="3" Show="true"/>
-              <DirectedLink FromID="10" ToID="1" Show="true"/>
+              <DirectedLink FromID="10" ToID="18" Show="true"/>
               <DirectedLink FromID="11" ToID="4" Show="true"/>
-              <DirectedLink FromID="12" ToID="2" Show="true"/>
+              <DirectedLink FromID="12" ToID="21" Show="true"/>
               <DirectedLink FromID="13" ToID="5" Show="true"/>
               <DirectedLink FromID="14" ToID="6" Show="true"/>
               <DirectedLink FromID="15" ToID="0" Show="true"/>
-              <DirectedLink FromID="3" ToID="16" Show="true"/>
-              <DirectedLink FromID="17" ToID="10" Show="true"/>
-              <DirectedLink FromID="18" ToID="11" Show="true"/>
-              <DirectedLink FromID="19" ToID="13" Show="true"/>
+              <DirectedLink FromID="3" ToID="22" Show="true"/>
+              <DirectedLink FromID="16" ToID="1" Show="true"/>
+              <DirectedLink FromID="19" ToID="2" Show="true"/>
             </SFCContent>
           </Routine>
         </Routines>

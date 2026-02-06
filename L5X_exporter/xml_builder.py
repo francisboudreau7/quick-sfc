@@ -296,7 +296,7 @@ class L5XBuilder:
         # Build SFC elements
         self._build_steps(sfc_content)
         self._build_transitions(sfc_content)
-        self._build_branches(sfc_content)
+        self._build_branches_and_links(sfc_content)
         self._build_directed_links(sfc_content)
 
     def _build_steps(self, sfc_content: ET.Element):
@@ -342,12 +342,6 @@ class L5XBuilder:
                 line = ET.SubElement(st_content, "Line", Number="0")
                 self._set_cdata_text(line, step.action)
 
-            # Register directed links from step to outgoing transitions
-            for trans in step.outgoing_transitions:
-                trans_id = self.id_manager.get_transition_id(trans)
-                if trans_id is not None:
-                    self._directed_links.append((step_id, trans_id))
-
     def _build_transitions(self, sfc_content: ET.Element):
         """Build Transition elements in SFCContent."""
         for trans in self.sfc.transitions:
@@ -373,111 +367,224 @@ class L5XBuilder:
             line = ET.SubElement(st_content, "Line", Number="0")
             self._set_cdata_text(line, trans.condition)
 
-            # Register directed links from transition to outgoing steps
+    def _build_branches_and_links(self, sfc_content: ET.Element):
+        """Build L5X Branch and DirectedLink elements from graph topology.
+
+        L5X branches are determined by connectivity, not QSFC syntax:
+        - An element with multiple incoming connections gets a Converge branch.
+        - An element with multiple outgoing connections gets a Diverge branch.
+        Every DirectedLink is strictly 1-to-1; branches mediate fan-in/fan-out.
+        """
+        # Build QSFC branch lookups for type detection
+        trans_to_qsfc_branch = {}
+        step_to_qsfc_branch = {}
+        for branch in self.sfc.branches:
+            if branch.branch_type == "DIVERGE":
+                for leg in branch.legs:
+                    for trans in leg.transitions:
+                        trans_to_qsfc_branch[trans] = branch
+                    for step in leg.steps:
+                        step_to_qsfc_branch[step] = branch
+
+        # ---- Step-level Converge (step has multiple incoming transitions) ----
+        # Maps step -> (branch_id, type, {trans: leg_id})
+        step_converge = {}
+        for step in self.sfc.steps:
+            incoming = step.incoming_transitions
+            if len(incoming) <= 1:
+                continue
+            branch_type = self._determine_converge_type_trans(
+                incoming, trans_to_qsfc_branch)
+            branch_id = self.id_manager.next_id()
+            sorted_inc = sorted(
+                incoming, key=lambda t: self.id_manager.get_transition_id(t))
+            leg_map = {t: self.id_manager.next_id() for t in sorted_inc}
+            step_converge[step] = (branch_id, branch_type, leg_map)
+            # Y position
+            step_y = self.layout.get_step_position(step)[1]
+            max_y = max(self.layout.get_transition_position(t)[1]
+                        for t in incoming)
+            self._emit_branch(sfc_content, branch_id, (max_y + step_y) // 2,
+                              branch_type, L5X_BRANCH_FLOW_CONVERGE,
+                              [leg_map[t] for t in sorted_inc])
+
+        # ---- Step-level Diverge (step has multiple outgoing transitions) ----
+        # Maps step -> (branch_id, type, {trans: leg_id})
+        step_diverge = {}
+        for step in self.sfc.steps:
+            outgoing = step.outgoing_transitions
+            if len(outgoing) <= 1:
+                continue
+            branch_type = self._determine_diverge_type_for(step, is_step=True)
+            branch_id = self.id_manager.next_id()
+            sorted_out = sorted(
+                outgoing, key=lambda t: self.id_manager.get_transition_id(t))
+            leg_map = {t: self.id_manager.next_id() for t in sorted_out}
+            step_diverge[step] = (branch_id, branch_type, leg_map)
+            step_y = self.layout.get_step_position(step)[1]
+            min_y = min(self.layout.get_transition_position(t)[1]
+                        for t in outgoing)
+            self._emit_branch(sfc_content, branch_id, (step_y + min_y) // 2,
+                              branch_type, L5X_BRANCH_FLOW_DIVERGE,
+                              [leg_map[t] for t in sorted_out])
+
+        # ---- Transition-level Converge (trans has multiple incoming steps) ----
+        # Maps trans -> (branch_id, type, {step: leg_id})
+        trans_converge = {}
+        for trans in self.sfc.transitions:
+            incoming = trans.incoming_steps
+            if len(incoming) <= 1:
+                continue
+            branch_type = self._determine_converge_type_step(
+                incoming, step_to_qsfc_branch)
+            branch_id = self.id_manager.next_id()
+            sorted_inc = sorted(
+                incoming, key=lambda s: self.id_manager.get_step_id(s))
+            leg_map = {s: self.id_manager.next_id() for s in sorted_inc}
+            trans_converge[trans] = (branch_id, branch_type, leg_map)
+            trans_y = self.layout.get_transition_position(trans)[1]
+            max_y = max(self.layout.get_step_position(s)[1]
+                        for s in incoming)
+            self._emit_branch(sfc_content, branch_id, (max_y + trans_y) // 2,
+                              branch_type, L5X_BRANCH_FLOW_CONVERGE,
+                              [leg_map[s] for s in sorted_inc])
+
+        # ---- Transition-level Diverge (trans has multiple outgoing steps) ----
+        # Maps trans -> (branch_id, type, {step: leg_id})
+        trans_diverge = {}
+        for trans in self.sfc.transitions:
+            outgoing = trans.outgoing_steps
+            if len(outgoing) <= 1:
+                continue
+            branch_type = self._determine_diverge_type_for(trans, is_step=False)
+            branch_id = self.id_manager.next_id()
+            sorted_out = sorted(
+                outgoing, key=lambda s: self.id_manager.get_step_id(s))
+            leg_map = {s: self.id_manager.next_id() for s in sorted_out}
+            trans_diverge[trans] = (branch_id, branch_type, leg_map)
+            trans_y = self.layout.get_transition_position(trans)[1]
+            min_y = min(self.layout.get_step_position(s)[1]
+                        for s in outgoing)
+            self._emit_branch(sfc_content, branch_id, (trans_y + min_y) // 2,
+                              branch_type, L5X_BRANCH_FLOW_DIVERGE,
+                              [leg_map[s] for s in sorted_out])
+
+        # ---- Directed links ----
+
+        # Step -> Transition connections
+        for step in self.sfc.steps:
+            step_id = self.id_manager.get_step_id(step)
+            for trans in step.outgoing_transitions:
+                trans_id = self.id_manager.get_transition_id(trans)
+                has_div = step in step_diverge
+                has_conv = trans in trans_converge
+                if has_div and has_conv:
+                    d_leg = step_diverge[step][2][trans]
+                    c_leg = trans_converge[trans][2][step]
+                    self._directed_links.append((d_leg, c_leg))
+                elif has_div:
+                    d_leg = step_diverge[step][2][trans]
+                    self._directed_links.append((d_leg, trans_id))
+                elif has_conv:
+                    c_leg = trans_converge[trans][2][step]
+                    self._directed_links.append((step_id, c_leg))
+                else:
+                    self._directed_links.append((step_id, trans_id))
+
+        # Transition -> Step connections
+        for trans in self.sfc.transitions:
+            trans_id = self.id_manager.get_transition_id(trans)
             for step in trans.outgoing_steps:
                 step_id = self.id_manager.get_step_id(step)
-                if step_id is not None:
+                has_div = trans in trans_diverge
+                has_conv = step in step_converge
+                if has_div and has_conv:
+                    d_leg = trans_diverge[trans][2][step]
+                    c_leg = step_converge[step][2][trans]
+                    self._directed_links.append((d_leg, c_leg))
+                elif has_div:
+                    d_leg = trans_diverge[trans][2][step]
+                    self._directed_links.append((d_leg, step_id))
+                elif has_conv:
+                    c_leg = step_converge[step][2][trans]
+                    self._directed_links.append((trans_id, c_leg))
+                else:
                     self._directed_links.append((trans_id, step_id))
 
-    def _build_branches(self, sfc_content: ET.Element):
-        """Build Branch elements in SFCContent."""
-        for branch in self.sfc.branches:
-            branch_id = self.id_manager.get_branch_id(branch)
-            y = self.layout.get_branch_y(branch)
+        # Source -> Diverge branch links
+        for step, (bid, _, _) in step_diverge.items():
+            self._directed_links.append(
+                (self.id_manager.get_step_id(step), bid))
+        for trans, (bid, _, _) in trans_diverge.items():
+            self._directed_links.append(
+                (self.id_manager.get_transition_id(trans), bid))
 
-            # Map flow type to L5X branch type
-            if branch.flow_type == "OR":
-                branch_type = L5X_BRANCH_TYPE_SELECTION
-            else:  # AND
-                branch_type = L5X_BRANCH_TYPE_SIMULTANEOUS
+        # Converge branch -> Target links
+        for step, (bid, _, _) in step_converge.items():
+            self._directed_links.append(
+                (bid, self.id_manager.get_step_id(step)))
+        for trans, (bid, _, _) in trans_converge.items():
+            self._directed_links.append(
+                (bid, self.id_manager.get_transition_id(trans)))
 
-            # Map branch type to L5X branch flow
-            if branch.branch_type == "DIVERGE":
-                branch_flow = L5X_BRANCH_FLOW_DIVERGE
+    def _emit_branch(self, parent, branch_id, y, branch_type, flow, leg_ids):
+        """Emit a Branch XML element with Leg children."""
+        attrs = {
+            "ID": str(branch_id),
+            "Y": str(y),
+            "BranchType": branch_type,
+            "BranchFlow": flow,
+        }
+        if flow == L5X_BRANCH_FLOW_DIVERGE:
+            attrs["Priority"] = "Default"
+        elem = ET.SubElement(parent, "Branch", **attrs)
+        for lid in leg_ids:
+            ET.SubElement(elem, "Leg", ID=str(lid))
+
+    def _determine_converge_type_trans(self, transitions, trans_to_qsfc_branch):
+        """Determine Selection vs Simultaneous for a step-converge branch."""
+        source_branches = {}
+        all_in_branch = True
+        for trans in transitions:
+            b = trans_to_qsfc_branch.get(trans)
+            if b is not None:
+                source_branches[id(b)] = b
             else:
-                branch_flow = L5X_BRANCH_FLOW_CONVERGE
+                all_in_branch = False
+        if all_in_branch and len(source_branches) == 1:
+            branch = next(iter(source_branches.values()))
+            if branch.flow_type == "AND":
+                return L5X_BRANCH_TYPE_SIMULTANEOUS
+        return L5X_BRANCH_TYPE_SELECTION
 
-            branch_elem = ET.SubElement(
-                sfc_content, "Branch",
-                ID=str(branch_id),
-                Y=str(y),
-                BranchType=branch_type,
-                BranchFlow=branch_flow
-            )
+    def _determine_converge_type_step(self, steps, step_to_qsfc_branch):
+        """Determine Selection vs Simultaneous for a transition-converge branch."""
+        source_branches = {}
+        all_in_branch = True
+        for step in steps:
+            b = step_to_qsfc_branch.get(step)
+            if b is not None:
+                source_branches[id(b)] = b
+            else:
+                all_in_branch = False
+        if all_in_branch and len(source_branches) == 1:
+            branch = next(iter(source_branches.values()))
+            if branch.flow_type == "AND":
+                return L5X_BRANCH_TYPE_SIMULTANEOUS
+        return L5X_BRANCH_TYPE_SELECTION
 
-            if branch.branch_type == "DIVERGE":
-                branch_elem.set("Priority", "Default")
-
-            # Add legs
-            for leg in branch.legs:
-                leg_id = self.id_manager.get_leg_id(leg)
-                ET.SubElement(branch_elem, "Leg", ID=str(leg_id))
-
-            # Create directed links for branches
-            if branch.branch_type == "DIVERGE" and branch.root:
-                # Link from root element to diverge branch
-                root_id = None
-                if hasattr(branch.root, 'is_initial'):  # Step
-                    root_id = self.id_manager.get_step_id(branch.root)
-                elif hasattr(branch.root, 'condition'):  # Transition
-                    root_id = self.id_manager.get_transition_id(branch.root)
-
-                if root_id is not None:
-                    self._directed_links.append((root_id, branch_id))
-
-                # Link from legs to first elements in each leg
-                for leg in branch.legs:
-                    leg_id = self.id_manager.get_leg_id(leg)
-                    elements = leg.elements_sorted_by_line_number()
-                    if elements:
-                        first_elem = elements[0]
-                        first_id = None
-                        if hasattr(first_elem, 'is_initial'):  # Step
-                            first_id = self.id_manager.get_step_id(first_elem)
-                        elif hasattr(first_elem, 'condition'):  # Transition
-                            first_id = self.id_manager.get_transition_id(first_elem)
-
-                        if first_id is not None:
-                            self._directed_links.append((leg_id, first_id))
-
-            elif branch.branch_type == "CONVERGE":
-                # Link from legs to converge branch
-                for leg in branch.legs:
-                    leg_id = self.id_manager.get_leg_id(leg)
-                    elements = leg.elements_sorted_by_line_number()
-                    if elements:
-                        last_elem = elements[-1]
-                        last_id = None
-                        if hasattr(last_elem, 'is_initial'):  # Step
-                            last_id = self.id_manager.get_step_id(last_elem)
-                        elif hasattr(last_elem, 'condition'):  # Transition
-                            last_id = self.id_manager.get_transition_id(last_elem)
-
-                        if last_id is not None:
-                            self._directed_links.append((last_id, leg_id))
-
-                # Link from converge branch to root element
-                if branch.root:
-                    root_id = None
-                    if hasattr(branch.root, 'is_initial'):  # Step
-                        root_id = self.id_manager.get_step_id(branch.root)
-                    elif hasattr(branch.root, 'condition'):  # Transition
-                        root_id = self.id_manager.get_transition_id(branch.root)
-
-                    if root_id is not None:
-                        self._directed_links.append((branch_id, root_id))
+    def _determine_diverge_type_for(self, element, is_step=True):
+        """Determine Selection vs Simultaneous for a diverge branch."""
+        for branch in self.sfc.branches:
+            if branch.branch_type == "DIVERGE" and branch.root is element:
+                if branch.flow_type == "AND":
+                    return L5X_BRANCH_TYPE_SIMULTANEOUS
+                return L5X_BRANCH_TYPE_SELECTION
+        return L5X_BRANCH_TYPE_SELECTION
 
     def _build_directed_links(self, sfc_content: ET.Element):
         """Build DirectedLink elements."""
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_links = []
-        for link in self._directed_links:
-            if link not in seen:
-                seen.add(link)
-                unique_links.append(link)
-
-        for from_id, to_id in unique_links:
+        for from_id, to_id in self._directed_links:
             ET.SubElement(
                 sfc_content, "DirectedLink",
                 FromID=str(from_id),

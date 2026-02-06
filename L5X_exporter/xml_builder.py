@@ -1,9 +1,16 @@
 """XML generation for L5X format using xml.etree.ElementTree."""
 
+import re
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from datetime import datetime
 from typing import List, Tuple
+
+# Sentinel tag used to mark text that must be emitted as CDATA sections.
+# ElementTree does not support CDATA natively, so we store CDATA content
+# inside placeholder elements during tree construction and convert them
+# to real <![CDATA[...]]> sections when serializing to a string.
+CDATA_TAG = "__CDATA__"
 
 from .constants import (
     DEFAULT_SOFTWARE_REVISION, DEFAULT_SCHEMA_REVISION,
@@ -159,7 +166,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        l5k_data.text = f"[[136314881,{preset},0,0,0,0,0]]"
+        self._set_cdata_text(l5k_data, f"[[136314881,{preset},0,0,0,0,0]]")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")
@@ -197,7 +204,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        l5k_data.text = "[[2097152,0,0,0]]"
+        self._set_cdata_text(l5k_data, "[[2097152,0,0,0]]")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")
@@ -225,7 +232,7 @@ class L5XBuilder:
 
         # L5K data format
         l5k_data = ET.SubElement(tag, "Data", Format="L5K")
-        l5k_data.text = "[[0]]"
+        self._set_cdata_text(l5k_data, "[[0]]")
 
         # Decorated data format
         decorated = ET.SubElement(tag, "Data", Format="Decorated")
@@ -239,6 +246,18 @@ class L5XBuilder:
             attrs["Radix"] = radix
         attrs["Value"] = value
         ET.SubElement(parent, "DataValueMember", **attrs)
+
+    @staticmethod
+    def _set_cdata_text(parent: ET.Element, text: str):
+        """Set text content that will be emitted as a CDATA section.
+
+        Instead of setting parent.text directly (which ElementTree would
+        XML-escape), this creates a sentinel child element whose content
+        is later converted to a real <![CDATA[...]]> section by
+        _convert_cdata_elements().
+        """
+        cdata_elem = ET.SubElement(parent, CDATA_TAG)
+        cdata_elem.text = text
 
     def _create_routines(self, program: ET.Element):
         """Create Routines section with SFC content."""
@@ -308,7 +327,7 @@ class L5XBuilder:
                 body = ET.SubElement(action_elem, "Body")
                 st_content = ET.SubElement(body, "STContent")
                 line = ET.SubElement(st_content, "Line", Number="0")
-                line.text = step.action
+                self._set_cdata_text(line, step.action)
 
             # Register directed links from step to outgoing transitions
             for trans in step.outgoing_transitions:
@@ -344,7 +363,7 @@ class L5XBuilder:
             condition_elem = ET.SubElement(trans_elem, "Condition")
             st_content = ET.SubElement(condition_elem, "STContent")
             line = ET.SubElement(st_content, "Line", Number="0")
-            line.text = trans.condition
+            self._set_cdata_text(line, trans.condition)
 
             # Register directed links from transition to outgoing steps
             for step in trans.outgoing_steps:
@@ -484,4 +503,40 @@ class L5XBuilder:
             if line.strip():
                 result_lines.append(line)
 
-        return "\n".join(result_lines)
+        result = "\n".join(result_lines)
+
+        # Convert sentinel CDATA elements to real CDATA sections
+        result = self._convert_cdata_elements(result)
+
+        return result
+
+    @staticmethod
+    def _convert_cdata_elements(xml_string: str) -> str:
+        """Replace CDATA sentinel elements with actual CDATA sections.
+
+        During tree construction, text that needs CDATA wrapping is stored
+        inside <__CDATA__>text</__CDATA__> placeholder elements.  This
+        method converts those placeholders to proper <![CDATA[text]]>
+        sections in the serialized XML string.
+        """
+        pattern = r"""
+            # Match elements with separate opening and closing tags.
+            <{tag}\s*>    # Opening tag.
+            (?P<text>.*?) # Element content.
+            </{tag}\s*>   # Closing tag.
+
+            |
+
+            # Also match empty, self-closing tags.
+            <{tag}\s*/>
+        """.format(tag=re.escape(CDATA_TAG))
+
+        def _to_cdata_section(match):
+            text = match.group('text')
+            if text is not None:
+                return '<![CDATA[{0}]]>'.format(text)
+            # Self-closing tag means empty content.
+            return '<![CDATA[]]>'
+
+        return re.sub(pattern, _to_cdata_section, xml_string,
+                      flags=re.VERBOSE | re.DOTALL)

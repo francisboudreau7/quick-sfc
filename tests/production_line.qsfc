@@ -17,9 +17,11 @@ S@select_mode()
 /\
     T@auto(auto_mode)
     S@run_auto(program_1)
+    T@auto_done()
     |
     T@manual(manual_mode)
     S@run_manual(wait_for_commands)
+    T@manual_done()
 \/ S@done()
 
 T@cycle_complete() -> @ready

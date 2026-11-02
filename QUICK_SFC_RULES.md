@@ -178,8 +178,10 @@ T@begin_load() //\\
 S@select_mode()
 /\
     T@auto(auto_mode) -> S@run_auto(program_1)
+    T@auto_done(program_1_done)
     |
     T@manual(manual_mode) -> S@run_manual(wait_for_commands)
+    T@manual_done(operator_done)
 \/ S@done()
 
 T@cycle_complete() -> @init
@@ -233,6 +235,10 @@ Visual representation:
     │S@run_auto  │    │S@run_manual  │     │
     └─────┬──────┘    └──────┬───────┘     │
           │                  │             │
+     ─────┴─────        ─────┴─────        │
+     T@auto_done      T@manual_done        │
+     ─────┬─────        ─────┬─────        │
+          │                  │             │
           ├──────────────────┘             │
           │                                │
           │                                │
@@ -267,6 +273,8 @@ Visual representation:
 - Names can use letters, numbers, underscores but need to start with a letter
 - You must have exactly one `SI` initial step, which need to be the first line
 - File must end with `END`
+- In an OR branch, each leg starts with a transition and, unless it jumps away, ends with a transition before `\/`
+- In an AND branch, each leg starts and ends with a step
 - Actions and conditions use Structured Text syntax
 
 File extension is `.qsfc`

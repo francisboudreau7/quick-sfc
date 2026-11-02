@@ -536,7 +536,7 @@ class L5XBuilder:
             "BranchType": branch_type,
             "BranchFlow": flow,
         }
-        if flow == L5X_BRANCH_FLOW_DIVERGE:
+        if flow == L5X_BRANCH_FLOW_DIVERGE and branch_type == L5X_BRANCH_TYPE_SELECTION:
             attrs["Priority"] = "Default"
         elem = ET.SubElement(parent, "Branch", **attrs)
         for lid in leg_ids:

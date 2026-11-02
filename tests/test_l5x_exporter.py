@@ -11,7 +11,7 @@ QUICKSFC_DIR = os.path.dirname(TEST_DIR)
 WORKSPACE_DIR = os.path.dirname(QUICKSFC_DIR)
 sys.path.insert(0, WORKSPACE_DIR)
 
-from QuickSFC import parse_file, parse_string
+from QuickSFC import parse_file, parse_string, ParseError
 from QuickSFC.L5X_exporter import L5XExporter, L5XExportError
 
 
@@ -114,10 +114,10 @@ def test_export_production_line():
     branches = root.findall('.//Branch')
 
     assert len(steps) == 8
-    assert len(trans) == 6
+    assert len(trans) == 8
     # Graph topology branches: ready(conv), done(conv), select_mode(div),
-    # begin_load(div), both_loaded(conv), auto(div), manual(div)
-    assert len(branches) == 7
+    # begin_load(div), both_loaded(conv)
+    assert len(branches) == 5
 
 
 def test_export_parallel_branches():
@@ -136,6 +136,8 @@ def test_export_parallel_branches():
     simultaneous_branches = [b for b in branches if b.get("BranchType") == "Simultaneous"]
 
     assert len(simultaneous_branches) > 0
+    # Studio 5000 only accepts Priority on Selection diverges
+    assert all(b.get("Priority") is None for b in simultaneous_branches)
 
 
 def test_export_selection_branches():
@@ -319,6 +321,31 @@ END
     assert len(positions) == len(set(positions))
 
 
+def test_or_leg_ending_with_step_is_rejected():
+    """An OR leg that converges must end with a transition."""
+    content = """SI@a()
+T@t()
+S@b()
+/\\
+T@x()
+S@x1()
+|
+T@y()
+S@y1()
+T@y2()
+\\/ S@c()
+T@back() -> @a
+END
+"""
+    try:
+        parse_string(content)
+    except ParseError as e:
+        assert "must end with a transition" in str(e)
+        assert "@x1" in str(e)
+    else:
+        raise AssertionError("Expected ParseError")
+
+
 def test_directed_links_never_share_endpoints():
     """Every DirectedLink FromID and ToID must be unique in the sample files."""
     test_dir = os.path.dirname(os.path.abspath(__file__))
@@ -338,6 +365,7 @@ if __name__ == "__main__":
         test_jump_is_not_chained_to_next_step,
         test_redundant_jump_to_next_step_links_once,
         test_sequential_branches_layout_every_element,
+        test_or_leg_ending_with_step_is_rejected,
         test_directed_links_never_share_endpoints,
         test_export_simple_sfc,
         test_export_with_custom_metadata,

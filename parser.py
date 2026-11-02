@@ -540,6 +540,15 @@ class Parser:
             else: 
                 #if a the last transition of a diverge branch leg has no jump, then it is a leg of the converge branch
                 converge_branch.legs =  list(filter(lambda leg: not(leg.transitions[-1].target_name), diverge_branch.legs))
+                # A selection converge links the last transition of each leg to the branch
+                for leg in converge_branch.legs:
+                    last_elem = leg.elements_sorted_by_line_number()[-1]
+                    if isinstance(last_elem, Step):
+                        self._record_error(
+                            f"OR branch leg must end with a transition before \\/, "
+                            f"but ends with step '@{last_elem.name}'",
+                            last_elem.line_number
+                        )
                 
 #this should be in creating directed steps
                     # if not has_jump:

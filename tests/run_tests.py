@@ -673,8 +673,8 @@ def test_l5x_export_production_line():
     branches = root.findall('.//Branch')
 
     assert len(steps) == 8
-    assert len(trans) == 6
-    assert len(branches) == 4  # 2 diverge, 2 converge
+    assert len(trans) == 8
+    assert len(branches) == 5  # graph fan-in/fan-out points
 
 
 def test_l5x_export_creates_tags():

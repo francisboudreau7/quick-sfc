@@ -1,11 +1,11 @@
-<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Fri Feb 06 23:25:22 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
+﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="MainProgram" TargetType="Program" ContainsContext="true" Owner="QuickSFC" ExportDate="Mon Nov 02 01:35:55 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans">
   <Controller Use="Context" Name="Controller">
     <DataTypes Use="Context"/>
     <Modules Use="Context"/>
     <Tags Use="Context"/>
     <Programs Use="Context">
-      <Program Use="Target" Name="MainProgram" TestEdits="false" Disabled="false" UseAsFolder="false">
+      <Program Use="Target" Name="MainProgram" TestEdits="false" MainRoutineName="SFC" Disabled="false" UseAsFolder="false">
         <Tags>
           <Tag Name="Step_000" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
             <Description>

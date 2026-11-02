@@ -13,6 +13,8 @@ from typing import List, Tuple
 # to real <![CDATA[...]]> sections when serializing to a string.
 CDATA_TAG = "__CDATA__"
 
+SFC_ROUTINE_NAME = "SFC"
+
 from .constants import (
     DEFAULT_SOFTWARE_REVISION, DEFAULT_SCHEMA_REVISION,
     DEFAULT_CONTROLLER_NAME, DEFAULT_PROGRAM_NAME,
@@ -125,6 +127,7 @@ class L5XBuilder:
             Use="Target",
             Name=self.program_name,
             TestEdits="false",
+            MainRoutineName=SFC_ROUTINE_NAME,
             Disabled="false",
             UseAsFolder="false"
         )
@@ -282,7 +285,7 @@ class L5XBuilder:
         """Create Routines section with SFC content."""
         routines = ET.SubElement(program, "Routines")
 
-        routine = ET.SubElement(routines, "Routine", Name="SFC", Type="SFC")
+        routine = ET.SubElement(routines, "Routine", Name=SFC_ROUTINE_NAME, Type="SFC")
 
         sfc_content = ET.SubElement(
             routine, "SFCContent",

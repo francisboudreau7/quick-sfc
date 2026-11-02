@@ -110,8 +110,8 @@ class L5XExporter:
         # Step 4: Build XML
         xml_string = self._build_xml()
 
-        # Step 5: Write to file
-        with open(filepath, "w", encoding="utf-8") as f:
+        # Step 5: Write to file the way Studio 5000 does: UTF-8 with BOM, CRLF
+        with open(filepath, "w", encoding="utf-8-sig", newline="\r\n") as f:
             f.write(xml_string)
 
         return filepath

@@ -88,10 +88,19 @@ END
         assert result == filepath
         assert os.path.exists(filepath)
 
+        # Studio 5000 writes UTF-8 with a BOM and CRLF line endings
+        with open(filepath, "rb") as f:
+            raw = f.read()
+        assert raw.startswith(b"\xef\xbb\xbf")
+        assert b"\n" not in raw.replace(b"\r\n", b"")
+
         # Verify file content
         tree = ET.parse(filepath)
         root = tree.getroot()
         assert root.tag == "RSLogix5000Content"
+        program = root.find('.//Program')
+        assert program.get("MainRoutineName") == "SFC"
+        assert root.find(f'.//Routine[@Name="SFC"]') is not None
     finally:
         if os.path.exists(filepath):
             os.unlink(filepath)

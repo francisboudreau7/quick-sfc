@@ -116,7 +116,8 @@ class Transition:
         Args:
             step: Step object
         """
-        self._incoming_steps.append(step)
+        if step not in self._incoming_steps:
+            self._incoming_steps.append(step)
 
     def add_outgoing_step(self, step):
         """add step to outgoing steps
@@ -124,7 +125,8 @@ class Transition:
         Args:
             step: Step object
         """
-        self._outgoing_steps.append(step)
+        if step not in self._outgoing_steps:
+            self._outgoing_steps.append(step)
 
     def __repr__(self):
         target = f"->@{self.target_name}" if self.target_name else "->next"

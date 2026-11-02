@@ -244,8 +244,101 @@ END
     assert len(links) >= 4  # init->go, go->work, work->done, done->init
 
 
+def test_cdata_content_is_not_escaped():
+    """Special characters inside CDATA must reach Studio 5000 unescaped."""
+    content = """SI@init(x := a < b AND c > 1 & d; s := "q";)
+T@go(level > 5 AND a < b)
+S@s()
+T@back() -> @init
+END
+"""
+    xml_str = L5XExporter(parse_string(content)).to_string()
+    assert "&lt;" not in xml_str and "&gt;" not in xml_str and "&amp;" not in xml_str
+    root = ET.fromstring(xml_str)
+    lines = [(l.text or "").strip() for l in root.iter('Line')]
+    assert 'x := a < b AND c > 1 & d; s := "q";' in lines
+    assert "level > 5 AND a < b" in lines
+
+
+def test_jump_is_not_chained_to_next_step():
+    """A transition with -> @target must not also link to the following step."""
+    content = """SI@init()
+T@a() -> @init
+S@other()
+T@b() -> @init
+END
+"""
+    sfc = parse_string(content)
+    assert [s.name for s in sfc.get_transition_by_name("a").outgoing_steps] == ["init"]
+
+
+def test_redundant_jump_to_next_step_links_once():
+    content = """SI@init()
+T@go() -> @s
+S@s()
+T@back() -> @init
+END
+"""
+    sfc = parse_string(content)
+    assert [s.name for s in sfc.get_transition_by_name("go").outgoing_steps] == ["s"]
+    root = ET.fromstring(L5XExporter(sfc).to_string())
+    assert root.findall('.//Branch') == []
+
+
+def test_sequential_branches_layout_every_element():
+    """Elements after a second branch of the same type must get real positions."""
+    content = """SI@a()
+T@t0()
+S@b()
+/\\
+T@x1(c1)
+S@x()
+T@x2()
+|
+T@y1(c2)
+S@y()
+T@y2()
+\\/ S@c()
+T@t1()
+S@d()
+/\\
+T@p1()
+S@p()
+T@p2()
+|
+T@q1()
+S@q()
+T@q2()
+\\/ S@e()
+T@back() -> @a
+END
+"""
+    root = ET.fromstring(L5XExporter(parse_string(content)).to_string())
+    positions = [(e.get("X"), e.get("Y")) for e in root.iter()
+                 if e.tag in ("Step", "Transition")]
+    assert len(positions) == len(set(positions))
+
+
+def test_directed_links_never_share_endpoints():
+    """Every DirectedLink FromID and ToID must be unique in the sample files."""
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    for name in ("simple_selection.qsfc", "simple_parallel.qsfc", "production_line.qsfc"):
+        sfc = parse_file(os.path.join(test_dir, name))
+        root = ET.fromstring(L5XExporter(sfc).to_string())
+        links = root.findall('.//DirectedLink')
+        from_ids = [l.get("FromID") for l in links]
+        to_ids = [l.get("ToID") for l in links]
+        assert len(from_ids) == len(set(from_ids)), name
+        assert len(to_ids) == len(set(to_ids)), name
+
+
 if __name__ == "__main__":
     tests = [
+        test_cdata_content_is_not_escaped,
+        test_jump_is_not_chained_to_next_step,
+        test_redundant_jump_to_next_step_links_once,
+        test_sequential_branches_layout_every_element,
+        test_directed_links_never_share_endpoints,
         test_export_simple_sfc,
         test_export_with_custom_metadata,
         test_export_to_file,

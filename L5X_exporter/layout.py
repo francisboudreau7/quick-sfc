@@ -181,11 +181,10 @@ class LayoutCalculator:
         # Look for corresponding converge branch
         converge_y = max_leg_y + TRANSITION_HEIGHT
 
-        # Find converge branch if exists
+        # The parser gives a converge branch the same Leg objects as its diverge
         for conv_branch in self.sfc.branches:
             if (conv_branch.branch_type == "CONVERGE" and
-                conv_branch.flow_type == branch.flow_type):
-                # Check if legs match (simplified check)
+                any(leg in branch.legs for leg in conv_branch.legs)):
                 if conv_branch.root:
                     self._branch_positions[conv_branch] = converge_y
                     # Layout element after converge

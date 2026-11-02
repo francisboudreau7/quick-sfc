@@ -3,6 +3,7 @@
 import re
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+from xml.sax.saxutils import unescape
 from datetime import datetime
 from typing import List, Tuple
 
@@ -649,6 +650,9 @@ class L5XBuilder:
         def _to_cdata_section(match):
             text = match.group('text')
             if text is not None:
+                # The serializers escaped the text; CDATA content must be raw.
+                text = unescape(text, {"&quot;": '"'})
+                text = text.replace("]]>", "]]]]><![CDATA[>")
                 return '<![CDATA[{0}]]>'.format(text)
             # Self-closing tag means empty content.
             return '<![CDATA[]]>'

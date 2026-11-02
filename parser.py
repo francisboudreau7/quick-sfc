@@ -244,8 +244,11 @@ class Parser:
         step.id = self._next_id()  # Global ID
         step.operand = len(self.steps)  # Sequential step counter: 0, 1, 2...
 
-        #link step to preceding transition
-        if self.last_parsed_element is not None and not self.inside_branch and not self.after_convergence:
+        #link step to preceding transition, unless that transition jumps elsewhere
+        preceding_jumps = (isinstance(self.last_parsed_element, Transition)
+                           and self.last_parsed_element.target_name is not None)
+        if (self.last_parsed_element is not None and not preceding_jumps
+                and not self.inside_branch and not self.after_convergence):
             preceding_transition = self.last_parsed_element
             step.add_incoming_transition(preceding_transition)
             preceding_transition.add_outgoing_step(step)
@@ -628,6 +631,8 @@ class Parser:
                 if isinstance(from_elem,Step):
                     from_elem.add_outgoing_transition(to_elem)
                     to_elem.add_incoming_step(from_elem)
+                elif isinstance(from_elem,Transition) and from_elem.target_name is not None:
+                    continue
                 elif isinstance(from_elem,Transition):
                     from_elem.add_outgoing_step(to_elem)
                     to_elem.add_incoming_transition(from_elem)

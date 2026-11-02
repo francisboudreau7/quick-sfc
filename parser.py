@@ -313,15 +313,16 @@ class Parser:
         if not self._expect(TokenType.RPAREN):
             return
 
-        # Check for optional >> jump operator
+        # Optional "-> @target" jump, or "-> S@name(...)": the next step written inline,
+        # which is left for the caller to parse as if it were on the next line
         target_name = None
         if self._check(TokenType.JUMP):
-            self._advance()  # Consume >>
-            # Expect @ symbol
-            if not self._expect(TokenType.AT):
+            self._advance()  # Consume -> or >>
+            if self._check(TokenType.S):
+                pass
+            elif not self._expect(TokenType.AT):
                 return
-            # Expect target NAME
-            if not self._check(TokenType.NAME):
+            elif not self._check(TokenType.NAME):
                 self._record_error(
                     f"Expected step name after >> @, got {self._current_token().type.name if self._current_token() else 'EOF'}",
                     self._current_token().line_number if self._current_token() else line_number
@@ -445,43 +446,6 @@ class Parser:
                 if len(self.transitions) > trans_before_count:
                     current_leg.transitions.append(self.transitions[-1])
 
-                # For OR branches, check for -> operator
-                if not is_and_branch and self._check(TokenType.JUMP):
-                    self._advance()  # Consume ->
-                    self._skip_newlines()
-
-                    # Check for jump (-> @target)
-                    if self._check(TokenType.AT):
-                        # Jump to existing step: -> @target
-                        self._advance()  # Consume @
-                        if not self._check(TokenType.NAME):
-                            self._record_error(
-                                f"Expected step name after -> @",
-                                self._current_token().line_number if self._current_token() else line_number
-                            )
-                        else:
-                            target_name = self._current_token().value
-                            self._advance()
-                            # Set jump target on last transition in current leg
-                            if current_leg.transitions and len(current_leg.transitions) > 0:
-                                current_leg.transitions[-1].target_name = target_name
-                            else:
-                                self._record_error(
-                                    f"-> @ jump must follow a transition",
-                                    self._current_token().line_number if self._current_token() else line_number
-                                )
-
-                    elif self._check(TokenType.S):
-                        # Create new step: -> S@name(action)
-                        step_before_count = len(self.steps)
-                        self._parse_step()
-                        if len(self.steps) > step_before_count:
-                            current_leg.steps.append(self.steps[-1])
-                    else:
-                        self._record_error(
-                            f"Expected S@name or @target after -> in OR branch leg",
-                            self._current_token().line_number if self._current_token() else line_number
-                        )
             elif self._check(TokenType.END):
                 # Reached END - exit loop
                 break

@@ -195,7 +195,8 @@ class Leg:
         return self.steps + self.transitions
 
     def elements_sorted_by_line_number(self):
-        return sorted(self.elements,key=lambda x: x.line_number)
+        # An inline "-> S@" step shares its transition's line; ids follow parse order
+        return sorted(self.elements,key=lambda x: (x.line_number, x.id))
     
     def add_step(self, step):
         """Add a step to this leg."""

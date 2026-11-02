@@ -346,6 +346,53 @@ END
         raise AssertionError("Expected ParseError")
 
 
+def test_inline_step_after_transition():
+    """'T@x() -> S@y()' is the same as writing S@y() on the next line."""
+    inline = """SI@init()
+T@go() -> S@work()
+T@pick() //\\\\
+    S@a()
+    T@a_done() -> S@a2()
+    |
+    S@b()
+\\\\// T@joined()
+S@choose()
+/\\
+    T@left() -> S@l()
+    T@l_done()
+    |
+    T@right() -> S@r()
+    T@r_done()
+\\/ S@done()
+T@back() -> @init
+END
+"""
+    multiline = (inline.replace(" -> S@", "\nS@").replace(" //\\\\", "\n//\\\\")
+                 .replace("\\\\// ", "\\\\//\n"))
+    graphs = []
+    for src in (inline, multiline):
+        sfc = parse_string(src)
+        graphs.append(sorted(
+            (t.name, tuple(s.name for s in t.incoming_steps), tuple(s.name for s in t.outgoing_steps))
+            for t in sfc.transitions))
+    assert graphs[0] == graphs[1]
+    assert ("go", ("init",), ("work",)) in graphs[0]
+    assert ("a_done", ("a",), ("a2",)) in graphs[0]
+    assert ("left", ("choose",), ("l",)) in graphs[0]
+
+
+def test_spec_full_example_parses():
+    """The full example in QUICK_SFC_RULES.md must parse and export."""
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(os.path.dirname(test_dir), "QUICK_SFC_RULES.md"), encoding="utf-8") as f:
+        spec = f.read()
+    example = spec.split("## Full Example")[1].split("```")[1]
+    sfc = parse_string(example)
+    assert len(sfc.steps) == 8
+    assert len(sfc.transitions) == 8
+    L5XExporter(sfc).to_string()
+
+
 def test_directed_links_never_share_endpoints():
     """Every DirectedLink FromID and ToID must be unique in the sample files."""
     test_dir = os.path.dirname(os.path.abspath(__file__))
@@ -366,6 +413,8 @@ if __name__ == "__main__":
         test_redundant_jump_to_next_step_links_once,
         test_sequential_branches_layout_every_element,
         test_or_leg_ending_with_step_is_rejected,
+        test_inline_step_after_transition,
+        test_spec_full_example_parses,
         test_directed_links_never_share_endpoints,
         test_export_simple_sfc,
         test_export_with_custom_metadata,

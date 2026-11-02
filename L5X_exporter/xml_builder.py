@@ -141,7 +141,7 @@ class L5XBuilder:
         for step in self.sfc.steps:
             operand = self.id_manager.get_step_operand(step)
             if operand:
-                description = f"@{step.name}" if step.name else None
+                description = self._description(step.name, step.comments or [])
                 self._create_step_tag(tags, operand, step.preset, description)
 
         # Create Action tags for steps with actions
@@ -157,8 +157,15 @@ class L5XBuilder:
         for trans in self.sfc.transitions:
             operand = self.id_manager.get_transition_operand(trans)
             if operand:
-                description = f"@{trans.name}" if trans.name else None
+                description = self._description(trans.name, [trans.comment])
                 self._create_transition_tag(tags, operand, description)
+
+    @staticmethod
+    def _description(name: str, comments: list):
+        """Tag description: "@name", then one line per comment attached to the element."""
+        lines = [f"@{name}"] if name else []
+        lines += [c.strip() for c in comments if c and c.strip()]
+        return "\n".join(lines) or None
 
     def _create_step_tag(self, tags: ET.Element, name: str, preset: int = 0,
                          description: str = None):

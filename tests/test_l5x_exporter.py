@@ -189,6 +189,21 @@ END
     assert "@my_second_step" in descriptions
 
 
+def test_attached_comments_go_to_tag_description():
+    """Attached comments are exported under @name; standalone comment lines are not."""
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    sfc = parse_file(os.path.join(test_dir, "production_line.qsfc"))
+    root = ET.fromstring(L5XExporter(sfc).to_string())
+    descriptions = [(t.findtext('Description') or '').strip()
+                    for t in root.findall('.//Tags/Tag')]
+
+    assert "@init\nreinitialise" in descriptions
+    assert "@start\nwait for user input" in descriptions
+    assert "@run_auto\nprogram_1" in descriptions
+    assert "@ready" in descriptions
+    assert not any("Load both sides" in d for d in descriptions)
+
+
 def test_action_contains_code():
     """Test that actions contain the structured text code."""
     content = """SI@init(motor_on:=1; valve:=0;)
@@ -432,6 +447,7 @@ if __name__ == "__main__":
         test_export_parallel_branches,
         test_export_selection_branches,
         test_step_description_contains_name,
+        test_attached_comments_go_to_tag_description,
         test_action_contains_code,
         test_tags_are_created,
         test_directed_links_created,

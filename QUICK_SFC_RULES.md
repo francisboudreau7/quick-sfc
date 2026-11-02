@@ -27,7 +27,7 @@ Comments start with `#`:
 ```
 SI@init(reset)  # This resets everything
 ```
-The comments will not be exported into the L5X.
+A comment at the end of a step or transition line, and step text without a semicolon, are exported into the L5X tag description, under the element's `@name`. A comment on a line of its own is not exported.
 
 The parameters can also be left empty.
 

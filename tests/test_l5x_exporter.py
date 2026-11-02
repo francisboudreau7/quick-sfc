@@ -93,6 +93,7 @@ END
             raw = f.read()
         assert raw.startswith(b"\xef\xbb\xbf")
         assert b"\n" not in raw.replace(b"\r\n", b"")
+        assert raw.endswith(b"</RSLogix5000Content>\r\n")
 
         # Verify file content
         tree = ET.parse(filepath)
@@ -405,16 +406,74 @@ END
     assert ("left", ("choose",), ("l",)) in graphs[0]
 
 
-def test_spec_full_example_parses():
-    """The full example in QUICK_SFC_RULES.md must parse and export."""
+def test_spec_examples_parse():
+    """Every complete chart in QUICK_SFC_RULES.md must parse and export."""
     test_dir = os.path.dirname(os.path.abspath(__file__))
     with open(os.path.join(os.path.dirname(test_dir), "QUICK_SFC_RULES.md"), encoding="utf-8") as f:
         spec = f.read()
-    example = spec.split("## Full Example")[1].split("```")[1]
-    sfc = parse_string(example)
-    assert len(sfc.steps) == 8
-    assert len(sfc.transitions) == 8
-    L5XExporter(sfc).to_string()
+    assert spec.count("```") % 2 == 0, "unbalanced code fences"
+    blocks = spec.split("```")[1::2]
+    charts = [b for b in blocks
+              if any(l.startswith("SI@") for l in b.splitlines())
+              and any(l.strip() == "END" for l in b.splitlines())]
+    assert len(charts) == 4
+    for chart in charts:
+        L5XExporter(parse_string(chart)).to_string()
+
+
+def _tag_names(xml_str):
+    return [t.get("Name") for t in ET.fromstring(xml_str).findall('.//Program/Tags/Tag')]
+
+
+def test_missing_tags_not_declared_by_default():
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    sfc = parse_file(os.path.join(test_dir, "production_line.qsfc"))
+    names = _tag_names(L5XExporter(sfc).to_string())
+    assert "start_btn" not in names
+
+
+def test_declare_missing_tags_option():
+    test_dir = os.path.dirname(os.path.abspath(__file__))
+    sfc = parse_file(os.path.join(test_dir, "production_line.qsfc"))
+    xml_str = L5XExporter(sfc).set_declare_missing_tags().to_string()
+    root = ET.fromstring(xml_str)
+    generated = {"Step", "Tran", "Action"}
+    extra = [t for t in root.findall('.//Program/Tags/Tag')
+             if t.get("Name").split("_")[0] not in generated]
+    assert [t.get("Name") for t in extra] == [
+        "auto_mode", "load_sensor_A", "load_sensor_B", "manual_mode",
+        "reset_all", "safety_ok", "start_btn",
+    ]
+    assert all(t.get("DataType") == "BOOL" for t in extra)
+
+
+def test_declare_missing_tags_skips_what_it_cannot_type():
+    """Keywords, members, calls, literals, strings and existing tags are not declared."""
+    content = """SI@init(L[:=]1; Count := ABS(delta) + 16#FF; msg := 'not_a_tag'; (* skipped *))
+T@go(Step_000.DN and NOT(d1) OR a[2] AND t1 > T#5s and l)
+S@s()
+T@back() -> @init
+END
+"""
+    xml_str = L5XExporter(parse_string(content)).set_declare_missing_tags().to_string()
+    names = _tag_names(xml_str)
+    extra = [n for n in names if n.split("_")[0] not in {"Step", "Tran", "Action"}]
+    # "l" and "L" are the same tag: Logix tag names are case-insensitive
+    assert extra == ["Count", "d1", "delta", "l", "msg", "t1"]
+
+
+def test_empty_condition_uses_transition_tag():
+    """An empty condition would fail Verify; it becomes the transition's own BOOL tag."""
+    content = """SI@init()
+T@go()
+S@s()
+T@back(ready) -> @init
+END
+"""
+    root = ET.fromstring(L5XExporter(parse_string(content)).to_string())
+    conditions = {t.get("Operand"): t.find('.//Line').text.strip()
+                  for t in root.iter('Transition')}
+    assert conditions == {"Tran_000": "Tran_000", "Tran_001": "ready"}
 
 
 def test_directed_links_never_share_endpoints():
@@ -438,7 +497,11 @@ if __name__ == "__main__":
         test_sequential_branches_layout_every_element,
         test_or_leg_ending_with_step_is_rejected,
         test_inline_step_after_transition,
-        test_spec_full_example_parses,
+        test_spec_examples_parse,
+        test_missing_tags_not_declared_by_default,
+        test_declare_missing_tags_option,
+        test_declare_missing_tags_skips_what_it_cannot_type,
+        test_empty_condition_uses_transition_tag,
         test_directed_links_never_share_endpoints,
         test_export_simple_sfc,
         test_export_with_custom_metadata,

@@ -69,19 +69,24 @@ Visual representation:
 
 Use `/\` to split and `\/` to merge back:
 
+```
 SI@init()
 T@ready()
 S@check()
 /\
 T@good()
-│
+|
 T@bad(defect)
 S@reject()
 T@rejected()
 \/ S@next()
 T@moved() -> @check
 END
+```
 
+Visual representation:
+
+```
     ┌─────────────┐
     │   SI@init   │       
     └──────┬──────┘                                     
@@ -107,15 +112,15 @@ END
       ┌─────┴─────┐                                     │ 
       │  S@next   │                                     │
       └─────┬─────┘                                     |
-         ───┼─── T@next_is_ready                        │
-```         └───────────────────────────────────────────┘
-
+         ───┼─── T@moved                                │
+            └───────────────────────────────────────────┘
 ```
 
 ### Parallel Branches (Simultaneous Execution)
 
 Use `//\\` to split and `\\//` to merge:
 
+```
 SI@init()
 T@ready()
 S@move_to_next()
@@ -125,11 +130,13 @@ T@start()
     |
     S@fill_right(pump2_on)
 \\//
-T@both_filled() -> @move_to_next()
+T@both_filled() -> @move_to_next
 END
 ```
 
 Visual representation:
+
+```
              ┌─────────────┐
              │  SI@init    │    
              └──────┬──────┘       
@@ -140,7 +147,7 @@ Visual representation:
            │ S@move_to_next()  │◄─────────────────────┐       
            └────────┬──────────┘                      │
                     │                                 │
-                 ───┼─── T@done                       │
+                 ───┼─── T@start                      │
            ═════════╪══════════                       │
            │                   │                      │
     ┌──────▼──────┐     ┌──────▼──────┐               │

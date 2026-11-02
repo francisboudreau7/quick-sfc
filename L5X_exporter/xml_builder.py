@@ -15,6 +15,13 @@ CDATA_TAG = "__CDATA__"
 
 SFC_ROUTINE_NAME = "SFC"
 
+ST_KEYWORDS = {
+    "AND", "OR", "XOR", "NOT", "MOD", "TRUE", "FALSE",
+    "IF", "THEN", "ELSE", "ELSIF", "END_IF", "CASE", "OF", "END_CASE",
+    "FOR", "TO", "BY", "DO", "END_FOR", "WHILE", "END_WHILE",
+    "REPEAT", "UNTIL", "END_REPEAT", "EXIT", "RETURN",
+}
+
 from .constants import (
     DEFAULT_SOFTWARE_REVISION, DEFAULT_SCHEMA_REVISION,
     DEFAULT_CONTROLLER_NAME, DEFAULT_PROGRAM_NAME,
@@ -45,6 +52,7 @@ class L5XBuilder:
         self.program_name = DEFAULT_PROGRAM_NAME
         self.controller_name = DEFAULT_CONTROLLER_NAME
         self.software_revision = DEFAULT_SOFTWARE_REVISION
+        self.declare_missing_tags = False
 
         # Collected directed links
         self._directed_links: List[Tuple[int, int]] = []
@@ -158,7 +166,34 @@ class L5XBuilder:
             operand = self.id_manager.get_transition_operand(trans)
             if operand:
                 description = self._description(trans.name, [trans.comment])
-                self._create_transition_tag(tags, operand, description)
+                self._create_bool_tag(tags, operand, description)
+
+        if self.declare_missing_tags:
+            declared = [tag.get("Name") for tag in tags]
+            for name in self._missing_tag_names(declared):
+                self._create_bool_tag(tags, name)
+
+    def _missing_tag_names(self, declared: list) -> list:
+        """Plain identifiers in conditions and actions that no declared tag covers.
+
+        Member access (a.b), indexing (a[0]) and calls (f(x)) are skipped, since
+        their data type can't be guessed.
+        """
+        texts = [t.condition for t in self.sfc.transitions]
+        texts += [s.action for s in self.sfc.steps
+                  if s.action and s.action != "None" and s.action.strip()]
+        known = {name.upper() for name in declared}
+        found = {}
+        for text in texts:
+            text = text.replace("[:=]", ":=")
+            text = re.sub(r"'[^']*'|\"[^\"]*\"|\(\*.*?\*\)|//.*", " ", text)
+            for match in re.finditer(r"(?<![\w.#])[A-Za-z_]\w*(?![\w#])", text):
+                if text[match.end():].lstrip()[:1] in (".", "[", "("):
+                    continue
+                key = match.group().upper()
+                if key not in ST_KEYWORDS and key not in known and key not in found:
+                    found[key] = match.group()
+        return sorted(found.values(), key=str.upper)
 
     @staticmethod
     def _description(name: str, comments: list):
@@ -242,7 +277,7 @@ class L5XBuilder:
         self._add_data_member(struct, "T", "DINT", "Decimal", "0")
         self._add_data_member(struct, "Count", "DINT", "Decimal", "0")
 
-    def _create_transition_tag(self, tags: ET.Element, name: str,
+    def _create_bool_tag(self, tags: ET.Element, name: str,
                                description: str = None):
         """Create BOOL tag for transition."""
         tag = ET.SubElement(
@@ -376,7 +411,9 @@ class L5XBuilder:
             condition_elem = ET.SubElement(trans_elem, "Condition")
             st_content = ET.SubElement(condition_elem, "STContent")
             line = ET.SubElement(st_content, "Line", Number="0")
-            self._set_cdata_text(line, trans.condition)
+            # Studio rejects an empty condition; the transition's own BOOL tag is
+            # always declared and stays false until someone sets it
+            self._set_cdata_text(line, trans.condition.strip() or operand)
 
     def _build_branches_and_links(self, sfc_content: ET.Element):
         """Build L5X Branch and DirectedLink elements from graph topology.

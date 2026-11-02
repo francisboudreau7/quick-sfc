@@ -31,6 +31,7 @@ class L5XExporter:
         self._program_name = DEFAULT_PROGRAM_NAME
         self._controller_name = DEFAULT_CONTROLLER_NAME
         self._software_revision = DEFAULT_SOFTWARE_REVISION
+        self._declare_missing_tags = False
 
         # Internal components
         self._id_manager = None
@@ -73,6 +74,19 @@ class L5XExporter:
         self._software_revision = revision
         return self
 
+    def set_declare_missing_tags(self, enabled: bool = True) -> "L5XExporter":
+        """Declare a BOOL tag for each plain variable used in conditions and actions.
+
+        Off by default. Every such name becomes BOOL, so fix the type in Studio
+        for non-BOOL variables. On import, choose "Use Existing" for tags the
+        project already has.
+
+        Returns:
+            Self for chaining
+        """
+        self._declare_missing_tags = enabled
+        return self
+
     def validate(self) -> "L5XExporter":
         """Run pre-export validation.
 
@@ -112,7 +126,7 @@ class L5XExporter:
 
         # Step 5: Write to file the way Studio 5000 does: UTF-8 with BOM, CRLF
         with open(filepath, "w", encoding="utf-8-sig", newline="\r\n") as f:
-            f.write(xml_string)
+            f.write(xml_string + "\n")
 
         return filepath
 
@@ -169,6 +183,7 @@ class L5XExporter:
         self._xml_builder.set_program_name(self._program_name)
         self._xml_builder.set_controller_name(self._controller_name)
         self._xml_builder.set_software_revision(self._software_revision)
+        self._xml_builder.declare_missing_tags = self._declare_missing_tags
 
         root = self._xml_builder.build()
         return self._xml_builder.to_string(root)

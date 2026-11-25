@@ -1,0 +1,16 @@
+/* Placeholder styles: the real window comes after the look is chosen (PLAN.md Phase 2). */
+:root {
+  --bg: #ffffff;
+  --fg: #1f2328;
+  --muted: #656d76;
+  --border: #d0d7de;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8d96a0; --border: #30363d; }
+}
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+#app { padding: 16px; }
+header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+pre { font: 13px/1.25 ui-monospace, Consolas, monospace; overflow: auto; border: 1px solid var(--border); padding: 12px; }
+.problems { color: var(--muted); white-space: pre-wrap; }

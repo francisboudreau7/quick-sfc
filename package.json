@@ -10,13 +10,16 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "qsfc": "tsx src/cli/main.ts"
+    "qsfc": "tsx src/cli/main.ts",
+    "build:app": "tsx scripts/build-app.ts",
+    "build:app:dev": "tsx scripts/build-app.ts --dev"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^24.19.4",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^4.1.12"

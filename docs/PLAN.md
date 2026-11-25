@@ -384,6 +384,15 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - Tests: unit tests, "golden" L5X files compared byte for byte, ASCII snapshots of the diagrams, and the old repo's cases rewritten by hand in the new syntax.
 - **Import test pack**: about 6 L5X files covering linear, selection, parallel, nested, jumps with automatic convergence, presets and multi-line ST. You import each one once and report any errors.
 - ✅ Acceptance: every file in the pack imports into Studio 5000 without errors.
+- **Status (2026-11-25):** built, committed on branch `v2` and pushed (646 tests). The test pack is in `testpack/`. **The Studio import is not done yet**; Phase 2 started anyway. Points that may need export fixes once the import results arrive:
+  1. how step names show: tag description beside the box, the `// name` action comment, or both (and whether comment-only actions pass Verify)
+  2. REAL and TIMER tag data
+  3. a chart ending on a step (tp06)
+  4. automatic convergence fed by jumps far apart (tp05), and its bar spanning two chains
+  5. a parallel diverge leg linked directly into a selection converge leg (tp07)
+  6. deep nesting (tp04), and a program with the same name as its routine
+  7. the general layout spacing as Studio draws it
+  8. code review of the subagent-written modules (deferred until the import results)
 
 ### Phase 2: Viewer window
 - Start with mockups of **both looks** (Studio 5000 and textbook IEC/GRAFCET); you choose one.
@@ -391,6 +400,15 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - Zoom/pan. Export diagram as SVG/PNG (optional, handy for reports).
 - Tests: layout tests (no overlaps, legs aligned) and screenshot comparisons I can run myself.
 - ✅ Acceptance: opening any test-pack `.qsfc` shows the correct diagram; Export L5X gives the same file as the CLI.
+
+**Implementation design (Phase 2):**
+- `src/render/svg.ts`: `renderSvg(graph, layout, options)` returns an SVG string. Pure, so it is snapshot-tested in Node and used in the browser the same way. It has two looks (Studio 5000 / textbook) behind one option until you choose. It draws from the same `Layout` as the L5X coordinates and the ASCII view.
+- `app/`: the window. Plain TypeScript and DOM, no UI framework (Phase 3 adds CodeMirror 6 for the editor).
+- Build: `npm run build:app` bundles everything with esbuild and inlines it into **one file, `dist/QuickSFC.html`**, which works offline from a USB key.
+- File access:
+  - **Open:** a file picker in every browser. Edge and Chrome use the File System Access API when present, which Phase 3's watch mode will reuse.
+  - **Export L5X:** a download, which works everywhere (Firefox included).
+- Checks: unit and snapshot tests for the renderer. For the window, I open `dist/QuickSFC.html` in my built-in browser, load the test-pack charts and compare screenshots.
 
 ### Phase 3: Live coding
 - Split view: editor on the left, diagram on the right, redrawn as you type. When the text is broken, the last valid diagram stays visible with the error highlighted.

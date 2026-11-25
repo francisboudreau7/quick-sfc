@@ -1,0 +1,29 @@
+// Chart used for the Phase 2 look mockups: selection, a parallel branch inside a
+// selection leg, a leg that jumps out, presets, descriptions, and a loop back.
+sfc demo_mixer
+
+init idle "Waiting for start"
+  motor := 0;
+-- start: start_btn AND safety_ok
+step fill 5s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step check
+select
+  -- good: quality_ok
+  parallel
+    step pack
+      packer [:=] 1;
+  |
+    step label
+      printer [:=] 1;
+  end
+  -- packed: pack_done AND label_done
+|
+  -- bad: NOT quality_ok
+  step reject
+    pusher [:=] 1;
+  -- reject_done -> idle
+end
+step done
+-- TRUE -> idle

@@ -1,0 +1,35 @@
+// Jumps and automatic convergence (SPEC §6.4)
+sfc jumps_demo
+
+init idle
+-- start_btn
+step fill 10s
+  valve [:=] 1;
+-- fill.DN
+step check
+select
+  -- good: quality_ok
+  step pack
+    packer [:=] 1;
+  -- pack_done
+|
+  -- bad: NOT quality_ok
+  step reject
+    pusher [:=] 1;
+  -- retry: retry_btn -> fill
+|
+  -- skip: bypass
+end
+step store
+  conveyor [:=] 1;
+select
+  -- more: count < 10 -> fill
+|
+  -- full: count >= 10
+end
+step finish
+select
+  -- reset_btn -> idle
+|
+  -- again: again_btn -> store
+end

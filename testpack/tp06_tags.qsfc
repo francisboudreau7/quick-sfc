@@ -1,0 +1,19 @@
+// Test pack 6: tag types (BOOL, DINT, REAL, TIMER), step members (FS, DN),
+// and a chart that ends on a step (no transition after it).
+sfc tp06_tags
+
+tag tmr : TIMER "Spare timer"
+tag speed : REAL "Motor speed setpoint"
+tag batch : DINT
+
+init idle
+  speed := 0.0;
+-- start_btn AND batch < 10
+step ramp 2s "Ramp up"
+  speed := speed + 0.5;
+  IF ramp.FS THEN
+    batch := batch + 1;
+  END_IF;
+-- ramp.DN AND speed >= 10.0 OR tmr.DN
+step hold
+  lamp [:=] 1;

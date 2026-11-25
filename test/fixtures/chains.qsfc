@@ -1,0 +1,8 @@
+init idle
+-- start -> work      // flow stops here
+step error             // new chain, reached by the jump below
+  alarm [:=] 1;
+-- reset_btn -> idle
+step work              // new chain, reached from idle
+  motor [:=] 1;
+-- fault -> error

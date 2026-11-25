@@ -1,0 +1,14 @@
+// SPEC §5.1 as a complete file
+sfc select_demo
+init check
+select
+  -- quality_ok
+  step pack
+  -- pack_done
+|
+  -- NOT quality_ok
+  step reject
+  -- reject_done
+end
+step next
+-- next_done -> check

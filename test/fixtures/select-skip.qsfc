@@ -1,0 +1,14 @@
+// SPEC §5.1: a leg that is a single transition skips the wash
+sfc wash_or_skip
+init idle
+-- start_btn
+step prepare
+select
+  -- skip_wash
+|
+  -- NOT skip_wash
+  step wash 10s
+  -- wash.DN
+end
+step dry
+-- dry_done -> idle

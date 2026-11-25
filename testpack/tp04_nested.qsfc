@@ -1,0 +1,45 @@
+// Test pack 4: nesting. A selection inside a parallel leg,
+// and a parallel branch inside a selection leg.
+sfc tp04_nested
+
+init idle
+-- go
+parallel
+  step fill_a
+    valve_a [:=] 1;
+  select
+    -- level_a
+  |
+    -- fault_a
+    step alarm_a
+      horn [:=] 1;
+    -- ack_btn
+  end
+  step done_a
+|
+  step fill_b
+    valve_b [:=] 1;
+  -- level_b
+  step done_b
+end
+-- TRUE
+step choose
+select
+  -- mode_auto
+  step auto_run
+  -- go
+  parallel
+    step left
+      left_out [:=] 1;
+  |
+    step right
+      right_out [:=] 1;
+  end
+  -- TRUE
+|
+  -- mode_manual
+  step manual_run
+  -- stop_btn
+end
+step finish
+-- TRUE -> idle

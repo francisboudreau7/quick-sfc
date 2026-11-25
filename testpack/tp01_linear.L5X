@@ -1,0 +1,228 @@
+﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp01_linear" TargetType="Program" ContainsContext="true" ExportDate="Wed Nov 25 15:56:07 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
+<Controller Use="Context" Name="QuickSFC">
+<DataTypes Use="Context">
+</DataTypes>
+<Modules Use="Context">
+</Modules>
+<Tags Use="Context">
+</Tags>
+<Programs Use="Context">
+<Program Use="Target" Name="tp01_linear" TestEdits="false" MainRoutineName="tp01_linear" Disabled="false" UseAsFolder="false">
+<Tags>
+<Tag Name="Action_000" TagType="Base" DataType="SFC_ACTION" Constant="false" ExternalAccess="Read/Write">
+<Data Format="L5K">
+<![CDATA[[0,0,0,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="SFC_ACTION">
+<DataValueMember Name="Status" DataType="DINT" Radix="Hex" Value="16#0000_0000"/>
+<DataValueMember Name="A" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Q" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PauseTimer" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="T" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="Count" DataType="DINT" Radix="Decimal" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Action_001" TagType="Base" DataType="SFC_ACTION" Constant="false" ExternalAccess="Read/Write">
+<Data Format="L5K">
+<![CDATA[[0,0,0,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="SFC_ACTION">
+<DataValueMember Name="Status" DataType="DINT" Radix="Hex" Value="16#0000_0000"/>
+<DataValueMember Name="A" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Q" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PauseTimer" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="T" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="Count" DataType="DINT" Radix="Decimal" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="count" TagType="Base" DataType="DINT" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="DINT" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="motor" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="start_btn" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[Start push button]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Step_000" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[idle
+Waiting for start]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,0,0,0,0,0,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="SFC_STEP">
+<DataValueMember Name="Status" DataType="DINT" Radix="Hex" Value="16#0000_0000"/>
+<DataValueMember Name="X" DataType="BOOL" Value="0"/>
+<DataValueMember Name="FS" DataType="BOOL" Value="0"/>
+<DataValueMember Name="SA" DataType="BOOL" Value="0"/>
+<DataValueMember Name="LS" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmEn" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmLow" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmHigh" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Reset" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PauseTimer" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="T" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="TMax" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="Count" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="LimitLow" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="LimitHigh" DataType="DINT" Radix="Decimal" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Step_001" TagType="Base" DataType="SFC_STEP" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[run
+Motor runs 3 s]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[[0,3000,0,0,0,0,0]]]>
+</Data>
+<Data Format="Decorated">
+<Structure DataType="SFC_STEP">
+<DataValueMember Name="Status" DataType="DINT" Radix="Hex" Value="16#0000_0000"/>
+<DataValueMember Name="X" DataType="BOOL" Value="0"/>
+<DataValueMember Name="FS" DataType="BOOL" Value="0"/>
+<DataValueMember Name="SA" DataType="BOOL" Value="0"/>
+<DataValueMember Name="LS" DataType="BOOL" Value="0"/>
+<DataValueMember Name="DN" DataType="BOOL" Value="0"/>
+<DataValueMember Name="OV" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmEn" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmLow" DataType="BOOL" Value="0"/>
+<DataValueMember Name="AlarmHigh" DataType="BOOL" Value="0"/>
+<DataValueMember Name="Reset" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PauseTimer" DataType="BOOL" Value="0"/>
+<DataValueMember Name="PRE" DataType="DINT" Radix="Decimal" Value="3000"/>
+<DataValueMember Name="T" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="TMax" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="Count" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="LimitLow" DataType="DINT" Radix="Decimal" Value="0"/>
+<DataValueMember Name="LimitHigh" DataType="DINT" Radix="Decimal" Value="0"/>
+</Structure>
+</Data>
+</Tag>
+<Tag Name="Tran_000" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[T1]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+<Tag Name="Tran_001" TagType="Base" DataType="BOOL" Radix="Decimal" Constant="false" ExternalAccess="Read/Write">
+<Description>
+<![CDATA[T2]]>
+</Description>
+<Data Format="L5K">
+<![CDATA[0]]>
+</Data>
+<Data Format="Decorated">
+<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>
+</Data>
+</Tag>
+</Tags>
+<Routines>
+<Routine Name="tp01_linear" Type="SFC">
+<SFCContent SheetSize="Letter - 8.5 x 11 in" SheetOrientation="Landscape" StepName="Step" TransitionName="Tran" ActionName="Action" StopName="Stop">
+<Step ID="0" X="200" Y="100" Operand="Step_000" HideDesc="false" DescX="240" DescY="80" DescWidth="0" InitialStep="true" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Action ID="1" Operand="Action_000" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
+<Body>
+<STContent>
+<Line Number="0">
+<![CDATA[// idle - Waiting for start]]>
+</Line>
+<Line Number="1">
+<![CDATA[motor := 0;]]>
+</Line>
+<Line Number="2">
+<![CDATA[count := 0;]]>
+</Line>
+</STContent>
+</Body>
+</Action>
+</Step>
+<Step ID="2" X="200" Y="340" Operand="Step_001" HideDesc="false" DescX="240" DescY="320" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Action ID="3" Operand="Action_001" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
+<Body>
+<STContent>
+<Line Number="0">
+<![CDATA[// run - Motor runs 3 s]]>
+</Line>
+<Line Number="1">
+<![CDATA[motor [:=] 1;]]>
+</Line>
+<Line Number="2">
+<![CDATA[IF count < 100 THEN]]>
+</Line>
+<Line Number="3">
+<![CDATA[  count := count + 1;]]>
+</Line>
+<Line Number="4">
+<![CDATA[END_IF;]]>
+</Line>
+</STContent>
+</Body>
+</Action>
+</Step>
+<Transition ID="4" X="200" Y="220" Operand="Tran_000" HideDesc="false" DescX="260" DescY="200" DescWidth="0">
+<Condition>
+<STContent>
+<Line Number="0">
+<![CDATA[start_btn]]>
+</Line>
+</STContent>
+</Condition>
+</Transition>
+<Transition ID="5" X="200" Y="460" Operand="Tran_001" HideDesc="false" DescX="260" DescY="440" DescWidth="0">
+<Condition>
+<STContent>
+<Line Number="0">
+<![CDATA[Step_001.DN]]>
+</Line>
+</STContent>
+</Condition>
+</Transition>
+<DirectedLink FromID="0" ToID="4" Show="true"/>
+<DirectedLink FromID="2" ToID="5" Show="true"/>
+<DirectedLink FromID="4" ToID="2" Show="true"/>
+<DirectedLink FromID="5" ToID="0" Show="true"/>
+</SFCContent>
+</Routine>
+</Routines>
+</Program>
+</Programs>
+</Controller>
+</RSLogix5000Content>

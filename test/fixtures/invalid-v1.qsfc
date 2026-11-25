@@ -1,0 +1,4 @@
+SI@idle(motor:=0;)
+T@start(start_btn)
+S@fill(valve:=1;, 5000)
+T@done(fill.DN) -> @idle

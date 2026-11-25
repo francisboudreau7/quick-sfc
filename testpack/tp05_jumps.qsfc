@@ -1,0 +1,20 @@
+// Test pack 5: jumps. A selection leg that jumps out (the other leg is the only one
+// that continues: direct wire, no converge), a separate fault chain, and the initial
+// step reached by two jumps (automatic selection convergence).
+sfc tp05_jumps
+
+init idle
+-- start_btn
+step work
+  motor [:=] 1;
+select
+  -- fault -> error
+|
+  -- done_sig
+end
+step unload 1s
+  pusher [:=] 1;
+-- unload.DN -> idle
+step error "Fault handling"
+  alarm [:=] 1;
+-- reset_btn -> idle

@@ -1,0 +1,16 @@
+// Test pack 1: linear chart, preset, multi-line action, descriptions,
+// loop back to the initial step with a single jump (direct wire).
+sfc tp01_linear
+
+tag start_btn "Start push button"
+
+init idle "Waiting for start"
+  motor := 0;
+  count := 0;
+-- start_btn
+step run 3s "Motor runs 3 s"
+  motor [:=] 1;
+  IF count < 100 THEN
+    count := count + 1;
+  END_IF;
+-- run.DN -> idle

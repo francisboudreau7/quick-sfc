@@ -1,0 +1,11 @@
+╔═══════════╗
+║   idle    ║─[ speed := 0.0; ]
+╚═════╤═════╝
+      ┼ start_btn AND batch < 10
+┌─────┴─────┐
+│ ramp  2s  │─[ speed := speed + 0.5; … ]
+└─────┬─────┘
+      ┼ ramp.DN AND speed >= 10.0 OR tmr.DN
+┌─────┴─────┐
+│   hold    │─[ lamp [:=] 1; ]
+└───────────┘

@@ -1,0 +1,23 @@
+// A parallel block inside a selection leg
+sfc parallel_in_select
+init idle
+select
+  -- auto_mode
+  step prepare
+  -- ready
+  parallel
+    step heat 30s
+    -- heat.DN
+    step hold
+  |
+    step stir
+      stirrer [:=] 1;
+  end
+  -- stir_done
+|
+  -- manual_mode
+  step manual
+  -- manual_done
+end
+step finish
+-- finish_ack -> idle

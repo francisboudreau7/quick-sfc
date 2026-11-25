@@ -1,0 +1,26 @@
+// Test pack 2: selection branch with 3 legs (one leg is a single transition),
+// named and unnamed transitions.
+sfc tp02_selection
+
+init idle
+  motor := 0;
+-- start: start_btn AND safety_ok
+step fill 5s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step check
+select
+  -- good: quality_ok
+  step pack
+    packer [:=] 1;
+  -- pack_done
+|
+  -- bad: NOT quality_ok
+  step reject
+    pusher [:=] 1;
+  -- reject_done
+|
+  -- skip: bypass
+end
+step done
+-- TRUE -> idle

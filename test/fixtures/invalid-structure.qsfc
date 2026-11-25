@@ -1,0 +1,12 @@
+sfc broken
+  stray := 1;
+init idle
+step fill 5
+-- a
+-- b -> nowhere
+step x
+select
+  -- c
+  step y
+end
+|

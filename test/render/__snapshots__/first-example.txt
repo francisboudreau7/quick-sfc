@@ -1,0 +1,18 @@
+╔═══════════╗ ◄ from T3, rejected
+║   idle    ║─[ motor := 0; ]
+╚═════╤═════╝
+      ┼ start_btn AND safety_ok
+┌─────┴─────┐
+│ fill  5s  │─[ valve [:=] 1; ]
+└─────┬─────┘
+      ┼ fill.DN
+┌─────┴─────┐
+│   check   │
+└─────┬─────┘
+      ├─────────────────────────────────┐
+      ┼ good: quality_ok                ┼ bad: NOT quality_ok
+┌─────┴─────┐                      ┌────┴────┐
+│   pack    │─[ packer [:=] 1; ]   │ reject  │─[ pusher [:=] 1; ]
+└─────┬─────┘                      └────┬────┘
+      ┼ pack_done                       ┼ rejected: reject_done
+      → idle (T3)                       → idle

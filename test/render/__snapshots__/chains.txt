@@ -1,0 +1,5 @@
+╔═══════╗ ◄ from T2      ┌───────┐ ◄ from T3              ┌───────┐ ◄ from T1
+║ idle  ║                │ error │─[ alarm [:=] 1; ]      │ work  │─[ motor [:=] 1; ]
+╚═══╤═══╝                └───┬───┘                        └───┬───┘
+    ┼ start                  ┼ reset_btn                      ┼ fault
+    → work (T1)              → idle (T2)                      → error (T3)

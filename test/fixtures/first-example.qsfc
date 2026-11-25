@@ -1,0 +1,21 @@
+// Fill a tank and check the product
+sfc fill_and_check
+
+init idle
+  motor := 0;
+-- start_btn AND safety_ok
+step fill 5s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step check
+select
+  -- good: quality_ok
+  step pack
+    packer [:=] 1;
+  -- pack_done -> idle
+|
+  -- bad: NOT quality_ok
+  step reject
+    pusher [:=] 1;
+  -- rejected: reject_done -> idle
+end

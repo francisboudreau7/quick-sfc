@@ -1,0 +1,22 @@
+// Test pack 7 (probe): a loop back to the FIRST step of a parallel leg.
+// qSFC puts a selection convergence at the top of the leg, fed directly by the
+// parallel divergence leg and by the retry transition. That link shape is unverified.
+sfc tp07_leg_loop
+
+init idle
+-- start
+parallel
+  step fill_a
+    valve_a [:=] 1;
+  select
+    -- retry -> fill_a
+  |
+    -- level_a
+  end
+  step done_a
+|
+  step fill_b
+  -- level_b
+  step done_b
+end
+-- TRUE -> idle

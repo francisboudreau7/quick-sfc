@@ -1,0 +1,10 @@
+sfc linear
+init idle
+  motor := 0;
+-- start_btn
+step run 5s "Run the motor"
+  motor := 1;
+  IF level > 80 THEN
+    alarm := 1;
+  END_IF;
+-- run.DN -> idle

@@ -1,0 +1,16 @@
+// SPEC §5.2 as a complete file
+sfc parallel_demo
+init idle
+-- start
+parallel
+  step fill_a
+    valve_a [:=] 1;
+  -- level_a
+  step wait_a
+|
+  step fill_b
+    valve_b [:=] 1;
+end
+-- level_b
+step mix
+-- mix_done -> idle

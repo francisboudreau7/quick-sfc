@@ -1,0 +1,23 @@
+// SPEC §5.3: a selection inside a parallel leg
+sfc nested_demo
+init idle
+-- start
+parallel
+  step fill_a 5s
+  -- fill_a.DN
+  step done_a
+|
+  step fill_b
+  select
+    -- level_b
+  |
+    -- fault_b
+    step alarm_b
+      horn [:=] 1;
+    -- ack_btn
+  end
+  step done_b
+end
+-- TRUE
+step mix
+-- mix_done -> idle

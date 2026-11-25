@@ -1,0 +1,22 @@
+// SPEC §6.2: a loop inside a parallel leg, written with a nested select
+sfc parallel_loop
+init idle
+-- start
+parallel
+  step prepare_a
+  -- go_a
+  step fill_a
+    valve_a [:=] 1;
+  select
+    -- retry -> fill_a
+  |
+    -- level_ok
+  end
+  step done_a
+|
+  step fill_b
+    valve_b [:=] 1;
+  -- level_b
+  step done_b
+end
+-- all_done -> idle

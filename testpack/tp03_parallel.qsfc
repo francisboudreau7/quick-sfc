@@ -1,0 +1,18 @@
+// Test pack 3: parallel branch, legs of different lengths.
+sfc tp03_parallel
+
+init idle
+-- go
+parallel
+  step fill_a
+    valve_a [:=] 1;
+  -- level_a
+  step wait_a
+|
+  step fill_b 2s
+    valve_b [:=] 1;
+end
+-- fill_b.DN
+step mix 4s
+  mixer [:=] 1;
+-- mix.DN -> idle

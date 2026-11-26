@@ -448,6 +448,15 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - ✅ Acceptance: tp08 imports and verifies in Studio; one-routine files export byte-identical to before.
 
 ### Phase 4: L5X import (round trip)
+**4a. Tidy (first deliverable, decided 2026-11-26).** Studio 5000 has no way to clean up a messy SFC diagram; the qSFC layout engine can do it.
+- Read an SFC routine from an L5X (exported from Studio), rebuild its structure (steps, transitions, branches, links), run the qSFC layout, and write back **only** the coordinates (step/transition X/Y, branch Y, description positions) and the `Show` flags of hidden wires. Every other byte stays as it was: operands (`Step_007` keeps its name, so HMIs and other routines that use `Step_007.X` keep working), actions and qualifiers, presets and expressions, alarms, the user's own descriptions, tags.
+- The layout learns the elements qSFC doesn't write: Stop elements, text boxes, several actions per step (taller action boxes).
+- A chart the layout can't handle (a shape the qSFC rules don't allow, e.g. a jump into the middle of a parallel branch) is left untouched, with a message saying why; never "fixed" silently.
+- Output: the tidied L5X, imported back into the project. Replacing a routine needs a routine-level import: **[Verify]** that format first (L5X_GUIDE flags it as unverified), or re-import the whole program.
+- In the app: File → "Tidy an L5X…" shows before/after diagrams and saves the tidied file; CLI `qsfc tidy in.L5X -o out.L5X`.
+- Tests: tidying a qSFC-made L5X changes nothing but coordinates; tidy twice = tidy once; real messy charts from class, exported from Studio, tidied, re-imported, Verify + screenshot.
+
+**4b. Round trip.**
 - L5X → syntax tree → `.qsfc` text; actions, qualifiers, presets and descriptions preserved.
 - Anything we can't represent (Stop elements, text boxes, ...) is reported, never silently dropped.
 - Names: from the step/transition tag descriptions (hidden boxes, decided 2026-11-26), else the step's `// name - description` comment; auto names (`T1`…) become unnamed transitions again. Elements with neither get a plain name (never `Step_000`, which is reserved).

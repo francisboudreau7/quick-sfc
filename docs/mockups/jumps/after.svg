@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 400 440" width="400" height="440" font-family="system-ui, Segoe UI, sans-serif" font-size="12">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#111"/>
+    </marker>
+  </defs>
+  <rect x="0" y="20" width="400" height="440" fill="#fff"/>
+  <g stroke="#111" stroke-width="1.4" fill="none">
+    <!-- main link -->
+    <path d="M120 104 V196 M120 240 V300 M120 344 V370"/>
+    <!-- idle (initial, double square) -->
+    <rect x="98" y="60" width="44" height="44" fill="#fff"/>
+    <rect x="101.5" y="63.5" width="37" height="37"/>
+    <!-- fill, drain -->
+    <rect x="98" y="196" width="44" height="44" fill="#fff"/>
+    <rect x="98" y="300" width="44" height="44" fill="#fff"/>
+    <!-- actions -->
+    <path d="M142 82 H160 M142 218 H160 M142 322 H160"/>
+    <rect x="160" y="66" width="120" height="32"/><path d="M180 66 V98"/>
+    <rect x="160" y="202" width="120" height="32"/><path d="M180 202 V234"/>
+    <rect x="160" y="306" width="120" height="32"/><path d="M180 306 V338"/>
+    <!-- selection divergence -->
+    <path d="M100 370 H270 M250 370 V430 M120 370 V430"/>
+    <!-- loop 1: level_low -> fill, LEFT side, joins the link above fill -->
+    <path d="M120 430 V440 H40 V170 H114" marker-end="url(#arr)"/>
+    <!-- loop 2: level_high -> idle, RIGHT side, enters idle from the top -->
+    <path d="M250 430 V440 H370 V36 H120 V58" marker-end="url(#arr)"/>
+  </g>
+  <!-- transition bars -->
+  <g fill="#111">
+    <rect x="108" y="132" width="24" height="5"/>
+    <rect x="108" y="268" width="24" height="5"/>
+    <rect x="108" y="398" width="24" height="5"/>
+    <rect x="238" y="398" width="24" height="5"/>
+  </g>
+  <!-- step numbers and names -->
+  <g text-anchor="middle" font-size="14">
+    <text x="120" y="87">1</text><text x="120" y="223">2</text><text x="120" y="327">3</text>
+  </g>
+  <g text-anchor="end" font-style="italic" fill="#333">
+    <text x="90" y="86">idle</text>
+    <text x="90" y="216">fill</text><text x="90" y="230" font-size="10" font-style="normal">5s</text>
+    <text x="90" y="326">drain</text>
+    <text x="102" y="139" font-size="11" fill="#555">(start)</text>
+  </g>
+  <!-- actions text -->
+  <g font-family="ui-monospace, Consolas, monospace" font-size="11.5">
+    <text x="166" y="86" font-weight="700" font-family="system-ui">N</text><text x="188" y="86">motor := 0;</text>
+    <text x="166" y="222" font-weight="700" font-family="system-ui">N</text><text x="188" y="222">valve [:=] 1;</text>
+    <text x="166" y="326" font-weight="700" font-family="system-ui">N</text><text x="188" y="326">pump [:=] 1;</text>
+    <!-- conditions -->
+    <text x="142" y="139">start_btn AND safety_ok</text>
+    <text x="142" y="275">fill.DN</text>
+    <text x="142" y="405">level_low</text>
+    <text x="272" y="405">level_high</text>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+sfc tank
+init idle
+  motor := 0;
+-- start: start_btn AND safety_ok
+step fill 5s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step drain
+  pump [:=] 1;
+select
+  -- level_low -> fill
+|
+  -- level_high -> idle
+end

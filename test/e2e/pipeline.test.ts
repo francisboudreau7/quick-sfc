@@ -55,6 +55,16 @@ describe.each(charts)("%s", (path) => {
   });
 });
 
+describe.each(readdirSync("testpack").filter((f) => f.endsWith(".qsfc")))("testpack/%s", (f) => {
+  it("exports the committed testpack L5X byte for byte (apart from ExportDate)", () => {
+    // The SVG view routes its wires at render time; the layout and the L5X coordinates must not move.
+    const noDate = (t: string): string => t.replace(/ExportDate="[^"]*"/, 'ExportDate=""');
+    const { text } = exportL5X(readFileSync(`testpack/${f}`, "utf8"), { fileName: f, exportDate: DATE });
+    const committed = readFileSync(`testpack/${f.replace(/\.qsfc$/, ".L5X")}`, "utf8");
+    expect(noDate(text!)).toBe(noDate(committed));
+  });
+});
+
 describe("export options and names", () => {
   const src = "init a\n-- go -> a\n";
 

@@ -6,31 +6,50 @@
  *   - "studio":   Studio 5000 SFC editor style (rectangle steps with operand caption,
  *                 action box with an N / Action_nnn header, transition bar with a name box);
  *   - "textbook": IEC 60848 GRAFCET / IEC 61131-3 course style (square steps, action
- *                 rectangles with a qualifier cell, thick transition bar, wide branch lines,
- *                 labelled jump arrows).
+ *                 rectangles with a qualifier cell, thick transition bar, wide branch lines).
  *
  * Geometry:
  *   - x: every element column gets a line x. Columns are packed row by row (like the
  *     ASCII view): a column sits as far left as the content of the columns on its left
- *     allows in the rows where both have something (text, box, line). Channel columns
- *     (routed wires) sit right of their column group's content; groups never share x.
+ *     allows in the rows where both have something (text, box, line), and leaves room
+ *     for the jump lanes beside it. The layout's channel columns are not used (the L5X
+ *     keeps them); groups never share x.
  *   - y: every row is a band as tall as its content (step box, action box, transition
  *     text). Between two rows there is a gap ("half row" of the layout) that holds the
  *     horizontal parts of routed wires, one lane per wire when they overlap, plus a
- *     label slot under the lanes when a labelled arrow ends there.
- *   - Wires: graph links between neighbours are straight vertical lines; jumps, loops
- *     and jogs follow the layout's wire routes. Wires into a convergence bar from a
- *     channel ("wired" legs) land on the bar to the right of its last leg.
+ *     label slot under the lanes for cross-references.
+ *   - Wires: graph links between neighbours are straight vertical lines; jogs follow the
+ *     layout's route. Jump wires are routed here, at render time (src/render/route.ts):
+ *     a lane on the side of the jump's leg (main column and leftmost legs on the left,
+ *     other legs on the right), just past the widest element of the rows it passes,
+ *     shortest loops innermost. A jump into a step with another input joins the line
+ *     above that step with an arrowhead; automatic convergence bars are not drawn (the
+ *     L5X keeps them). A jump into a step with no other input enters it from the top.
+ *     A wire that would still cross something becomes a GRAFCET cross-reference: a
+ *     short arrow under the transition labelled with the target, and "from T…" above
+ *     the target.
  *
  * Every step, transition, branch bar and wire carries `data-id` (graph id; wires use
  * `from-to`) and a `qsfc-*` class. Colors are CSS custom properties `--qsfc-*` with a
  * dark variant (prefers-color-scheme, or `.qsfc-dark` on an ancestor; `.qsfc-light`
  * on an ancestor forces the light colors).
  */
-import { key } from "../model/ast.js";
 import type { GBranch, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
-import type { Layout, Wire } from "../layout/index.js";
+import type { GridPoint, Layout } from "../layout/index.js";
 import { formatDuration } from "./ascii.js";
+import {
+  gapSpan,
+  orderLanes,
+  planRoutes,
+  segmentHitsBox,
+  segmentsCross,
+  spansOverlap,
+  type Box,
+  type HLine,
+  type Jump,
+  type RoutePlan,
+  type Seg,
+} from "./route.js";
 
 export type SvgLook = "studio" | "textbook";
 
@@ -116,7 +135,7 @@ const STUDIO: Metrics = {
   gapBase: 20,
   lanePad: 9,
   laneSp: 8,
-  labelH: 0,
+  labelH: 14,
   colGap: 26,
   minSep: 40,
   groupGap: 56,
@@ -356,21 +375,29 @@ function planTransition(t: GTransition, M: Metrics, look: SvgLook): TransPlan {
 interface GridEnd {
   row: number;
   col: number;
-  /** Extra x (wired legs land right of the bar's last leg). */
-  dx: number;
   kind: "step" | "transition" | "bar";
   bar?: GraphId;
 }
 
-interface HSeg {
-  gap: number;
-  x0: number;
-  x1: number;
-  prio: number;
-  wire: number;
-  /** Index of the first point of the segment in the wire's points. */
-  at: number;
-  lane: number;
+interface Env {
+  graph: Graph;
+  layout: Layout;
+  look: SvgLook;
+  M: Metrics;
+  numbers: boolean;
+  stepById: Map<GraphId, GStep>;
+  transById: Map<GraphId, GTransition>;
+  branchById: Map<GraphId, GBranch>;
+  stepPlans: Map<GraphId, StepPlan>;
+  transPlans: Map<GraphId, TransPlan>;
+  routes: RoutePlan;
+}
+
+interface Pass {
+  svg: string;
+  /** Crossings per drawn jump wire (id -> count). */
+  bad: Map<string, number>;
+  total: number;
 }
 
 export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}): string {
@@ -378,75 +405,89 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
   const M = look === "studio" ? STUDIO : TEXTBOOK;
   const showActions = options.showActions ?? true;
   const numbers = look === "textbook" && options.numbering === "numbers";
-
-  const stepById = new Map(graph.steps.map((s) => [s.id, s]));
-  const transById = new Map(graph.transitions.map((t) => [t.id, t]));
-  const branchById = new Map<GraphId, GBranch>(graph.branches.map((b) => [b.id, b]));
-  const stepByKey = new Map(graph.steps.map((s) => [key(s.name), s]));
-
   const stepPlans = new Map<GraphId, StepPlan>();
   const transPlans = new Map<GraphId, TransPlan>();
   for (const s of graph.steps) stepPlans.set(s.id, planStep(s, M, look, numbers, showActions));
   for (const t of graph.transitions) transPlans.set(t.id, planTransition(t, M, look));
-
-  // ---- wired legs: their x offset right of the bar's last leg ----
-  const legDx = new Map<GraphId, number>();
-  const barExtra = new Map<GraphId, number>();
-  /** Rightmost wired leg of each bar: the only one that gets an arrow label (they all lead to the same step). */
-  const lastWired = new Set<GraphId>();
-  for (const b of graph.branches) {
-    let k = 0;
-    let last: GraphId | undefined;
-    for (const leg of b.legs) {
-      if (layout.legs.get(leg.id)?.wired) {
-        legDx.set(leg.id, ++k * M.wiredSp);
-        last = leg.id;
-      }
-    }
-    if (last !== undefined) lastWired.add(last);
-    barExtra.set(b.id, k * M.wiredSp);
-  }
-
-  // ---- labels at arrowheads (textbook) ----
-  const labelOf = (s: GStep): string => (numbers ? String(s.index + 1) : s.name);
-  const wireTarget = (w: Wire): GStep | undefined => {
-    if (w.kind === "jump" || w.kind === "loop") return stepById.get(w.to);
-    if (w.kind === "jump-leg") {
-      const j = transById.get(w.from)?.node.jump;
-      return j ? stepByKey.get(key(j.text)) : undefined;
-    }
-    return undefined;
+  const env: Env = {
+    graph,
+    layout,
+    look,
+    M,
+    numbers,
+    stepById: new Map(graph.steps.map((s) => [s.id, s])),
+    transById: new Map(graph.transitions.map((t) => [t.id, t])),
+    branchById: new Map(graph.branches.map((b) => [b.id, b])),
+    stepPlans,
+    transPlans,
+    routes: planRoutes(graph, layout),
   };
-  const arrowWire = (w: Wire): boolean => w.kind !== "jog";
-  const wireLabel = new Map<number, Fitted>();
-  if (look === "textbook") {
-    layout.wires.forEach((w, i) => {
-      const t = wireTarget(w);
-      if (!t || !arrowWire(w) || (w.kind === "jump-leg" && !lastWired.has(w.to))) return;
-      wireLabel.set(i, fitChars(labelOf(t), 16));
-    });
+
+  // Draw every jump wire; while some still cross something, turn one of them into a
+  // cross-reference: the one whose removal leaves the fewest crossings.
+  const xref = new Set<string>();
+  let pass = drawPass(env, xref);
+  const jumpById = new Map(env.routes.jumps.map((j) => [j.id, j]));
+  while (pass.total > 0) {
+    const cands = [...pass.bad.keys()].filter((id) => !xref.has(id));
+    if (cands.length === 0) break;
+    let best: { id: string; pass: Pass | undefined; rank: number[] } | undefined;
+    for (const id of cands) {
+      const j = jumpById.get(id)!;
+      const trial = cands.length <= 10 ? drawPass(env, new Set([...xref, id])) : undefined;
+      // Fewest crossings left, then a jump to another chain, then the most crossings, then the last one.
+      const rank = [trial ? trial.total : 0, j.group !== j.targetGroup ? 0 : 1, -(pass.bad.get(id) ?? 0), -j.order];
+      if (!best || lessThan(rank, best.rank)) best = { id, pass: trial, rank };
+    }
+    xref.add(best!.id);
+    pass = best!.pass ?? drawPass(env, xref);
   }
+  return pass.svg;
+}
+
+function lessThan(a: number[], b: number[]): boolean {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i]! < b[i]!;
+  return false;
+}
+
+function drawPass(env: Env, xref: Set<string>): Pass {
+  const { graph, layout, look, M, numbers, stepById, transById, branchById, stepPlans, transPlans, routes } = env;
+  const jumps = routes.jumps.filter((j) => !xref.has(j.id));
+  const xrefs = routes.jumps.filter((j) => xref.has(j.id));
   const labelDx = 5;
 
-  // ---- graph links drawn as straight lines (the rest are layout wires) ----
-  const wireKeys = new Set(layout.wires.map((w) => `${w.from}>${w.to}`));
+  // ---- cross-reference labels: target at the source, "from T…" at the target ----
+  const labelOf = (s: GStep): string => (numbers ? String(s.index + 1) : s.name);
+  const xrefLabel = new Map<string, Fitted>();
+  const fromNames = new Map<GraphId, string[]>();
+  for (const j of xrefs) {
+    xrefLabel.set(j.id, fitChars(labelOf(stepById.get(j.target)!), 16));
+    const list = fromNames.get(j.target) ?? [];
+    list.push(transById.get(j.from)!.name);
+    fromNames.set(j.target, list);
+  }
+  const fromLabel = new Map<GraphId, { fitted: Fitted; full: string }>();
+  for (const [t, names] of fromNames) {
+    const full = `from ${names.join(", ")}`;
+    fromLabel.set(t, { fitted: fitChars(full, 28), full });
+  }
+
+  // ---- graph links drawn as straight lines ----
   const resolve = (id: GraphId): GridEnd => {
     const node = layout.nodes.get(id);
-    if (node) return { row: node.row, col: node.col, dx: 0, kind: node.kind };
+    if (node) return { row: node.row, col: node.col, kind: node.kind };
     const bar = layout.bars.get(id);
-    if (bar) return { row: bar.row, col: bar.col, dx: 0, kind: "bar", bar: bar.id };
+    if (bar) return { row: bar.row, col: bar.col, kind: "bar", bar: bar.id };
     const leg = layout.legs.get(id);
     if (!leg) throw new Error(`SVG: no place for ${id}`);
-    return { row: layout.bars.get(leg.branch)!.row, col: leg.col, dx: legDx.get(id) ?? 0, kind: "bar", bar: leg.branch };
+    return { row: layout.bars.get(leg.branch)!.row, col: leg.col, kind: "bar", bar: leg.branch };
   };
-  const vlinks: Array<{ id: string; from: GridEnd; to: GridEnd }> = [];
-  for (const link of graph.links) {
-    if (wireKeys.has(`${link.from}>${link.to}`)) continue;
-    vlinks.push({ id: `${link.from}-${link.to}`, from: resolve(link.from), to: resolve(link.to) });
-  }
+  const vlinks = routes.links.map((l) => ({ id: l.id, from: resolve(l.from), to: resolve(l.to) }));
+  const jogs = layout.wires.filter((w) => w.kind === "jog");
 
   // ---- cells: content extent left / right of each column line, per row ----
   const ncols = layout.columns.length;
+  const rows = layout.rows;
   const isElem = (c: number): boolean => layout.columns[c]?.kind === "element";
   const cells = new Map<string, [number, number]>();
   const mark = (r: number, c: number, left: number, right: number): void => {
@@ -460,153 +501,218 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     mark(nd.row, nd.col, ext.left, ext.right);
   }
   for (const b of layout.bars.values()) {
+    if (routes.hiddenBars.has(b.id)) {
+      if (layout.bars.get(b.id)!.placement !== "loop") mark(b.row, b.col, 0, 0);
+      continue;
+    }
+    const single = b.col === b.colEnd ? 14 : 0;
     for (let c = b.col; c <= b.colEnd; c++) {
-      mark(b.row, c, c === b.col ? M.barOverhang : 0, c === b.colEnd ? M.barOverhang + barExtra.get(b.id)! : 0);
+      mark(b.row, c, c === b.col ? Math.max(M.barOverhang, single) : 0, c === b.colEnd ? Math.max(M.barOverhang, single) : 0);
     }
   }
   for (const v of vlinks) {
     for (let r = v.from.row + 1; r < v.to.row; r++) mark(r, v.from.col, 0, 0);
     if (v.from.col !== v.to.col) for (let r = v.from.row + 1; r < v.to.row; r++) mark(r, v.to.col, 0, 0);
   }
-  layout.wires.forEach((w, i) => {
-    if (w.kind === "jog") {
-      const [p0, p1, p2, p3] = w.points as [typeof w.points[0], typeof w.points[0], typeof w.points[0], typeof w.points[0]];
-      for (let r = p0.row + 1; r < p1.row; r++) mark(r, p0.col, 0, 0);
-      for (let c = Math.min(p1.col, p2.col); c <= Math.max(p1.col, p2.col); c++) mark(p1.row, c, 0, 0);
-      for (let r = p2.row + 1; r < p3.row; r++) mark(r, p2.col, 0, 0);
-    }
-    const label = wireLabel.get(i);
-    if (label) {
-      const end = w.points[w.points.length - 1]!;
-      const dx = w.kind === "jump-leg" ? (legDx.get(w.to) ?? 0) : 0;
-      mark(end.row, end.col, 0, dx + labelDx + sansWidth(label.text, M.labelSize) + 4);
-    }
-  });
+  for (const w of jogs) {
+    const [p0, p1, p2, p3] = w.points as [GridPoint, GridPoint, GridPoint, GridPoint];
+    for (let r = p0.row + 1; r < p1.row; r++) mark(r, p0.col, 0, 0);
+    for (let c = Math.min(p1.col, p2.col); c <= Math.max(p1.col, p2.col); c++) mark(p1.row, c, 0, 0);
+    for (let r = p2.row + 1; r < p3.row; r++) mark(r, p2.col, 0, 0);
+  }
+  for (const j of xrefs) {
+    mark(j.srcRow, j.srcCol, 0, labelDx + sansWidth(xrefLabel.get(j.id)!.text, M.labelSize) + 4);
+  }
+  for (const [t, label] of fromLabel) {
+    const nd = layout.nodes.get(t)!;
+    mark(nd.row, nd.col, 0, labelDx + sansWidth(label.fitted.text, M.labelSize) + 4);
+  }
   const cellAt = (r: number, c: number): [number, number] | undefined => cells.get(`${r},${c}`);
+  const rowsOf = (j: Jump): number[] => {
+    const [g0, g1] = gapSpan(j);
+    const out: number[] = [];
+    for (let r = g0; r < g1; r++) if (r >= 0 && r < rows) out.push(r);
+    return out;
+  };
 
-  // ---- column x ----
+  // ---- left lanes: distance from their anchor column line, shortest loops innermost ----
+  const bySpan = (a: Jump, b: Jump): number =>
+    gapSpan(a)[1] - gapSpan(a)[0] - (gapSpan(b)[1] - gapSpan(b)[0]) || a.order - b.order;
+  const leftD = new Map<string, number>();
+  const needLeft = new Map<string, number>();
+  const leftAt = new Map<number, Jump[]>();
+  const rightAt = new Map<number, Jump[]>();
+  for (const j of jumps) {
+    const m = j.side === "left" ? leftAt : rightAt;
+    m.set(j.anchor, [...(m.get(j.anchor) ?? []), j]);
+  }
+  for (const [c, list] of leftAt) {
+    list.sort(bySpan);
+    const done: Jump[] = [];
+    for (const j of list) {
+      let d = 0;
+      for (const r of rowsOf(j)) d = Math.max(d, cellAt(r, c)?.[0] ?? 0);
+      d += M.channelGap;
+      for (const o of done) if (spansOverlap(o, j)) d = Math.max(d, leftD.get(o.id)! + M.channelSp);
+      leftD.set(j.id, d);
+      done.push(j);
+      for (const r of rowsOf(j)) {
+        const k = `${r},${c}`;
+        needLeft.set(k, Math.max(needLeft.get(k) ?? 0, d));
+      }
+    }
+  }
+
+  // ---- column x, with the lanes ----
   const colX = new Array<number>(ncols).fill(0);
+  const laneX = new Map<string, number>();
   let leftLimit = 0;
   layout.groups.forEach((_, g) => {
     const elems: number[] = [];
-    const chans: number[] = [];
     layout.columns.forEach((col, c) => {
-      if (col.group !== g) return;
-      (col.kind === "element" ? elems : chans).push(c);
+      if (col.group === g && col.kind === "element") elems.push(c);
     });
     const placed: number[] = [];
+    const lanes: Array<{ x: number; j: Jump; rows: Set<number> }> = [];
     for (const c of elems) {
       let x = placed.length > 0 ? colX[placed[placed.length - 1]!]! + M.minSep : leftLimit;
-      for (let r = 0; r < layout.rows; r++) {
+      for (let r = 0; r < rows; r++) {
         const cell = cellAt(r, c);
-        if (!cell) continue;
-        x = Math.max(x, leftLimit + cell[0]);
-        for (const p of placed) {
-          const pc = cellAt(r, p);
-          if (pc) x = Math.max(x, colX[p]! + pc[1] + M.colGap + cell[0]);
+        const nl = needLeft.get(`${r},${c}`);
+        if (cell) {
+          x = Math.max(x, leftLimit + cell[0]);
+          for (const p of placed) {
+            const pc = cellAt(r, p);
+            if (pc) x = Math.max(x, colX[p]! + pc[1] + M.colGap + cell[0]);
+          }
+          for (const l of lanes) if (l.rows.has(r)) x = Math.max(x, l.x + M.channelGap + cell[0]);
+        }
+        if (nl !== undefined) {
+          x = Math.max(x, leftLimit + nl);
+          for (const p of placed) {
+            const pc = cellAt(r, p);
+            if (pc) x = Math.max(x, colX[p]! + pc[1] + M.channelGap + nl);
+          }
+          for (const l of lanes) if (l.rows.has(r)) x = Math.max(x, l.x + M.channelSp + nl);
         }
       }
       colX[c] = Math.round(x);
       placed.push(c);
+      // Right lanes of the branches ending at this column: past everything placed so far.
+      for (const j of (rightAt.get(c) ?? []).sort(bySpan)) {
+        const rs = rowsOf(j);
+        let base = colX[j.srcCol]!;
+        for (const r of rs) {
+          for (const p of placed) {
+            const pc = cellAt(r, p);
+            if (pc) base = Math.max(base, colX[p]! + pc[1]);
+          }
+        }
+        let lx = base + M.channelGap;
+        for (const l of lanes) if (spansOverlap(l.j, j)) lx = Math.max(lx, l.x + M.channelSp);
+        lx = Math.round(lx);
+        laneX.set(j.id, lx);
+        lanes.push({ x: lx, j, rows: new Set(rs) });
+      }
     }
+    for (const c of elems) for (const j of leftAt.get(c) ?? []) laneX.set(j.id, colX[c]! - leftD.get(j.id)!);
     let right = leftLimit;
     for (const p of placed) {
-      for (let r = 0; r < layout.rows; r++) {
+      for (let r = 0; r < rows; r++) {
         const pc = cellAt(r, p);
         if (pc) right = Math.max(right, colX[p]! + pc[1]);
       }
     }
-    chans.forEach((c, k) => {
-      colX[c] = Math.round(right + M.channelGap + k * M.channelSp);
-    });
-    leftLimit = (chans.length > 0 ? colX[chans[chans.length - 1]!]! : right) + M.groupGap;
+    for (const l of lanes) right = Math.max(right, l.x);
+    leftLimit = right + M.groupGap;
   });
 
-  // ---- wire horizontals in gaps -> lanes ----
-  // gap index g holds half row g - 0.5 (g = 0: above row 0; g = rows: below the last row).
-  const gapOf = (row: number): number => Math.round(row + 0.5);
-  const wireXs: number[][] = layout.wires.map((w) => {
-    const xs = w.points.map((p) => colX[p.col]!);
-    if (w.kind === "jump-leg") {
-      const dx = legDx.get(w.to) ?? 0;
-      xs[xs.length - 1]! += dx;
-      xs[xs.length - 2]! += dx;
-    }
-    return xs;
-  });
-  // Drawn x range of every bar (a bar with one leg position still gets some width).
-  const barRange = (b: { id: GraphId; col: number; colEnd: number }): [number, number] => {
-    const x0 = colX[b.col]! - M.barOverhang;
-    const x1 = colX[b.colEnd]! + (barExtra.get(b.id) ?? 0) + M.barOverhang;
-    const minHalf = 14;
-    if (x1 - x0 >= 2 * minHalf) return [x0, x1];
-    return [Math.min(x0, colX[b.col]! - minHalf), Math.max(x1, colX[b.col]! + minHalf)];
-  };
-  // A loop bar that already spans its channel: the wire leaves the bar straight up the channel.
-  const loopUp = new Set<number>();
-  layout.wires.forEach((w, i) => {
-    const bar = w.kind === "loop" ? layout.bars.get(w.from) : undefined;
-    if (!bar) return;
-    const [x0, x1] = barRange(bar);
-    const ch = wireXs[i]![2]!;
-    if (ch > x0 && ch < x1) loopUp.add(i);
-  });
-  const segs: HSeg[] = [];
-  layout.wires.forEach((w, i) => {
-    for (let k = loopUp.has(i) ? 2 : 0; k + 1 < w.points.length; k++) {
-      const a = w.points[k]!;
-      const b = w.points[k + 1]!;
-      if (a.row !== b.row || Number.isInteger(a.row)) continue;
-      const xa = wireXs[i]![k]!;
-      const xb = wireXs[i]![k + 1]!;
-      segs.push({ gap: gapOf(a.row), x0: Math.min(xa, xb), x1: Math.max(xa, xb), prio: k === 1 ? 0 : 1, wire: i, at: k, lane: 0 });
-    }
-  });
-  const lanesInGap = new Array<number>(layout.rows + 1).fill(0);
-  const labelInGap = new Array<boolean>(layout.rows + 1).fill(false);
-  for (let g = 0; g <= layout.rows; g++) {
-    const inGap = segs.filter((s) => s.gap === g).sort((a, b) => a.prio - b.prio || a.x0 - b.x0 || a.wire - b.wire);
-    const lanes: HSeg[][] = [];
-    for (const s of inGap) {
-      let lane = lanes.findIndex((l) => l.every((o) => s.x1 + 6 < o.x0 || o.x1 + 6 < s.x0));
-      if (lane < 0) {
-        lane = lanes.length;
-        lanes.push([]);
-      }
-      lanes[lane]!.push(s);
-      s.lane = lane;
-    }
-    lanesInGap[g] = lanes.length;
+  // ---- horizontals of the jump wires in the gaps -> lanes ----
+  interface Horiz extends HLine {
+    gap: number;
   }
-  layout.wires.forEach((w, i) => {
-    if (wireLabel.has(i)) labelInGap[gapOf(w.points[w.points.length - 1]!.row - 0.5)] = true;
-  });
+  const exitH = new Map<string, Horiz>();
+  const entryH = new Map<string, Horiz>();
+  for (const j of jumps) {
+    const sx = colX[j.srcCol]!;
+    const tx = colX[j.tgtCol]!;
+    const lx = laneX.get(j.id)!;
+    const same = j.entryGap === j.exitGap;
+    const back = j.entryGap < j.exitGap;
+    exitH.set(j.id, {
+      gap: j.exitGap,
+      x0: Math.min(sx, lx),
+      x1: Math.max(sx, lx),
+      ends: [
+        { x: sx, dir: "up" },
+        { x: lx, dir: same ? "none" : back ? "up" : "down" },
+      ],
+      lane: 0,
+    });
+    entryH.set(j.id, {
+      gap: j.entryGap,
+      x0: Math.min(tx, lx),
+      x1: Math.max(tx, lx),
+      ends: [
+        { x: lx, dir: same ? "none" : back ? "down" : "up" },
+        { x: tx, dir: j.top ? "down" : "none" },
+      ],
+      lane: 0,
+    });
+  }
+  const lanesInGap = new Array<number>(rows + 1).fill(0);
+  for (let g = 0; g <= rows; g++) {
+    const inGap: Horiz[] = [];
+    for (const j of jumps) {
+      if (exitH.get(j.id)!.gap === g) inGap.push(exitH.get(j.id)!);
+      if (entryH.get(j.id)!.gap === g) inGap.push(entryH.get(j.id)!);
+    }
+    lanesInGap[g] = orderLanes(inGap);
+  }
+  const labelInGap = new Array<boolean>(rows + 1).fill(false);
+  const xrefInGap = new Array<boolean>(rows + 1).fill(false);
+  for (const j of xrefs) xrefInGap[j.exitGap] = true;
+  for (const t of fromLabel.keys()) labelInGap[layout.nodes.get(t)!.row] = true;
 
   // ---- row y ----
-  const rows = layout.rows;
   const above = new Array<number>(rows).fill(4);
   const below = new Array<number>(rows).fill(4);
+  const filled = new Array<boolean>(rows).fill(false);
   const need = (r: number, a: number, b: number): void => {
     above[r] = Math.max(above[r]!, a);
     below[r] = Math.max(below[r]!, b);
+    filled[r] = true;
   };
   for (const nd of layout.nodes.values()) {
     const ext = nd.kind === "step" ? stepPlans.get(nd.id)!.ext : transPlans.get(nd.id)!.ext;
     need(nd.row, ext.above, ext.below);
   }
   for (const b of layout.bars.values()) {
+    if (routes.hiddenBars.has(b.id)) continue;
     const d = branchById.get(b.id)!.type === "simultaneous" ? M.barDouble + 1 : 1;
     need(b.row, d, d);
   }
   // A jog's horizontal gets some room above it, so its drop does not read as the
   // continuation of a line ending just above it in the same column.
-  for (const w of layout.wires) if (w.kind === "jog") need(w.points[1]!.row, 12, 1);
+  for (const w of jogs) need(w.points[1]!.row, 12, 1);
+  // Rows with nothing drawn (an automatic convergence bar only) take no room.
+  for (let r = 0; r < rows; r++) {
+    if (filled[r]) continue;
+    above[r] = 0;
+    below[r] = 0;
+  }
+  const lanesBottom = (g: number): number => (lanesInGap[g]! > 0 ? M.lanePad + (lanesInGap[g]! - 1) * M.laneSp : 0);
+  const xrefTip = (g: number): number => Math.max(lanesBottom(g) + 4, 4) + 12;
   const gapH: number[] = [];
   for (let g = 0; g <= rows; g++) {
     const lanes = lanesInGap[g]!;
     const outer = g === 0 || g === rows;
+    const empty = g < rows && !filled[g] && lanes === 0 && !labelInGap[g] && !xrefInGap[g];
     const laneNeed = lanes > 0 ? 2 * M.lanePad + (lanes - 1) * M.laneSp : 0;
-    gapH.push(Math.max(outer ? 0 : M.gapBase, laneNeed) + (labelInGap[g] ? M.labelH : 0));
+    let h = empty ? 0 : Math.max(outer ? 0 : M.gapBase, laneNeed);
+    if (labelInGap[g]) h = Math.max(h + M.labelH, lanesBottom(g) + 4 + M.labelH);
+    if (xrefInGap[g]) h = Math.max(h + M.labelH, xrefTip(g) + 10);
+    gapH.push(h);
   }
   const rowY: number[] = [];
   const gapTop: number[] = [];
@@ -624,7 +730,7 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
 
   // ---- endpoints ----
   const barHalf = (barId: GraphId | undefined): number =>
-    barId !== undefined && branchById.get(barId)?.type === "simultaneous" ? M.barDouble : 0;
+    barId !== undefined && branchById.get(barId)?.type === "simultaneous" && !routes.hiddenBars.has(barId) ? M.barDouble : 0;
   const topOf = (e: GridEnd): number => {
     const y = rowY[e.row]!;
     if (e.kind === "step") return y - M.stepH / 2;
@@ -638,7 +744,7 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     return y;
   };
 
-  // ---- drawing ----
+  // ---- drawing, collecting the geometry for the crossing check ----
   const out: string[] = [];
   let minX = Infinity;
   let minY = Infinity;
@@ -651,90 +757,161 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     maxY = Math.max(maxY, y0, y1);
   };
   extend(0, 0, 0, totalBottom);
+  const segs: Seg[] = [];
+  const boxes: Box[] = [];
+  const jumpSegs = new Map<string, Seg[]>();
+  const addPolyline = (pts: Array<[number, number]>, owner: string, into: Seg[] = segs): void => {
+    for (let k = 0; k + 1 < pts.length; k++) {
+      into.push({ x0: pts[k]![0], y0: pts[k]![1], x1: pts[k + 1]![0], y1: pts[k + 1]![1], owner });
+    }
+  };
+  const addText = (x: number, y: number, w: number, size: number, anchor: "start" | "middle" | "end", owner: string): void => {
+    const x0 = anchor === "start" ? x : anchor === "end" ? x - w : x - w / 2;
+    boxes.push({ x0, y0: y - size * 0.75, x1: x0 + w, y1: y + size * 0.22, owner });
+  };
+  const pathD = (pts: Array<[number, number]>): string =>
+    pts.map((p, k) => (k === 0 ? `M${n(p[0])} ${n(p[1])}` : p[0] === pts[k - 1]![0] ? `V${n(p[1])}` : p[1] === pts[k - 1]![1] ? `H${n(p[0])}` : `L${n(p[0])} ${n(p[1])}`)).join("");
+  const arrowD = (tip: [number, number], dx: number, dy: number): string => {
+    // (dx, dy): unit direction of travel at the tip.
+    const bx = tip[0] - dx * M.arrowL;
+    const by = tip[1] - dy * M.arrowL;
+    const px = -dy * M.arrowW;
+    const py = dx * M.arrowW;
+    return `M${n(tip[0])} ${n(tip[1])}L${n(bx + px)} ${n(by + py)}L${n(bx - px)} ${n(by - py)}Z`;
+  };
 
   // Lines first (under the boxes and bars).
   const lines: string[] = [];
   for (const v of vlinks) {
-    const x0 = colX[v.from.col]! + v.from.dx;
-    const x1 = colX[v.to.col]! + v.to.dx;
+    const x0 = colX[v.from.col]!;
+    const x1 = colX[v.to.col]!;
     const y0 = bottomOf(v.from);
     const y1 = topOf(v.to);
-    let d: string;
-    if (x0 === x1) d = `M${n(x0)} ${n(y0)}V${n(y1)}`;
-    else {
-      const ym = Math.round((y0 + y1) / 2);
-      d = `M${n(x0)} ${n(y0)}V${n(ym)}H${n(x1)}V${n(y1)}`;
-    }
+    const pts: Array<[number, number]> =
+      x0 === x1
+        ? [
+            [x0, y0],
+            [x1, y1],
+          ]
+        : [
+            [x0, y0],
+            [x0, Math.round((y0 + y1) / 2)],
+            [x1, Math.round((y0 + y1) / 2)],
+            [x1, y1],
+          ];
     extend(x0, y0, x1, y1);
-    lines.push(`<path class="qsfc-wire qsfc-link" data-id="${escapeXml(v.id)}" d="${d}"/>`);
+    addPolyline(pts, v.id);
+    lines.push(`<path class="qsfc-wire qsfc-link" data-id="${escapeXml(v.id)}" d="${pathD(pts)}"/>`);
   }
-  layout.wires.forEach((w, i) => {
-    const xs = wireXs[i]!;
-    const ys = w.points.map((p, k) => {
-      if (!Number.isInteger(p.row)) {
-        const seg = segs.find((s) => s.wire === i && (s.at === k || s.at === k - 1));
-        return seg ? laneY(seg.gap, seg.lane) : laneY(gapOf(p.row), 0);
-      }
-      return rowY[p.row]!;
-    });
-    // Snap the ends to the source / target element edges.
-    const first = w.points[0]!;
-    const last = w.points[w.points.length - 1]!;
-    const fromEnd: GridEnd = layout.bars.has(w.from)
-      ? { row: first.row, col: first.col, dx: 0, kind: "bar", bar: w.from }
-      : { row: first.row, col: first.col, dx: 0, kind: layout.nodes.get(w.from)?.kind ?? "transition" };
-    ys[0] = bottomOf(fromEnd);
-    const toEnd: GridEnd = layout.nodes.has(w.to)
-      ? { row: last.row, col: last.col, dx: 0, kind: layout.nodes.get(w.to)!.kind }
-      : { row: last.row, col: last.col, dx: 0, kind: "bar", bar: layout.legs.get(w.to)?.branch };
-    const endY = topOf(toEnd);
-    ys[ys.length - 1] = endY;
-    const arrow = arrowWire(w);
-    let pts: Array<[number, number]> = xs.map((x, k) => [x, ys[k]!]);
-    if (loopUp.has(i)) {
-      const bar = layout.bars.get(w.from)!;
-      pts = [[xs[2]!, rowY[bar.row]! - barHalf(bar.id)], ...pts.slice(3)];
+  for (const w of jogs) {
+    const [p0, p1, p2, p3] = w.points as [GridPoint, GridPoint, GridPoint, GridPoint];
+    const pts: Array<[number, number]> = [
+      [colX[p0.col]!, rowY[p0.row]!],
+      [colX[p1.col]!, rowY[p1.row]!],
+      [colX[p2.col]!, rowY[p2.row]!],
+      [colX[p3.col]!, topOf({ row: p3.row, col: p3.col, kind: layout.nodes.get(w.to)?.kind ?? "step" })],
+    ];
+    for (const p of pts) extend(p[0], p[1], p[0], p[1]);
+    const id = `${w.from}-${w.to}`;
+    addPolyline(pts, id);
+    lines.push(`<g class="qsfc-wire qsfc-jog" data-id="${escapeXml(id)}"><path class="qsfc-wire-line" d="${pathD(pts)}"/></g>`);
+  }
+
+  // Jump wires: down from the transition, along the lane, into the target.
+  const entryY = new Map<string, number>();
+  for (const j of jumps) entryY.set(j.id, laneY(j.entryGap, entryH.get(j.id)!.lane));
+  const stubOwner = new Map<GraphId, Jump>();
+  for (const j of jumps) {
+    if (!j.top) continue;
+    const o = stubOwner.get(j.target);
+    if (!o || entryY.get(j.id)! < entryY.get(o.id)! || (entryY.get(j.id) === entryY.get(o.id) && j.order < o.order)) {
+      stubOwner.set(j.target, j);
     }
-    // Drop repeated points.
+  }
+  for (const j of jumps) {
+    const sx = colX[j.srcCol]!;
+    const tx = colX[j.tgtCol]!;
+    const lx = laneX.get(j.id)!;
+    const yExit = laneY(j.exitGap, exitH.get(j.id)!.lane);
+    const yEntry = entryY.get(j.id)!;
+    const target = stepById.get(j.target)!;
+    const pts: Array<[number, number]> = [
+      [sx, rowY[j.srcRow]!],
+      [sx, yExit],
+      [lx, yExit],
+      [lx, yEntry],
+      [tx, yEntry],
+    ];
+    if (stubOwner.get(j.target) === j) pts.push([tx, rowY[j.tgtRow]! - M.stepH / 2]);
     const clean = pts.filter((p, k) => k === 0 || p[0] !== pts[k - 1]![0] || p[1] !== pts[k - 1]![1]);
     const tip = clean[clean.length - 1]!;
-    if (arrow) clean[clean.length - 1] = [tip[0], tip[1] - M.arrowL + 1];
-    const d = clean.map((p, k) => `${k === 0 ? "M" : "L"}${n(p[0])} ${n(p[1])}`).join("");
-    for (const p of pts) extend(p[0], p[1], p[0], p[1]);
-    const parts = [`<path class="qsfc-wire-line" d="${d}"/>`];
-    if (arrow) {
-      parts.push(
-        `<path class="qsfc-arrow" d="M${n(tip[0])} ${n(tip[1])}L${n(tip[0] - M.arrowW)} ${n(tip[1] - M.arrowL)}L${n(tip[0] + M.arrowW)} ${n(tip[1] - M.arrowL)}Z"/>`,
-      );
-    }
-    const label = wireLabel.get(i);
-    if (label) {
-      const target = wireTarget(w)!;
-      const lx = tip[0] + labelDx;
-      const ly = endY - 4;
-      parts.push(textEl("qsfc-jump-label", lx, ly, label, labelOf(target)));
-      extend(lx, ly - M.labelSize, lx + sansWidth(label.text, M.labelSize), ly);
-    }
-    const title = wireTarget(w) ? `<title>${escapeXml(`${w.kind} to ${wireTarget(w)!.name}`)}</title>` : "";
+    const prev = clean[clean.length - 2]!;
+    const len = Math.hypot(tip[0] - prev[0], tip[1] - prev[1]) || 1;
+    const dx = (tip[0] - prev[0]) / len;
+    const dy = (tip[1] - prev[1]) / len;
+    const line = [...clean.slice(0, -1), [tip[0] - dx * (M.arrowL - 1), tip[1] - dy * (M.arrowL - 1)] as [number, number]];
+    for (const p of clean) extend(p[0], p[1], p[0], p[1]);
+    const own: Seg[] = [];
+    addPolyline(line, j.id, own);
+    jumpSegs.set(j.id, own);
+    const kind = j.top ? "jump" : "jump-join";
+    const title = `<title>${escapeXml(`jump to ${target.name}`)}</title>`;
     lines.push(
-      `<g class="qsfc-wire qsfc-${w.kind}" data-id="${escapeXml(`${w.from}-${w.to}`)}">${title}${parts.join("")}</g>`,
+      `<g class="qsfc-wire qsfc-${kind}" data-id="${escapeXml(j.id)}">${title}<path class="qsfc-wire-line" d="${pathD(line)}"/>` +
+        `<path class="qsfc-arrow" d="${arrowD(tip, dx, dy)}"/></g>`,
     );
-  });
+  }
+
+  // Cross-references: a short arrow under the transition, labelled with the target.
+  for (const j of xrefs) {
+    const sx = colX[j.srcCol]!;
+    const sy = rowY[j.srcRow]!;
+    const tipY = gapTop[j.exitGap]! + xrefTip(j.exitGap);
+    const label = xrefLabel.get(j.id)!;
+    const target = stepById.get(j.target)!;
+    const line: Array<[number, number]> = [
+      [sx, sy],
+      [sx, tipY - M.arrowL + 1],
+    ];
+    addPolyline(line, j.id);
+    const lx = sx + labelDx;
+    const ly = tipY - 1;
+    const lw = sansWidth(label.text, M.labelSize);
+    addText(lx, ly, lw, M.labelSize, "start", j.id);
+    extend(sx - M.arrowW, sy, lx + lw, tipY);
+    lines.push(
+      `<g class="qsfc-wire qsfc-xref" data-id="${escapeXml(j.id)}"><title>${escapeXml(`jump to ${target.name}`)}</title>` +
+        `<path class="qsfc-wire-line" d="${pathD(line)}"/><path class="qsfc-arrow" d="${arrowD([sx, tipY], 0, 1)}"/>` +
+        `${textEl("qsfc-jump-label", lx, ly, label, labelOf(target))}</g>`,
+    );
+  }
   out.push(`<g class="qsfc-wires">${lines.join("")}</g>`);
 
-  // Bars.
+  // Bars (automatic convergences are not drawn: their jumps join the line above the step).
+  const barRange = (b: { id: GraphId; col: number; colEnd: number }): [number, number] => {
+    const x0 = colX[b.col]! - M.barOverhang;
+    const x1 = colX[b.colEnd]! + M.barOverhang;
+    const minHalf = 14;
+    if (x1 - x0 >= 2 * minHalf) return [x0, x1];
+    return [Math.min(x0, colX[b.col]! - minHalf), Math.max(x1, colX[b.col]! + minHalf)];
+  };
   const bars: string[] = [];
   for (const g of graph.branches) {
     const b = layout.bars.get(g.id);
-    if (!b) continue;
+    if (!b || routes.hiddenBars.has(g.id)) continue;
     const y = rowY[b.row]!;
     const [xa, xb] = barRange(b);
     const type = g.type === "simultaneous" ? "simultaneous" : "selection";
-    const cls = `qsfc-branch qsfc-${type} qsfc-${g.flow}${g.node ? "" : " qsfc-auto"}`;
+    const cls = `qsfc-branch qsfc-${type} qsfc-${g.flow}`;
     let d: string;
     if (type === "simultaneous") {
       d = `M${n(xa)} ${n(y - M.barDouble)}H${n(xb)}M${n(xa)} ${n(y + M.barDouble)}H${n(xb)}`;
-    } else d = `M${n(xa)} ${n(y)}H${n(xb)}`;
+      segs.push({ x0: xa, y0: y - M.barDouble, x1: xb, y1: y - M.barDouble, owner: g.id });
+      segs.push({ x0: xa, y0: y + M.barDouble, x1: xb, y1: y + M.barDouble, owner: g.id });
+    } else {
+      d = `M${n(xa)} ${n(y)}H${n(xb)}`;
+      segs.push({ x0: xa, y0: y, x1: xb, y1: y, owner: g.id });
+    }
     extend(xa, y - M.barDouble, xb, y + M.barDouble);
     bars.push(`<g class="${cls}" data-id="${escapeXml(g.id)}"><path class="qsfc-bar" d="${d}"/></g>`);
   }
@@ -755,20 +932,25 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     parts.push(
       `<rect class="qsfc-trans-bar" x="${n(x - half)}" y="${n(y - M.transBarH / 2)}" width="${n(M.transBarW)}" height="${n(M.transBarH)}"/>`,
     );
+    boxes.push({ x0: x - half, y0: y - M.transBarH / 2, x1: x + half, y1: y + M.transBarH / 2, owner: t.id });
     if (plan.name && look === "studio") {
       const bx1 = x - half - 10;
       const bx0 = bx1 - plan.nameW;
       parts.push(`<path class="qsfc-tname-link" d="M${n(bx1)} ${n(y)}H${n(x - half)}"/>`);
       parts.push(`<rect class="qsfc-tname-box" x="${n(bx0)}" y="${n(y - 8.5)}" width="${n(plan.nameW)}" height="17" rx="2"/>`);
       parts.push(textEl("qsfc-tname", (bx0 + bx1) / 2, y + 3.6, plan.name, t.name, "middle"));
+      segs.push({ x0: bx1, y0: y, x1: x - half, y1: y, owner: t.id });
+      boxes.push({ x0: bx0, y0: y - 8.5, x1: bx1, y1: y + 8.5, owner: t.id });
       extend(bx0, y - 8.5, bx1, y + 8.5);
     } else if (plan.name) {
       const tx = x - half - 8;
       parts.push(textEl("qsfc-tname", tx, y + 3.8, plan.name, `(${t.name})`, "end"));
+      addText(tx, y + 3.8, plan.nameW, M.labelSize, "end", t.id);
       extend(tx - plan.nameW, y - 8, tx, y + 8);
     }
     const cx = x + half + M.transTextGap;
     parts.push(textEl("qsfc-code qsfc-cond", cx, y + 3.8, plan.cond, t.condition));
+    addText(cx, y + 3.8, monoWidth(plan.cond.text, M.codeSize), M.codeSize, "start", t.id);
     extend(x - half, y - M.transHalfH, cx + monoWidth(plan.cond.text, M.codeSize), y + M.transHalfH);
     trans.push(`<g class="qsfc-transition${t.auto ? " qsfc-auto" : ""}" data-id="${escapeXml(t.id)}">${parts.join("")}</g>`);
   }
@@ -791,6 +973,7 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     if (s.initial) tipParts.push("initial step");
     parts.push(`<title>${escapeXml(`${tipParts.join(" — ")} (${operand("Step", s.index)})`)}</title>`);
     parts.push(`<rect class="qsfc-step-box" x="${n(x0)}" y="${n(y0)}" width="${n(plan.w)}" height="${n(plan.h)}"/>`);
+    boxes.push({ x0, y0, x1: x0 + plan.w, y1: y0 + plan.h, owner: s.id });
     if (s.initial) {
       const k = M.initialInset;
       parts.push(
@@ -811,15 +994,60 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
       const sx = x0 - 6;
       const sy = s.presetMs > 0 ? y - 1 : y + 3.8;
       parts.push(textEl("qsfc-side-name", sx, sy, plan.side, s.name, "end"));
+      addText(sx, sy, sansWidth(plan.side.text, M.labelSize), M.labelSize, "end", s.id);
       if (s.presetMs > 0) {
-        parts.push(textEl("qsfc-caption", sx, y + 11, { text: formatDuration(s.presetMs), truncated: false }, "", "end"));
+        const cap = formatDuration(s.presetMs);
+        parts.push(textEl("qsfc-caption", sx, y + 11, { text: cap, truncated: false }, "", "end"));
+        addText(sx, y + 11, sansWidth(cap, M.captionSize), M.captionSize, "end", s.id);
       }
     }
     extend(x - plan.ext.left, y0, x + plan.w / 2, y0 + plan.h);
-    if (plan.action) parts.push(drawAction(plan, x, y0, look, M, extend));
+    if (plan.action) {
+      parts.push(drawAction(plan, x, y0, look, M, extend));
+      const ax = x + plan.w / 2 + M.actionGap;
+      const linkY = look === "studio" ? y0 + Math.min(plan.h / 2, M.actionHeader / 2 + 0.5) : y0 + plan.h / 2;
+      segs.push({ x0: x + plan.w / 2, y0: linkY, x1: ax, y1: linkY, owner: s.id });
+      boxes.push({ x0: ax, y0, x1: ax + plan.action.w, y1: y0 + plan.action.h, owner: s.id });
+    }
     steps.push(`<g class="qsfc-step${s.initial ? " qsfc-initial" : ""}" data-id="${escapeXml(s.id)}">${parts.join("")}</g>`);
   }
   out.push(`<g class="qsfc-steps">${steps.join("")}</g>`);
+
+  // "from T…" marks of the cross-references, above their target.
+  if (fromLabel.size > 0) {
+    const marks: string[] = [];
+    for (const [t, label] of fromLabel) {
+      const nd = layout.nodes.get(t)!;
+      const lx = colX[nd.col]! + labelDx;
+      const ly = rowY[nd.row]! - M.stepH / 2 - 4;
+      const lw = sansWidth(label.fitted.text, M.labelSize);
+      marks.push(textEl("qsfc-xref-from", lx, ly, label.fitted, label.full));
+      addText(lx, ly, lw, M.labelSize, "start", `from-${t}`);
+      extend(lx, ly - M.labelSize, lx + lw, ly);
+    }
+    out.push(`<g class="qsfc-xref-marks">${marks.join("")}</g>`);
+  }
+
+  // ---- crossings of the jump wires ----
+  const bad = new Map<string, number>();
+  let total = 0;
+  const hit = (a: string, b?: string): void => {
+    total++;
+    bad.set(a, (bad.get(a) ?? 0) + 1);
+    if (b !== undefined) bad.set(b, (bad.get(b) ?? 0) + 1);
+  };
+  const ids = [...jumpSegs.keys()];
+  ids.forEach((id, i) => {
+    const mine = jumpSegs.get(id)!;
+    for (const s of mine) {
+      for (const o of segs) if (o.owner !== id && segmentsCross(s, o)) hit(id);
+      for (const b of boxes) if (segmentHitsBox(s, b)) hit(id);
+    }
+    for (const other of ids.slice(i + 1)) {
+      const theirs = jumpSegs.get(other)!;
+      if (mine.some((s) => theirs.some((o) => segmentsCross(s, o)))) hit(id, other);
+    }
+  });
 
   // ---- frame ----
   const vx = Math.floor(minX - M.margin);
@@ -827,13 +1055,14 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
   const vw = Math.ceil(maxX + M.margin) - vx;
   const vh = Math.ceil(maxY + M.margin) - vy;
   const cls = `qsfc qsfc-look-${look}${numbers ? " qsfc-numbers" : ""}`;
-  return (
+  const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" class="${cls}" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}" role="img">\n` +
     `<style>${css(look)}</style>\n` +
     `<rect class="qsfc-bg" x="${vx}" y="${vy}" width="${vw}" height="${vh}"/>\n` +
-    `${out.join("\n")}\n</svg>\n`
-  );
+    `${out.join("\n")}\n</svg>\n`;
+  return { svg, bad, total };
 }
+
 
 function drawAction(
   plan: StepPlan,
@@ -986,7 +1215,7 @@ function css(look: SvgLook): string {
     `${L} .qsfc-trans-bar{fill:var(--qsfc-trans-bar)}`,
     `${L} .qsfc-tname-box{fill:var(--qsfc-tname-fill);stroke:var(--qsfc-tname-stroke);stroke-width:1}`,
     `${L} .qsfc-tname{font-size:${studio ? STUDIO.labelSize : TEXTBOOK.labelSize}px;font-weight:${studio ? 600 : 400};${studio ? "" : "font-style:italic;"}fill:var(--qsfc-tname)}`,
-    `${L} .qsfc-jump-label{font-size:${TEXTBOOK.labelSize}px;font-style:italic;fill:var(--qsfc-label)}`,
+    `${L} .qsfc-jump-label,${L} .qsfc-xref-from{font-size:${TEXTBOOK.labelSize}px;font-style:italic;fill:var(--qsfc-label)}`,
   ];
   return rules.join("");
 }

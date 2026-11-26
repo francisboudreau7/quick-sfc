@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jump routing mockup</title>
+<style>
+body { margin: 0; padding: 16px; font: 14px/1.45 system-ui, sans-serif; background: #f4f5f7; color: #1d2228; }
+h1 { font-size: 18px; margin: 0 0 4px; } p { margin: 4px 0; color: #59626e; }
+.row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+figure { margin: 0; background: #fff; border: 1px solid #d5dae0; border-radius: 8px; padding: 12px; flex: 1 1 340px; }
+figcaption { font-weight: 600; margin-bottom: 8px; }
+img { max-width: 100%; height: auto; display: block; }
+ul { margin: 6px 0 0; padding-left: 18px; color: #1d2228; }
+pre { background: #fff; border: 1px solid #d5dae0; border-radius: 6px; padding: 8px 10px; font: 12.5px ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Jump routing: before / after</h1>
+<p>Same chart, textbook look with step numbers. The L5X export is unchanged; only the drawing changes.</p>
+<pre>sfc tank
+init idle
+  motor := 0;
+-- start: start_btn AND safety_ok
+step fill 5s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step drain
+  pump [:=] 1;
+select
+  -- level_low -> fill
+|
+  -- level_high -> idle
+end</pre>
+<div class="row">
+  <figure><figcaption>Before (current renderer)</figcaption><img src="before.svg" alt="current diagram"></figure>
+  <figure><figcaption>After (proposed)</figcaption><img src="after.svg" alt="proposed diagram">
+    <ul>
+      <li>Each return line goes up on the side of its leg: the left leg loops on the left, the right leg on the right. Nothing crosses.</li>
+      <li>Lanes hug the chart (just past the widest element they pass), not the far edge.</li>
+      <li>A jump into a step that has another input joins its link with an arrow; there's no extra bar. The L5X still gets its selection convergence.</li>
+      <li>A jump into a step with no other input (here <i>idle</i>) enters it from the top.</li>
+      <li>No "1"/"2" target labels when the line is drawn all the way.</li>
+    </ul>
+  </figure>
+</div>
+</body>
+</html>

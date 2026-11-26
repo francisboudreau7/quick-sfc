@@ -1,0 +1,62 @@
+# Builds the single-file v2 app (dist/QuickSFC.html) and publishes it to GitHub Pages.
+#   https://<owner>.github.io/<repo>/                 -> the app
+#   https://<owner>.github.io/<repo>/QuickSFC.html    -> same file, for "Save as" / offline use
+#   https://<owner>.github.io/<repo>/cheatsheet.html  -> qSFC cheat sheet
+name: Deploy v2 app to GitHub Pages
+
+on:
+  push:
+    branches: [v2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build single-file app
+        run: npm run build:app
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp dist/QuickSFC.html _site/index.html
+          cp dist/QuickSFC.html _site/QuickSFC.html
+          cp docs/cheatsheet.html _site/cheatsheet.html
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

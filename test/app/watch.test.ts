@@ -105,3 +105,22 @@ describe("Watcher", () => {
     expect(t.changes).toEqual(["v1"]);
   });
 });
+
+describe("Watcher: read failures (code review fix)", () => {
+  it("stops after MAX_FAILURES failed reads even when the file can still be stat'ed", async () => {
+    let n = 0;
+    const stops: string[] = [];
+    const timers: Array<() => void> = [];
+    const w = new Watcher({
+      getFile: async () => ({ lastModified: ++n, size: 1, text: async () => { throw new Error("locked"); } }),
+      onChange: () => {},
+      onStop: (r) => stops.push(r),
+      setTimer: (fn) => { timers.push(fn); return timers.length; },
+      clearTimer: () => {},
+    });
+    await w.start();
+    for (let i = 1; i < MAX_FAILURES; i++) await w.tick();
+    expect(w.running).toBe(false);
+    expect(stops).toHaveLength(1);
+  });
+});

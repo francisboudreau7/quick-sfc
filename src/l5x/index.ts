@@ -421,8 +421,8 @@ export function checkL5X(xml: string): string[] {
   }
 
   // every JSR in ST must name a routine of the file
-  for (const line of descendants(root, "Line")) {
-    const text = textOf(line);
+  for (const st of descendants(root, "STContent")) {
+    const text = textOf(st).replace(/\(\*[\s\S]*?\*\)/g, " ").replace(/\/\/[^\n]*/g, " ");
     for (const m of text.matchAll(/\bJSR\s*\(\s*([A-Za-z_]\w*)/gi)) {
       if (!routineNames.has(m[1]!.toLowerCase())) problems.push(`JSR to ${m[1]} has no routine`);
     }

@@ -6,6 +6,7 @@ import { checkL5X } from "../../src/l5x/index.js";
 import { blockText, descendants, parseXml } from "../../src/l5x/xml.js";
 import { parse } from "../../src/parse/index.js";
 import { rewriteBoolLiterals, rewriteCalls } from "../../src/tags/index.js";
+import { hiddenJumpLinks, renderSvg } from "../../src/render/svg.js";
 
 const src = (...lines: string[]) => lines.join("\n");
 const codes = (source: string) => compile(source, { fileName: "t.qsfc" }).diagnostics.map((d) => d.code);
@@ -308,5 +309,36 @@ describe("L5X: hidden wires (tp05 import, 2026-11-26)", () => {
     expect(t.attrs["X"]).toBe("260");
     const unload = descendants(parseXml(xml), "Step").find((e) => e.attrs["Operand"] === "Step_002")!;
     expect(unload.attrs["Y"]).toBe("660");
+  });
+});
+
+describe("code review fixes (2026-11-26)", () => {
+  it("a (* *) comment spanning lines is not rewritten on export", () => {
+    const xml = exportL5X(src("init a", "  (* old:", "  call cleanup; IF TRUE THEN", "  *)", "  x := TRUE;", "-- TRUE -> a", "st cleanup", "  y := 1;"),
+      { fileName: "c.qsfc", exportDate: DATE }).text!;
+    const lines = descendants(parseXml(xml), "Line").map(blockText);
+    expect(lines).toContain("call cleanup; IF TRUE THEN");
+    expect(lines).toContain("x := 1;");
+  });
+
+  it("`call` anywhere in a condition is E602", () => {
+    const d = compile(src("init a", "-- ready AND call check -> a", "st check", "  x := 1;")).diagnostics.map((x) => x.code);
+    expect(d).toContain("E602");
+    expect(d).not.toContain("E405");
+  });
+
+  it("checkL5X ignores JSR in comments", () => {
+    const xml = exportL5X(src("init a", "  // JSR(gone,0);", "  (* JSR(gone2,0); *)", "  x := 1;", "-- TRUE -> a"), { fileName: "j.qsfc", exportDate: DATE }).text!;
+    expect(checkL5X(xml)).toEqual([]);
+  });
+
+  it("every SVG view hides the same wires as the L5X", () => {
+    const r = compile(readFileSync("testpack/tp05_jumps.qsfc", "utf8"));
+    const ids = (svg: string) => [...svg.matchAll(/class="qsfc-wire qsfc-xref" data-id="([^"]+)"/g)].map((m) => m[1]).sort();
+    const want = [...hiddenJumpLinks(r.graph!, r.layout!)].sort();
+    expect(want.length).toBe(1);
+    for (const options of [{ look: "textbook" as const }, { look: "studio" as const }, { look: "textbook" as const, showActions: false }]) {
+      expect(ids(renderSvg(r.graph!, r.layout!, options))).toEqual(want);
+    }
   });
 });

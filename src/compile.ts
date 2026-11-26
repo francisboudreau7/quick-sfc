@@ -180,7 +180,7 @@ export function exportL5X(source: string, options: ExportOptions): ExportResult 
   const operands = operandMap(result.routines);
   const routines: L5XRoutine[] = result.routines.map((r) =>
     r.node.kind === "st"
-      ? { kind: "st", name: r.name, lines: r.node.body.map((l) => rewriteSt(l.text, operands)) }
+      ? { kind: "st", name: r.name, lines: rewriteLines(r.node.body.map((l) => l.text), operands) }
       : sfcForL5X(r.name, r.graph!, r.layout!, r.positions!, operands),
   );
   const l5xOptions: L5XProgramOptions = { programName: program };
@@ -226,10 +226,15 @@ function rewriteSt(text: string, operands: Map<string, string>): string {
   return rewriteBoolLiterals(rewriteStepRefs(rewriteCalls(text), operands));
 }
 
+/** Rewrites a block of ST lines as one text, so a `(* ... *)` comment spanning lines is skipped. */
+function rewriteLines(lines: string[], operands: Map<string, string>): string[] {
+  return lines.length ? rewriteSt(lines.join("\n"), operands).split("\n") : [];
+}
+
 function rewriteGraph(graph: Graph, operands: Map<string, string>): Graph {
   return {
     ...graph,
-    steps: graph.steps.map((s) => ({ ...s, action: s.action.map((l) => rewriteSt(l, operands)) })),
+    steps: graph.steps.map((s) => ({ ...s, action: rewriteLines(s.action, operands) })),
     transitions: graph.transitions.map((t) => ({ ...t, condition: rewriteSt(t.condition, operands) })),
   };
 }

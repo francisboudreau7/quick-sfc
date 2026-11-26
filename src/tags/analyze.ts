@@ -640,6 +640,15 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       if (problem) diags.push(problem);
     }
 
+    // E602: `call` anywhere in a condition (SPEC §4.5)
+    if (isCond) {
+      const callTok = toks.find((t) => t.k === "id" && key(t.t) === "call");
+      if (callTok) {
+        diags.push(error("E602", spanOf(callTok), "`call` is a statement: it can't be used in a condition", "call the routine from an action, or test its result in the condition"));
+        return;
+      }
+    }
+
     // W402: the last code token of an action must be `;`
     if (!isCond && toks.length) {
       const last = toks[toks.length - 1] as Tok;

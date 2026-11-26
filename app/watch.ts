@@ -106,7 +106,13 @@ export class Watcher {
           this.state = state;
           this.deps.onChange(text);
         } catch (e) {
-          this.state = decidePoll(this.state, { ok: false, error: String(e) }).state;
+          const failed = decidePoll(this.state, { ok: false, error: String(e) });
+          this.state = failed.state;
+          if (failed.action === "stop") {
+            this.stop();
+            this.deps.onStop(String(e));
+            return;
+          }
         }
       } else {
         this.state = state;

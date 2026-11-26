@@ -401,7 +401,11 @@ interface Pass {
 }
 
 export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}): string {
-  return decide(graph, layout, options).svg;
+  // Which wires become cross-references is decided once, in the default view (textbook look,
+  // actions shown), so every view and the L5X (Show="false") hide the same ones.
+  const canonical = (options.look ?? "studio") === "textbook" && (options.showActions ?? true);
+  if (canonical) return decide(graph, layout, options).svg;
+  return decide(graph, layout, options, hiddenJumpLinks(graph, layout)).svg;
 }
 
 /**
@@ -413,7 +417,7 @@ export function hiddenJumpLinks(graph: Graph, layout: Layout, options: SvgOption
   return decide(graph, layout, options).xref;
 }
 
-function decide(graph: Graph, layout: Layout, options: SvgOptions): { svg: string; xref: Set<string> } {
+function decide(graph: Graph, layout: Layout, options: SvgOptions, fixed?: Set<string>): { svg: string; xref: Set<string> } {
   const look: SvgLook = options.look ?? "studio";
   const M = look === "studio" ? STUDIO : TEXTBOOK;
   const showActions = options.showActions ?? true;
@@ -438,6 +442,7 @@ function decide(graph: Graph, layout: Layout, options: SvgOptions): { svg: strin
 
   // Draw every jump wire; while some still cross something, turn one of them into a
   // cross-reference: the one whose removal leaves the fewest crossings.
+  if (fixed) return { svg: drawPass(env, fixed).svg, xref: fixed };
   const xref = new Set<string>();
   let pass = drawPass(env, xref);
   const jumpById = new Map(env.routes.jumps.map((j) => [j.id, j]));

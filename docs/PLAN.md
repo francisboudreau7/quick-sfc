@@ -447,7 +447,7 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - Test pack tp08 (several routines, ST routine, JSR from ST and from an SFC action, operands across two charts).
 - ✅ Acceptance: tp08 imports and verifies in Studio; one-routine files export byte-identical to before.
 
-### Phase 4: L5X import (round trip)
+### Phase 4: L5X import, qualifiers, user experience (order decided 2026-11-26: 4a → 4e)
 **4a. Tidy (first deliverable, decided 2026-11-26).** Studio 5000 has no way to clean up a messy SFC diagram; the qSFC layout engine can do it.
 - Read an SFC routine from an L5X (exported from Studio), rebuild its structure (steps, transitions, branches, links), run the qSFC layout, and write back **only** the coordinates (step/transition X/Y, branch Y, description positions) and the `Show` flags of hidden wires. Every other byte stays as it was: operands (`Step_007` keeps its name, so HMIs and other routines that use `Step_007.X` keep working), actions and qualifiers, presets and expressions, alarms, the user's own descriptions, tags.
 - The layout learns the elements qSFC doesn't write: Stop elements, text boxes, several actions per step (taller action boxes).
@@ -456,12 +456,30 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - In the app: File → "Tidy an L5X…" shows before/after diagrams and saves the tidied file; CLI `qsfc tidy in.L5X -o out.L5X`.
 - Tests: tidying a qSFC-made L5X changes nothing but coordinates; tidy twice = tidy once; real messy charts from class, exported from Studio, tidied, re-imported, Verify + screenshot.
 
-**4b. Round trip.**
+**4b. Several actions per step, with qualifiers** (Q10: N, S, R, L, D, P…), before the round trip: real Studio charts use them, so the round trip would lose them otherwise.
+- Sugar (decided 2026-11-26): **output verbs** `on valve, pump` (N: `valve [:=] 1;`), `set alarm` (S), `reset alarm` (R). Removes the `[:=]` vs `:=` confusion.
+
+**4c. User experience improvements** (small items, decided 2026-11-26):
+- where a tag is used: click a tag in the Tags sidebar to highlight every step and transition that uses it
+- overview map and search for big charts
+- I/O mapping: `tag start_btn = Local:1:I.Data.0`, exported as alias tags
+- snippets / templates: start-stop, timeout to fault, reset sequence, parallel join
+- print / PDF view: title block (course, name, date), diagram, code and tag table
+- share by link: the chart encoded in the URL of the GitHub Pages app (nothing goes through a server)
+- Sugar (decided 2026-11-26): **time in a condition** `-- after 5s` (exports `step.T >= 5000` for the step above); **readable step members** `fill.active` / `.done` / `.time` / `.first` for `.X` / `.DN` / `.T` / `.FS` (both spellings accepted).
+
+**4d. Round trip** (after 4b and 4c).
 - L5X → syntax tree → `.qsfc` text; actions, qualifiers, presets and descriptions preserved.
 - Anything we can't represent (Stop elements, text boxes, ...) is reported, never silently dropped.
 - Names: from the step/transition tag descriptions (hidden boxes, decided 2026-11-26), else the step's `// name - description` comment; auto names (`T1`…) become unnamed transitions again. Elements with neither get a plain name (never `Step_000`, which is reserved).
 - Tests: export → import → export gives the same file; your real `MainProgram.L5X` imports.
 - ✅ Acceptance: as in your file.
+
+### Phase 4e: Simulation (dry run), with SFC logic checks
+- Toggle inputs, step through scans, see active steps light up, timers count and tags change; no PLC needed.
+- Logic checks: selection legs whose conditions can be true together, a tag written in two parallel legs, an S action never reset, a step that can never be left.
+- Sugar (decided 2026-11-26): **`else` leg** in a `select`: `-- else` exports `NOT (cond1 OR cond2 …)`, so the legs can never be true together.
+- All sugar exports to plain Studio ST/SFC; the round trip turns it back into the short form where it can. Considered and set aside: step timeout (`timeout -> fault`), edge detection (`rising x`, needs a hidden memory tag), C-style operators (`!`, `&&`, `||`).
 
 ### Phase 5: Ladder routines (planned, not started)
 - **Syntax: Studio's neutral text**, one rung per `rung` line, an optional `"comment"`, the instructions on the same line or indented below it:

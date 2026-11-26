@@ -837,6 +837,45 @@ ui.routineTabs.addEventListener("keydown", (e) => {
   tabs[to]!.focus();
 });
 
+/** The ST of an ST routine is shown on its card; clicking the code (or its title) hides it. */
+let stCodeOpen = true;
+
+function stCodeSection(r: CompiledRoutine): HTMLElement[] {
+  const body = r.node.kind === "st" ? r.node.body : [];
+  const head = document.createElement("button");
+  head.type = "button";
+  head.className = "st-code-toggle";
+  head.setAttribute("aria-expanded", String(stCodeOpen));
+  head.append(cell("span", "ST code"), cell("span", "", "chev"));
+  head.title = stCodeOpen ? "Hide the ST" : "Show the ST";
+  const toggle = (): void => {
+    stCodeOpen = !stCodeOpen;
+    renderDiagram(false);
+  };
+  head.addEventListener("click", toggle);
+  if (!stCodeOpen) {
+    const more = cell("button", `${body.length} line${body.length === 1 ? "" : "s"} hidden: click to show`, "st-code-more") as HTMLButtonElement;
+    more.type = "button";
+    more.addEventListener("click", toggle);
+    return [head, more];
+  }
+  const pre = document.createElement("pre");
+  pre.className = "st-code";
+  pre.title = "Click to hide the ST";
+  if (body.length === 0) pre.append(cell("span", "(empty)", "st-comment"));
+  body.forEach((l, i) => {
+    if (i > 0) pre.append("\n");
+    pre.append(cell("span", String(l.span.line), "st-ln"));
+    const text = l.text;
+    const c = text.indexOf("//");
+    if (c >= 0 && !/'[^']*\/\/[^']*'/.test(text)) {
+      pre.append(text.slice(0, c), cell("span", text.slice(c), "st-comment"));
+    } else pre.append(text);
+  });
+  pre.addEventListener("click", toggle);
+  return [head, pre];
+}
+
 /** The card shown instead of a diagram for an ST routine. */
 function renderStCard(r: CompiledRoutine, index: number): void {
   const routines = result?.routines ?? [];
@@ -866,6 +905,7 @@ function renderStCard(r: CompiledRoutine, index: number): void {
     }
     return box;
   };
+  card.append(...stCodeSection(r));
   card.append(cell("h3", "Calls"));
   card.append(r.calls.length ? chips(r.calls) : cell("p", "nothing", "muted"));
   card.append(cell("h3", "Called by"));

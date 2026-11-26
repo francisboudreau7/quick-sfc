@@ -54,6 +54,9 @@ export interface BarPlace {
    * "loop": automatic convergence below its (jump) sources, wired back up to its target.
    */
   placement: "structural" | "above" | "loop";
+  /** "loop" only: the step the convergence feeds, and the transitions that jump into it. */
+  target?: GraphId;
+  sources?: GraphId[];
 }
 
 export interface LegPlace {
@@ -222,7 +225,7 @@ export function layout(graph: Graph, chart: Chart): Layout {
     }
     const target = ctx.nodes.get(b.target!)!;
     const cols = (vertical.length > 0 ? vertical : [target]).map((s) => s.col);
-    const bar: BarPlace = { id: b.id, row, col: Math.min(...cols), colEnd: Math.max(...cols), placement: "loop" };
+    const bar: BarPlace = { id: b.id, row, col: Math.min(...cols), colEnd: Math.max(...cols), placement: "loop", target: b.target!, sources: [...(b.sources ?? [])].sort() };
     ctx.bars.set(b.id, bar);
     occupyRow(row, bar.col, bar.colEnd);
     rows = Math.max(rows, row + 1);
@@ -351,6 +354,16 @@ export function layout(graph: Graph, chart: Chart): Layout {
     });
   }
 
+  // Automatic convergences list their legs left to right, like the written ones, so Studio
+  // doesn't cross their wires (found by stress test tp09, 2026-11-26). Lowering lists them in
+  // file order; only the order changes (ids and links stay).
+  for (const b of graph.branches) {
+    if (b.node || b.flow !== "converge") continue;
+    const order = b.legs.map((leg, k) => ({ leg, src: b.sources?.[k], col: ctx.legs.get(leg.id)?.col ?? 0 }));
+    order.sort((x, y) => x.col - y.col);
+    b.legs = order.map((o) => o.leg);
+    if (b.sources) b.sources = order.map((o) => o.src!);
+  }
   return { rows, columns, groups, nodes: ctx.nodes, bars: ctx.bars, legs: ctx.legs, wires };
 }
 
@@ -461,8 +474,37 @@ function placeSeq(ctx: Ctx, seq: Sequence, col: number, row: number): { width: n
   return { width, row };
 }
 
-/** Studio 5000 coordinates derived from the grid. */
-export function l5xPositions(lay: Layout): L5XPositions {
+/** Height of one line of ST in Studio's action box, and room for its header and the next row. */
+/** Measured on the tp01 import: the action box ends ~23n-25 below its step, a transition's
+ * description box starts ~54 above the transition; 10 units of margin. */
+export const L5X_ACTION_LINE = 23;
+export const L5X_ACTION_EXTRA = 50;
+
+/**
+ * Studio 5000 coordinates derived from the grid. `actionLines` (step id -> number of lines in its
+ * action box as exported) makes the row after a step taller when its action is long, so Studio's
+ * action box doesn't run into the next element (tp01 import, 2026-11-26).
+ */
+/** Extra room under a transition whose wire is hidden: Studio writes the target's name there. */
+export const L5X_HIDDEN_GAP = 40;
+/** A hidden wire's transition starting a leg moves right, clear of a return wire on its left. */
+export const L5X_HIDDEN_SHIFT = 60;
+
+export interface L5XPositionOptions {
+  /** Step id -> lines in its action box as exported (see below). */
+  actionLines?: ReadonlyMap<GraphId, number>;
+  /** Transitions whose outgoing wire is hidden (Show="false"). */
+  hiddenFrom?: ReadonlySet<GraphId>;
+  /** Their targets: a step, or a convergence bar (Studio writes the source's name above them). */
+  hiddenTo?: ReadonlySet<GraphId>;
+  /** Of those, the ones that start a branch leg (moved right by L5X_HIDDEN_SHIFT). */
+  legStart?: ReadonlySet<GraphId>;
+}
+
+export function l5xPositions(lay: Layout, opts: L5XPositionOptions | ReadonlyMap<GraphId, number> = {}): L5XPositions {
+  const o: L5XPositionOptions = opts instanceof Map ? { actionLines: opts } : (opts as L5XPositionOptions);
+  const actionLines = o.actionLines;
+  const hiddenFrom = o.hiddenFrom ?? new Set<GraphId>();
   const colX: number[] = [];
   let x = L5X_ORIGIN_X;
   for (const c of lay.columns) {
@@ -471,21 +513,59 @@ export function l5xPositions(lay: Layout): L5XPositions {
   }
   const hasStep = new Array<boolean>(lay.rows).fill(false);
   const hasNode = new Array<boolean>(lay.rows).fill(false);
-  for (const n of lay.nodes.values()) {
+  const maxLines = new Array<number>(lay.rows).fill(0);
+  const hiddenRow = new Array<boolean>(lay.rows).fill(false);
+  /** Rows receiving a hidden wire: room above them for Studio's label (tp09 import, 2026-11-26). */
+  const hiddenInRow = new Array<boolean>(lay.rows).fill(false);
+  for (const id of o.hiddenTo ?? []) {
+    const row = lay.nodes.get(id)?.row ?? lay.bars.get(id)?.row;
+    if (row !== undefined) hiddenInRow[row] = true;
+  }
+  for (const [id, n] of lay.nodes) {
     hasNode[n.row] = true;
-    if (n.kind === "step") hasStep[n.row] = true;
+    if (hiddenFrom.has(id)) hiddenRow[n.row] = true;
+    if (n.kind === "step") {
+      hasStep[n.row] = true;
+      maxLines[n.row] = Math.max(maxLines[n.row]!, actionLines?.get(id) ?? 0);
+    }
   }
   const rowY: number[] = [];
   let y = L5X_ORIGIN_Y;
   for (let r = 0; r < lay.rows; r++) {
     if (r > 0) {
-      y +=
+      const base =
         hasNode[r - 1] && hasNode[r] ? L5X_NODE_PITCH : hasStep[r - 1] ? L5X_STEP_BAR_PITCH : L5X_BAR_PITCH;
+      const lines = maxLines[r - 1]!;
+      y += lines > 0 ? Math.max(base, lines * L5X_ACTION_LINE + L5X_ACTION_EXTRA) : base;
+      // the user's fix of the tp05 import (2026-11-26): room for Studio's connector label
+      if (hiddenRow[r - 1]) y += L5X_HIDDEN_GAP;
+      if (hiddenInRow[r]) y += L5X_HIDDEN_GAP;
     }
     rowY.push(y);
   }
   const positions: L5XPositions = { nodes: new Map(), branches: new Map() };
-  for (const n of lay.nodes.values()) positions.nodes.set(n.id, { x: colX[n.col]!, y: rowY[n.row]! });
-  for (const b of lay.bars.values()) positions.branches.set(b.id, { y: rowY[b.row]! });
+  for (const n of lay.nodes.values()) {
+    const shift = hiddenFrom.has(n.id) && o.legStart?.has(n.id) ? L5X_HIDDEN_SHIFT : 0;
+    positions.nodes.set(n.id, { x: colX[n.col]! + shift, y: rowY[n.row]! });
+  }
+  // A loop's convergence: below its sources, as in Studio's own exports, unless every source is
+  // in the target's own chain; then right above the target, so Studio wires each jump up on its
+  // own side like the app (tp09 import). With a source in another chain, the bar above the
+  // target made Studio draw a box round both chains (tp05 import), 2026-11-26.
+  const groupOf = (id: GraphId): number | undefined => {
+    const n = lay.nodes.get(id);
+    return n ? lay.columns[n.col]?.group : undefined;
+  };
+  for (const b of lay.bars.values()) {
+    let y = rowY[b.row]!;
+    if (b.placement === "loop" && b.target !== undefined) {
+      const g = groupOf(b.target);
+      const target = lay.nodes.get(b.target);
+      if (target && g !== undefined && (b.sources ?? []).every((s) => groupOf(s) === g)) {
+        y = Math.max(1, rowY[target.row]! - L5X_BAR_PITCH);
+      }
+    }
+    positions.branches.set(b.id, { y });
+  }
   return positions;
 }

@@ -1,0 +1,45 @@
+// tp11 stress: parallel inside parallel, loop inside a parallel leg, long action lines
+sfc tp11_stress_nesting
+init idle
+  all_off := 1;
+-- start_btn
+step prep
+-- prep_ok
+parallel
+  step mix_a
+    mixer_a [:=] 1;
+    speed_a := speed_setpoint_for_line_a * correction_factor_a;
+  -- mix_a_done
+  step heat
+  select
+    -- temp_low
+    step heat_more 5s
+      heater [:=] 1;
+    -- heat_more.DN -> heat
+  |
+    -- temp_ok
+  end
+  step heated
+|
+  step dose
+    valve_d [:=] 1;
+  -- dose_ok
+  parallel
+    step pump_1
+      pump1 [:=] 1;
+  |
+    step pump_2
+      pump2 [:=] 1;
+      IF flow_2 < flow_min THEN
+        flow_alarm := 1;
+      END_IF;
+  end
+  -- pumps_done
+  step dosed
+|
+  step wait_ext 10s "Wait for the external signal"
+end
+-- ready_all
+step drain 3s
+  drain_valve [:=] 1;
+-- drain.DN -> idle

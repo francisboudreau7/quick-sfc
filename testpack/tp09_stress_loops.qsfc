@@ -1,0 +1,36 @@
+// tp09 stress: many loops back, nested return wires on both sides
+sfc tp09_stress_loops
+init idle
+  lamp := 0;
+-- start_btn
+step load 2s "Load the part"
+  clamp [:=] 1;
+-- load.DN
+step check
+select
+  -- part_ok
+  step drill 3s
+    drill_motor [:=] 1;
+    IF drill_depth > 50 THEN
+      drill_alarm := 1;
+    END_IF;
+  select
+    -- drill.DN AND NOT drill_alarm
+  |
+    -- drill_alarm -> check
+  end
+  step deburr
+    brush [:=] 1;
+  -- deburr_done
+|
+  -- part_bad -> load
+|
+  -- part_missing -> idle
+end
+step unload 1s
+  eject [:=] 1;
+select
+  -- unload.DN AND more_parts -> load
+|
+  -- unload.DN AND NOT more_parts -> idle
+end

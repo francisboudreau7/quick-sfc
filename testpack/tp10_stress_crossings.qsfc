@@ -1,0 +1,39 @@
+// tp10 stress: forward jump, jumps between chains, a jump from a middle leg
+sfc tp10_stress_crossings
+init idle
+-- start_btn
+step a1
+  out_a [:=] 1;
+select
+  -- skip_b -> c1
+|
+  -- go_b
+end
+step b1
+  out_b [:=] 1;
+select
+  -- left_way
+  step l1
+  -- l1_done
+|
+  -- mid_way
+  step m1
+  select
+    -- m1_retry -> a1
+  |
+    -- m1_ok
+  end
+  step m2
+  -- m2_done
+|
+  -- right_way
+  step r1
+  -- r1_done -> fault_stop
+end
+step c1
+  out_c [:=] 1;
+-- c1_done -> idle
+
+step fault_stop "Separate chain"
+  siren [:=] 1;
+-- ack_btn -> b1

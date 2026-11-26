@@ -1,0 +1,30 @@
+╔═════════════╗ ◄ from T8, T10
+║    idle     ║─[ lamp := 0; ]
+╚══════╤══════╝
+       ┼ start_btn
+┌──────┴──────┐ ◄ from T7, T9
+│  load  2s   │─[ clamp [:=] 1; ]
+└──────┬──────┘
+       ┼ load.DN
+┌──────┴──────┐ ◄ from T5
+│    check    │
+└──────┬──────┘
+       ├──────────────────────────────────────┬─────────────┐
+       ┼ part_ok                              ┼ part_bad    ┼ part_missing
+       │                                      → load (T7)   → idle (T8)
+┌──────┴──────┐
+│  drill  3s  │─[ drill_motor [:=] 1; … ]
+└──────┬──────┘
+       ├────────────────────────────────┐
+       ┼ drill.DN AND NOT drill_alarm   ┼ drill_alarm
+       │                                → check (T5)
+┌──────┴──────┐
+│   deburr    │─[ brush [:=] 1; ]
+└──────┬──────┘
+       ┼ deburr_done
+┌──────┴──────┐
+│ unload  1s  │─[ eject [:=] 1; ]
+└──────┬──────┘
+       ├────────────────────────────────┐
+       ┼ unload.DN AND more_parts       ┼ unload.DN AND NOT more_parts
+       → load (T9)                      → idle (T10)

@@ -14,6 +14,8 @@ Per chart, there are three files:
 - **How to import:** in the Controller Organizer, right-click **MainTask** → **Add** → **Import Program...** → choose the `.L5X` → **OK** in the Import Configuration dialog (accept the defaults).
 - Each file is a separate Program named like its routine (`tp01_linear`, ...), so you can import them all into the same project one after the other.
 
+Note: a transition written `TRUE` in the `.qsfc` is exported as the condition `1` (Studio 5000 ST has no `TRUE`/`FALSE`; fixed after the tp02 import).
+
 ## What to report for each file
 
 Copy this block per file into your reply (or just "OK" when everything matched):
@@ -36,6 +38,7 @@ A photo or screenshot of each opened SFC routine is the most useful thing you ca
    - **a. Tag description:** the qSFC name (`idle`, `fill`, ...) should appear as the step's **description** next to the box, and in the description column of tag `Step_000` in the program tags. Report whether it shows **beside the box**, **only in the tag list**, or **not at all**. Transitions get their name (`start`, `T1`, ...) the same way.
    - **b. Action comment:** every step's action starts with `// idle` (or `// fill - Fill the tank` when there is a description). Steps that had no action now have an action containing only that comment. Check that Verify accepts these comment-only actions.
    - Then tell me: keep **a**, **b**, or **both**?
+   - **Decided after tp01 (2026-11-26):** the comment shows the name; the tag descriptions keep the names but their boxes are hidden (`HideDesc="true"`). Expect **no description boxes** in the chart, and the names in the Tags list description column. No box should overlap an action any more.
 5. **Layout:** no boxes on top of each other and no wires crossing boxes. The layout doesn't need to be pretty, only readable.
 
 ---
@@ -48,7 +51,7 @@ Check:
 - 2 steps (`Step_000` = idle, `Step_001` = run) and 2 transitions.
 - `run` has **Preset 3000 ms**. Its action is 6 lines of ST: the comment `// run - Motor runs 3 s`, `motor [:=] 1;` and the `IF count < 100 ... END_IF;` block, keeping the indentation.
 - Program tags include `count` (DINT), `motor` (BOOL) and `start_btn` (BOOL, description *Start push button*).
-- [Verify] `idle` shows a 2-line description: `idle` / `Waiting for start`.
+- `idle`'s action starts with `// idle - Waiting for start`; no description box; tag `Step_000` has the description `idle` / `Waiting for start`.
 
 ## tp02_selection: selection with 3 legs
 
@@ -57,10 +60,10 @@ Diagram: `idle` → `start` → `fill` → `fill.DN` → `check` → **selection
 - leg 2: `bad` → `reject` → `reject_done`
 - leg 3: only the transition `skip` (`bypass`)
 
-The 3 legs merge (**selection convergence**) into `done` → `TRUE`, with a wire back to `idle`.
+The 3 legs merge (**selection convergence**) into `done` → `1`, with a wire back to `idle`.
 
 Check:
-- Unnamed transitions are numbered: `start_btn AND safety_ok` is named `start`; the `fill.DN` transition is `T1`; `pack_done` and `reject_done` are `T2` and `T3`; the last `TRUE` is `T4`.
+- Unnamed transitions are numbered: `start_btn AND safety_ok` is named `start`; the `fill.DN` transition is `T1`; `pack_done` and `reject_done` are `T2` and `T3`; the last `1` is `T4`.
 - The `fill.DN` condition appears in Studio as **`Step_001.DN`**.
 
 ## tp03_parallel: parallel branch
@@ -77,10 +80,10 @@ Diagram:
 - `idle` → `go` → simultaneous divergence:
   - leg A: `fill_a` → a **selection inside the leg** (`level_a` alone | `fault_a` → `alarm_a` → `ack_btn`) merging into `done_a`
   - leg B: `fill_b` → `level_b` → `done_b`
-- → simultaneous convergence → `TRUE` → `choose` → selection:
-  - leg 1: `mode_auto` → `auto_run` → `go` → a **parallel branch inside the leg** (`left` | `right`) → `TRUE`
+- → simultaneous convergence → `1` → `choose` → selection:
+  - leg 1: `mode_auto` → `auto_run` → `go` → a **parallel branch inside the leg** (`left` | `right`) → `1`
   - leg 2: `mode_manual` → `manual_run` → `stop_btn`
-- → selection convergence → `finish` → `TRUE`, with a wire back to `idle`.
+- → selection convergence → `finish` → `1`, with a wire back to `idle`.
 
 [Verify] Studio accepts branches nested 2 levels deep, and the layout stays readable.
 
@@ -96,7 +99,7 @@ Diagram:
 
 [Verify]:
 1. Import accepts a selection convergence whose legs come from transitions far apart in the chart.
-2. Studio draws the wires from `fault` to `error`, and from the convergence back up to `idle`.
+2. The wire from `fault` to `error` is **hidden** (`Show="false"`, as the app draws it as a cross-reference): Studio shows its connector labels instead (`Step 003` under `Tran_001`, `Tran 001` above `Step_003`). The wire from the convergence back up to `idle` is drawn.
 
 ## tp06_tags: tag types and a chart that ends on a step
 
@@ -119,7 +122,7 @@ Diagram: `idle` → `start` → simultaneous divergence:
 - leg A: a **selection convergence bar right at the top of the leg**, then `fill_a` → a selection (`retry` with a wire back up to that bar | `level_a`) → `done_a`
 - leg B: `fill_b` → `level_b` → `done_b`
 
-Then simultaneous convergence → `TRUE` → back to `idle`.
+Then simultaneous convergence → `1` → back to `idle`.
 
 [Verify] This is the one link shape nobody has tested: the parallel branch's leg links **directly into a selection convergence leg**. If Studio refuses the import, copy the error text. I'll then change how this case is generated (the rest of the pack doesn't depend on it).
 
@@ -130,7 +133,7 @@ One Program `tp08_routines` with **5 routines**, in this order:
 | Routine | Type | What it does |
 |---|---|---|
 | `main` | ST | **Main routine.** `JSR(fill_seq,0);` `JSR(mixer, 0);` `JSR(alarms,0);` and `busy_lamp := Step_001.X OR Step_004.X;` |
-| `fill_seq` | SFC | `idle` → `start_btn` → `fill` (3 s) → `fill.DN` → `count` → `TRUE` → back to `idle`. The `count` action is `JSR(count_cycles,0);` |
+| `fill_seq` | SFC | `idle` → `start_btn` → `fill` (3 s) → `fill.DN` → `count` → `1` → back to `idle`. The `count` action is `JSR(count_cycles,0);` |
 | `mixer` | SFC | `stopped` → `Step_001.X` → `mix` → `NOT Step_001.X` → back to `stopped` |
 | `alarms` | ST | `alarm := level_high AND NOT valve;` |
 | `count_cycles` | ST | `cycles := cycles + 1;` |
@@ -146,3 +149,26 @@ Check:
 2. **`JSR(name,0);` in ST** is accepted, both in an ST routine (`main`) and in an SFC action (`count`). If Studio wants another form (for example `JSR(name);`), copy the error text.
 3. Two SFC routines in one program with operands continuing (`Step_003`…) import without a name conflict.
 4. `mixer` reads `fill_seq`'s step (`Step_001.X`) without errors.
+
+---
+
+## Layout stress tests (tp09–tp11, added 2026-11-26)
+
+These check that the coordinates qSFC computes still give a readable chart in Studio when the chart gets busy. **Loops (2026-11-26):** when every wire joining into a step comes from that step's own chain, its automatic convergence goes right above the step, so Studio draws each loop up its own side like the app (seen in tp09). When one comes from another chain (tp05's `error`), the convergence stays at the bottom, as in Studio's own exports; Studio then routes that loop round the left, which is accepted. The `.diagram.txt` files show the expected shape. For each one, send a screenshot of the whole routine (zoom out if needed) and note anything that overlaps, crosses, or loops where the app's diagram doesn't. Import and Verify should of course still pass.
+
+### tp09_stress_loops: many return wires
+- A 3-leg selection after `check`: `part_ok` continues, `part_bad` jumps back to `load`, `part_missing` jumps back to `idle`.
+- A nested selection after `drill` (an action of 4 lines): `drill_alarm` jumps back to `check`.
+- A final selection after `unload`: back to `load` or back to `idle`.
+- `idle`, `load` and `check` each get **automatic selection convergences** with legs from far apart.
+- The app hides 3 of these wires (`Show="false"`): `part_bad → load`, `drill_alarm → check`, `NOT more_parts → idle`. Check that Studio shows its connector labels for those and draws the other loops without overlapping.
+- This chart found a bug before you saw it: an automatic convergence listed its legs right-to-left. They are now ordered left to right.
+
+### tp10_stress_crossings: forward jump, separate chain, middle-leg jump
+- `skip_b` jumps **forward** over `b1` to `c1`.
+- A 3-leg selection after `b1`; the middle leg has a nested selection whose `m1_retry` jumps back **up** to `a1` (hidden wire), and the right leg's `r1_done` jumps to a **separate chain** `fault_stop`, which jumps back to `b1` (hidden wire).
+- Check: the forward jump wire and the return wire from `c1_done` to `idle` on the left don't merge into one line.
+
+### tp11_stress_nesting: parallel inside parallel, long actions
+- A 3-leg simultaneous branch; leg 1 has a selection whose `heat_more.DN` loops back to `heat` (inside the parallel leg); leg 2 has a **parallel branch inside it** (`pump_1` | `pump_2`); leg 3 is a single step with a preset and a description.
+- `mix_a` and `pump_2` have **long action lines**: check whether their action boxes overlap the leg to their right (legs are 300 units apart). If they do, tell me roughly how wide the box is.

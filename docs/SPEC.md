@@ -451,7 +451,7 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 | transition | `<Transition>`, operand `Tran_000`, …, plus a BOOL tag. The condition is one `<Line>` |
 | select / parallel | `<Branch BranchType="Selection" / "Simultaneous">` diverge + converge, one `<Leg>` per leg; `Priority="Default"` on the selection diverge only |
 | automatic convergence (§6.4) | `<Branch BranchType="Selection" BranchFlow="Converge">` |
-| links | `<DirectedLink>` following the verified patterns (L5X_GUIDE §6.3) |
+| links | `<DirectedLink>` following the verified patterns (L5X_GUIDE §6.3). A jump wire that the app's diagram (default view) draws as a cross-reference is written `Show="false"`: Studio then hides the wire and shows connector labels at both ends (verified with the user's tp05 export, 2026-11-26). The app draws such a hidden wire as a dashed arrow under the transition (labelled with the target) and a dashed arrow into the target (labelled with the transition and its condition) |
 | user tags | program-scope tags of the inferred or declared type |
 | X/Y | computed by the layout engine, the same one that draws the diagram in the app |
 
@@ -462,11 +462,15 @@ Following Q7, operands keep Studio's default names. The qSFC name is kept in the
 - With a `"description"`, the tag description is `fill` + new line + `Fill the tank`.
 - Transitions get their name, including auto-names (`T3`), in the same way.
 - This is what lets the Phase 4 import recover the names.
-- **Name comment (on by default for now).** Every step's action also starts with a comment line holding its name: `// fill`, or `// fill - Fill the tank` with a description. A step without an action gets an action containing only that line. The Phase 4 import removes this first line again. The test pack decides whether we keep the description, the comment, or both.
+- **Name comment.** Every step's action starts with a comment line holding its name: `// fill`, or `// fill - Fill the tank` with a description. A step without an action gets an action containing only that line. The Phase 4 import removes this first line again.
+- **Decided after the tp01 imports (2026-11-26):** Studio draws a tag description as a box over the action box (steps) or over the condition (transitions). The export keeps the names in the tag descriptions but writes `HideDesc="true"` on every step and transition, the way Studio itself stores a hidden description (verified by importing tp01_hidden into a clean project). So the chart shows no boxes, the `// name` comment shows the step name, and the Tags list and the Phase 4 import still have every name, transitions included.
+- Rows after a step grow with its action's line count, so the action box doesn't run into the next element.
 - **[Verify]** The reference export has no element descriptions, so how Studio displays a tag description beside its step must be checked in the test pack.
 
 ### 8.4 Step-name rewrite
-In conditions and actions, every `stepname.member` is rewritten to its operand (`fill.DN` becomes `Step_001.DN`). The rewrite works on identifiers (`refill.DN` is untouched) and skips strings and comments. Nothing else in the ST is changed.
+In conditions and actions, every `stepname.member` is rewritten to its operand (`fill.DN` becomes `Step_001.DN`). The rewrite works on identifiers (`refill.DN` is untouched) and skips strings and comments.
+
+`TRUE` and `FALSE` are rewritten to `1` and `0`: Studio 5000 ST has no Boolean keywords (found in the tp02 import, 2026-11-26). qSFC keeps accepting `TRUE`/`FALSE` (IEC 61131-3), so `-- TRUE -> idle` exports as the condition `1`. Nothing else in the ST is changed.
 
 ### 8.5 Export checks (Studio 5000 rules)
 Beyond the language rules, the exporter refuses to write a file when:

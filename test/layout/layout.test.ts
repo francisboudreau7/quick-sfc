@@ -174,7 +174,9 @@ describe.each(charts)("layout guarantees: $name", ({ source }) => {
       } else {
         const out = graph.links.find((l) => l.from === b.id)!;
         const dy = yOf(out.to) - yOf(b.id);
-        if (lay.bars.get(b.id)!.placement === "loop") expect(dy).toBeLessThan(0);
+        // loops: below the sources (dy < 0), or right above the target when every source is in
+        // the target's chain (dy = L5X_BAR_PITCH)
+        if (lay.bars.get(b.id)!.placement === "loop") expect(dy < 0 || dy === L5X_BAR_PITCH, b.id).toBe(true);
         else {
           expect(dy, b.id).toBeGreaterThanOrEqual(L5X_BAR_PITCH);
           expect(dy, b.id).toBeLessThanOrEqual(240);
@@ -271,10 +273,19 @@ describe("layout structure", () => {
     expect(lay.nodes.get(idOf(graph, "unload"))!.col).toBe(0);
   });
 
-  it("matches the reference export: loop-back bar 60 below the lowest source", () => {
-    const { graph, layout: lay } = build(chartSource("first-example"));
+  it("puts a loop-back bar right above its target when every source is in the target's chain", () => {
+    const { graph, layout: lay } = build(chartSource("testpack/tp09_stress_loops"));
     const pos = l5xPositions(lay);
-    const auto = graph.branches.find((b) => b.target !== undefined)!;
+    const idle = idOf(graph, "idle");
+    const auto = graph.branches.find((b) => b.target === idle)!;
+    expect(lay.bars.get(auto.id)!.placement).toBe("loop");
+    expect(pos.branches.get(auto.id)!.y).toBe(pos.nodes.get(idle)!.y - 60);
+  });
+
+  it("keeps a loop-back bar 60 below the lowest source when a source is in another chain (reference export)", () => {
+    const { graph, layout: lay } = build(chartSource("testpack/tp05_jumps"));
+    const pos = l5xPositions(lay);
+    const auto = graph.branches.find((b) => b.target === idOf(graph, "idle"))!;
     expect(lay.bars.get(auto.id)!.placement).toBe("loop");
     const lowest = Math.max(...auto.sources!.map((s) => pos.nodes.get(s)!.y));
     expect(pos.branches.get(auto.id)!.y).toBe(lowest + 60);

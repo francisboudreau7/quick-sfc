@@ -278,7 +278,10 @@ describe("SVG view: cross-reference fallback", () => {
     const label = descendants(g, "text")[0]!;
     expect(textOf(label)).toBe(options.numbering === "numbers" ? "1" : "idle");
     const from = descendants(root, "text").find((e) => hasClass(e, "qsfc-xref-from"))!;
-    expect(textOf(from)).toBe(`from ${t.name}`);
+    expect(textOf(from)).toBe(`${t.name} ${t.condition}`);
+    // dashed stubs at both ends (hidden wire, mockup docs/mockups/xref option C)
+    expect(descendants(root, "g").filter((e) => hasClass(e, "qsfc-xref-in"))).toHaveLength(1);
+    expect(svg).toContain("stroke-dasharray:4 3");
     expect(crossings(svg)).toEqual([]);
     // The other jump into idle (the main column) is still drawn all the way.
     expect(descendants(root, "g").filter((e) => hasClass(e, "qsfc-jump") || hasClass(e, "qsfc-jump-join")).length).toBe(1);

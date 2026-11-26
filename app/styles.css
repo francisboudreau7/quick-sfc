@@ -314,8 +314,26 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 }
 .st-card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;
-  width: min(460px, 100%); box-shadow: var(--shadow);
+  width: min(640px, 100%); box-shadow: var(--shadow);
 }
+.st-code-toggle {
+  display: flex; align-items: center; gap: 6px; margin: 14px 0 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+}
+.st-code-toggle:hover { color: var(--text); }
+.st-code-toggle .chev { width: 0; height: 0; border: 4px solid transparent; border-top-color: currentColor; margin-top: 4px; }
+.st-code-toggle[aria-expanded="false"] .chev { transform: rotate(-90deg); margin-top: 0; }
+.st-code {
+  margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; overflow-x: auto; color: var(--text); cursor: pointer; white-space: pre;
+}
+.st-code .st-ln { display: inline-block; min-width: 2.5em; margin-right: 10px; text-align: right; color: var(--muted); user-select: none; }
+.st-code .st-comment { color: var(--syn-comment); }
+.st-code-more {
+  border: 1px dashed var(--border-strong); background: none; border-radius: 6px; padding: 4px 10px;
+  color: var(--muted); cursor: pointer; font-size: 12.5px;
+}
+.st-code-more:hover { color: var(--text); border-color: var(--accent); }
 .st-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; font-size: 15px; font-weight: 400; }
 .st-title b { word-break: break-word; }
 .badge { font-size: 11px; background: var(--toolbar); border-radius: 8px; padding: 1px 7px; color: var(--muted); }

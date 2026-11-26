@@ -26,6 +26,7 @@ Status: **all Phase 0 questions answered** (2026-11-25). Nothing has been implem
 | R3 | Calls are written **`call name;`**, exported as `JSR(name,0);`; Studio's `JSR(name, 0);` is accepted too |
 | R4 | Diagram pane: **routine tabs that follow the cursor**; an ST routine shows a call summary |
 | R5 | **Ladder routines come later** (Phase 5), in Studio's neutral text |
+| R6 | (2026-11-26) **Rename: later.** The name qSFC / QuickSFC stays for now; it undersells the tool once files hold ST and ladder. Candidates found free of automation clashes (web, GitHub and a quick US trademark search): **sMate** (files `.smate`; the "s" for step, sequence, structured text, and Quebec *smatte* = clever), Scribomate (*scribe* + French *automate*). Rejected: qPLC (an existing PLC language), qIEC (Qt IEC 60870 libraries), Logimate (a Seco PLC), FemtoPLC (existing PLC projects), Zepto/Yocto/Pico/Atto (big brands). Decide before v2 replaces `main`; keep opening `.qsfc` after a rename
 
 ---
 
@@ -398,6 +399,13 @@ Each phase ends with something usable, and with an **import test pack** sized so
   6. deep nesting (tp04), and a program with the same name as its routine
   7. the general layout spacing as Studio draws it
   8. code review of the subagent-written modules (deferred until the import results)
+- **Studio import results (2026-11-26): tp01–tp11 all import and look right** in Studio 5000 v32.01. Points 1–7 above are settled. What the imports changed in the export:
+  - names: kept in the step/transition tag descriptions with `HideDesc="true"` (no boxes); the `// name - description` action comment shows the step name
+  - `TRUE` / `FALSE` exported as `1` / `0` (Studio ST has no Boolean keywords)
+  - rows grow with the action's line count, so action boxes don't run into the next element
+  - a jump drawn as a cross-reference in the app is `Show="false"` in the L5X; room is left above its target and below its source for Studio's connector labels, and its transition moves right when it starts a leg
+  - automatic convergences list their legs left to right; a loop's convergence sits right above its target when all its jumps come from the target's chain, else at the bottom (Studio then routes that loop round the left: accepted)
+  - still to do: point 8 (code review)
 
 ### Phase 2: Viewer window
 - Start with mockups of **both looks** (Studio 5000 and textbook IEC/GRAFCET); you choose one.
@@ -442,6 +450,7 @@ Each phase ends with something usable, and with an **import test pack** sized so
 ### Phase 4: L5X import (round trip)
 - L5X → syntax tree → `.qsfc` text; actions, qualifiers, presets and descriptions preserved.
 - Anything we can't represent (Stop elements, text boxes, ...) is reported, never silently dropped.
+- Names: from the step/transition tag descriptions (hidden boxes, decided 2026-11-26), else the step's `// name - description` comment; auto names (`T1`…) become unnamed transitions again. Elements with neither get a plain name (never `Step_000`, which is reserved).
 - Tests: export → import → export gives the same file; your real `MainProgram.L5X` imports.
 - ✅ Acceptance: as in your file.
 

@@ -1,10 +1,11 @@
 /** Several routines and calls (SPEC §4.5): parse, checks, operands, L5X, ASCII. */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { compile, exportL5X, showAscii } from "../../src/compile.js";
 import { checkL5X } from "../../src/l5x/index.js";
 import { blockText, descendants, parseXml } from "../../src/l5x/xml.js";
 import { parse } from "../../src/parse/index.js";
-import { rewriteCalls } from "../../src/tags/index.js";
+import { rewriteBoolLiterals, rewriteCalls } from "../../src/tags/index.js";
 
 const src = (...lines: string[]) => lines.join("\n");
 const codes = (source: string) => compile(source, { fileName: "t.qsfc" }).diagnostics.map((d) => d.code);
@@ -255,5 +256,57 @@ describe("show: several routines", () => {
     expect(text).toContain("== st main (main) ==\ncalls: fill_seq, alarms\n\n  // run everything");
     expect(text).toContain("== sfc fill_seq ==\ncalled by: main\ncalls: alarms\n");
     expect(text).toContain("== st alarms ==\ncalled by: main, fill_seq\n\n  alarm := level_high AND NOT motor;");
+  });
+});
+
+describe("L5X: names in hidden descriptions (tp01 imports, 2026-11-26)", () => {
+  it("steps and transitions keep their names as tag descriptions, with HideDesc=true", () => {
+    const xml = exportL5X(src("init idle \"Waiting\"", "-- go: start_btn", "step run", "-- TRUE -> idle"), {
+      fileName: "h.qsfc",
+      exportDate: DATE,
+    }).text!;
+    const root = parseXml(xml);
+    expect(descendants(root, "Step").map((s) => s.attrs["HideDesc"])).toEqual(["true", "true"]);
+    expect(descendants(root, "Transition").map((t) => t.attrs["HideDesc"])).toEqual(["true", "true"]);
+    const desc = (name: string) =>
+      blockText(descendants(descendants(root, "Tag").find((t) => t.attrs["Name"] === name)!, "Description")[0]!);
+    expect([desc("Step_000"), desc("Step_001"), desc("Tran_000"), desc("Tran_001")]).toEqual([
+      "idle\nWaiting", "run", "go", "T1",
+    ]);
+  });
+});
+
+describe("rewriteBoolLiterals (Studio has no TRUE/FALSE)", () => {
+  it.each([
+    ["TRUE", "1"],
+    ["x := FALSE;", "x := 0;"],
+    ["true AND NOT False", "1 AND NOT 0"],
+    ["msg := 'TRUE'; // TRUE", "msg := 'TRUE'; // TRUE"],
+    ["a.TRUE", "a.TRUE"],
+    ["is_true := BOOL#TRUE;", "is_true := BOOL#TRUE;"],
+  ])("%s", (input, expected) => {
+    expect(rewriteBoolLiterals(input)).toBe(expected);
+  });
+
+  it("exported conditions and actions use 1/0", () => {
+    const xml = exportL5X(src("init a", "  x := TRUE;", "-- TRUE -> a"), { fileName: "b.qsfc", exportDate: DATE }).text!;
+    const lines = descendants(parseXml(xml), "Line").map(blockText);
+    expect(lines).toContain("x := 1;");
+    expect(lines).toContain("1");
+    expect(lines.join("\n")).not.toMatch(/\bTRUE\b/);
+  });
+});
+
+describe("L5X: hidden wires (tp05 import, 2026-11-26)", () => {
+  it("a jump drawn as a cross-reference is written Show=false, like Studio's own export", () => {
+    const xml = exportL5X(readFileSync("testpack/tp05_jumps.qsfc", "utf8"), { fileName: "tp05_jumps.qsfc", exportDate: DATE }).text!;
+    const links = descendants(parseXml(xml), "DirectedLink").filter((l) => l.attrs["Show"] === "false");
+    expect(links.map((l) => `${l.attrs["FromID"]}->${l.attrs["ToID"]}`)).toEqual(["9->6"]);
+    // the hidden wire's transition moves right, and the row under it gets 40 more units
+    // (the user's fix in Studio: unload from Y=620 to 640 or lower)
+    const t = descendants(parseXml(xml), "Transition").find((e) => e.attrs["ID"] === "9")!;
+    expect(t.attrs["X"]).toBe("260");
+    const unload = descendants(parseXml(xml), "Step").find((e) => e.attrs["Operand"] === "Step_002")!;
+    expect(unload.attrs["Y"]).toBe("660");
   });
 });

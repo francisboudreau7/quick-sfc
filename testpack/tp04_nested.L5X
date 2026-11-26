@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp04_nested" TargetType="Program" ContainsContext="true" ExportDate="Wed Nov 25 15:56:13 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp04_nested" TargetType="Program" ContainsContext="true" ExportDate="Thu Nov 26 15:14:51 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
 <Controller Use="Context" Name="QuickSFC">
 <DataTypes Use="Context">
 </DataTypes>
@@ -802,7 +802,7 @@
 <Routines>
 <Routine Name="tp04_nested" Type="SFC">
 <SFCContent SheetSize="Letter - 8.5 x 11 in" SheetOrientation="Landscape" StepName="Step" TransitionName="Tran" ActionName="Action" StopName="Stop">
-<Step ID="0" X="200" Y="100" Operand="Step_000" HideDesc="false" DescX="240" DescY="80" DescWidth="0" InitialStep="true" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="0" X="200" Y="100" Operand="Step_000" HideDesc="true" DescX="240" DescY="80" DescWidth="0" InitialStep="true" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="1" Operand="Action_000" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -813,7 +813,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="2" X="200" Y="340" Operand="Step_001" HideDesc="false" DescX="240" DescY="320" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="2" X="200" Y="340" Operand="Step_001" HideDesc="true" DescX="240" DescY="320" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="3" Operand="Action_001" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -827,7 +827,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="4" X="500" Y="700" Operand="Step_002" HideDesc="false" DescX="540" DescY="680" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="4" X="500" Y="700" Operand="Step_002" HideDesc="true" DescX="540" DescY="680" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="5" Operand="Action_002" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -841,7 +841,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="6" X="200" Y="940" Operand="Step_003" HideDesc="false" DescX="240" DescY="920" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="6" X="200" Y="940" Operand="Step_003" HideDesc="true" DescX="240" DescY="920" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="7" Operand="Action_003" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -852,7 +852,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="8" X="800" Y="340" Operand="Step_004" HideDesc="false" DescX="840" DescY="320" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="8" X="800" Y="340" Operand="Step_004" HideDesc="true" DescX="840" DescY="320" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="9" Operand="Action_004" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -866,7 +866,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="10" X="800" Y="580" Operand="Step_005" HideDesc="false" DescX="840" DescY="560" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="10" X="800" Y="580" Operand="Step_005" HideDesc="true" DescX="840" DescY="560" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="11" Operand="Action_005" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -877,7 +877,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="12" X="200" Y="1220" Operand="Step_006" HideDesc="false" DescX="240" DescY="1200" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="12" X="200" Y="1220" Operand="Step_006" HideDesc="true" DescX="240" DescY="1200" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="13" Operand="Action_006" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -888,7 +888,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="14" X="200" Y="1500" Operand="Step_007" HideDesc="false" DescX="240" DescY="1480" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="14" X="200" Y="1500" Operand="Step_007" HideDesc="true" DescX="240" DescY="1480" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="15" Operand="Action_007" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -899,7 +899,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="16" X="200" Y="1740" Operand="Step_008" HideDesc="false" DescX="240" DescY="1720" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="16" X="200" Y="1740" Operand="Step_008" HideDesc="true" DescX="240" DescY="1720" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="17" Operand="Action_008" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -913,7 +913,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="18" X="500" Y="1740" Operand="Step_009" HideDesc="false" DescX="540" DescY="1720" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="18" X="500" Y="1740" Operand="Step_009" HideDesc="true" DescX="540" DescY="1720" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="19" Operand="Action_009" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -927,7 +927,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="20" X="800" Y="1500" Operand="Step_010" HideDesc="false" DescX="840" DescY="1480" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="20" X="800" Y="1500" Operand="Step_010" HideDesc="true" DescX="840" DescY="1480" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="21" Operand="Action_010" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -938,7 +938,7 @@
 </Body>
 </Action>
 </Step>
-<Step ID="22" X="200" Y="2020" Operand="Step_011" HideDesc="false" DescX="240" DescY="2000" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="22" X="200" Y="2020" Operand="Step_011" HideDesc="true" DescX="240" DescY="2000" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="23" Operand="Action_011" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -949,7 +949,7 @@
 </Body>
 </Action>
 </Step>
-<Transition ID="24" X="200" Y="220" Operand="Tran_000" HideDesc="false" DescX="260" DescY="200" DescWidth="0">
+<Transition ID="24" X="200" Y="220" Operand="Tran_000" HideDesc="true" DescX="260" DescY="200" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -958,7 +958,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="25" X="200" Y="580" Operand="Tran_001" HideDesc="false" DescX="260" DescY="560" DescWidth="0">
+<Transition ID="25" X="200" Y="580" Operand="Tran_001" HideDesc="true" DescX="260" DescY="560" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -967,7 +967,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="26" X="500" Y="580" Operand="Tran_002" HideDesc="false" DescX="560" DescY="560" DescWidth="0">
+<Transition ID="26" X="500" Y="580" Operand="Tran_002" HideDesc="true" DescX="560" DescY="560" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -976,7 +976,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="27" X="500" Y="820" Operand="Tran_003" HideDesc="false" DescX="560" DescY="800" DescWidth="0">
+<Transition ID="27" X="500" Y="820" Operand="Tran_003" HideDesc="true" DescX="560" DescY="800" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -985,7 +985,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="28" X="800" Y="460" Operand="Tran_004" HideDesc="false" DescX="860" DescY="440" DescWidth="0">
+<Transition ID="28" X="800" Y="460" Operand="Tran_004" HideDesc="true" DescX="860" DescY="440" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -994,16 +994,16 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="29" X="200" Y="1100" Operand="Tran_005" HideDesc="false" DescX="260" DescY="1080" DescWidth="0">
+<Transition ID="29" X="200" Y="1100" Operand="Tran_005" HideDesc="true" DescX="260" DescY="1080" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
-<![CDATA[TRUE]]>
+<![CDATA[1]]>
 </Line>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="30" X="200" Y="1380" Operand="Tran_006" HideDesc="false" DescX="260" DescY="1360" DescWidth="0">
+<Transition ID="30" X="200" Y="1380" Operand="Tran_006" HideDesc="true" DescX="260" DescY="1360" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -1012,7 +1012,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="31" X="200" Y="1620" Operand="Tran_007" HideDesc="false" DescX="260" DescY="1600" DescWidth="0">
+<Transition ID="31" X="200" Y="1620" Operand="Tran_007" HideDesc="true" DescX="260" DescY="1600" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -1021,16 +1021,16 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="32" X="200" Y="1900" Operand="Tran_008" HideDesc="false" DescX="260" DescY="1880" DescWidth="0">
+<Transition ID="32" X="200" Y="1900" Operand="Tran_008" HideDesc="true" DescX="260" DescY="1880" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
-<![CDATA[TRUE]]>
+<![CDATA[1]]>
 </Line>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="33" X="800" Y="1380" Operand="Tran_009" HideDesc="false" DescX="860" DescY="1360" DescWidth="0">
+<Transition ID="33" X="800" Y="1380" Operand="Tran_009" HideDesc="true" DescX="860" DescY="1360" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -1039,7 +1039,7 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="34" X="800" Y="1620" Operand="Tran_010" HideDesc="false" DescX="860" DescY="1600" DescWidth="0">
+<Transition ID="34" X="800" Y="1620" Operand="Tran_010" HideDesc="true" DescX="860" DescY="1600" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -1048,11 +1048,11 @@
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="35" X="200" Y="2140" Operand="Tran_011" HideDesc="false" DescX="260" DescY="2120" DescWidth="0">
+<Transition ID="35" X="200" Y="2140" Operand="Tran_011" HideDesc="true" DescX="260" DescY="2120" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
-<![CDATA[TRUE]]>
+<![CDATA[1]]>
 </Line>
 </STContent>
 </Condition>

@@ -8,10 +8,11 @@ import type { L5XPositions } from "./model/positions.js";
 import { parse } from "./parse/index.js";
 import { validateProgram } from "./validate/index.js";
 import { routineLabel } from "./validate/program.js";
-import { analyzeTags, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
+import { analyzeTags, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
 import { lower } from "./lower/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
+import { hiddenJumpLinks } from "./render/svg.js";
 import { writeProgramL5X, type L5XProgramOptions, type L5XRoutine } from "./l5x/index.js";
 
 /** One routine of the compiled file, in file order (SPEC §4.5). */
@@ -78,7 +79,9 @@ export function compile(source: string, options: CompileOptions = {}): CompileRe
     if (r.node.kind !== "sfc") continue;
     r.graph = lower(r.node.chart, base);
     r.layout = computeLayout(r.graph, r.node.chart);
-    r.positions = l5xPositions(r.layout);
+    // action box as exported: the name comment line plus the action (SPEC §8.3)
+    const actionLines = new Map(r.graph.steps.map((s) => [s.id, s.action.length + 1] as const));
+    r.positions = l5xPositions(r.layout, actionLines);
     base.steps += r.graph.steps.length;
     base.transitions += r.graph.transitions.length;
   }
@@ -178,13 +181,33 @@ export function exportL5X(source: string, options: ExportOptions): ExportResult 
   const routines: L5XRoutine[] = result.routines.map((r) =>
     r.node.kind === "st"
       ? { kind: "st", name: r.name, lines: r.node.body.map((l) => rewriteSt(l.text, operands)) }
-      : { kind: "sfc", name: r.name, graph: rewriteGraph(r.graph!, operands), positions: r.positions! },
+      : sfcForL5X(r.name, r.graph!, r.layout!, r.positions!, operands),
   );
   const l5xOptions: L5XProgramOptions = { programName: program };
   if (options.softwareRevision !== undefined) l5xOptions.softwareRevision = options.softwareRevision;
   if (options.exportDate !== undefined) l5xOptions.exportDate = options.exportDate;
   const text = writeProgramL5X(routines, result.tags, l5xOptions);
   return { text, diagnostics };
+}
+
+function sfcForL5X(
+  name: string,
+  graph: Graph,
+  layout: Layout,
+  positions: L5XPositions,
+  operands: Map<string, string>,
+): L5XRoutine {
+  // Wires the app draws as cross-references are hidden in Studio too (SPEC §8.2). Studio writes
+  // the target's name under such a transition: the row below gets more room, and the
+  // transition moves right when it starts a leg (tp05 imports, 2026-11-26).
+  const hiddenLinks = hiddenJumpLinks(graph, layout);
+  const hiddenFrom = new Set([...hiddenLinks].map((id) => id.slice(0, id.indexOf("-"))));
+  // the target is a step, or a convergence leg "b3.1" whose bar is "b3"
+  const hiddenTo = new Set([...hiddenLinks].map((id) => id.slice(id.indexOf("-") + 1).replace(/\.\d+$/, "")));
+  const legStart = new Set(graph.links.filter((l) => l.from.includes(".")).map((l) => l.to));
+  const actionLines = new Map(graph.steps.map((s) => [s.id, s.action.length + 1] as const));
+  const finalPositions = hiddenFrom.size ? l5xPositions(layout, { actionLines, hiddenFrom, hiddenTo, legStart }) : positions;
+  return { kind: "sfc", name, graph: rewriteGraph(graph, operands), positions: finalPositions, hiddenLinks };
 }
 
 function operandMap(routines: CompiledRoutine[]): Map<string, string> {
@@ -195,16 +218,19 @@ function operandMap(routines: CompiledRoutine[]): Map<string, string> {
   return operands;
 }
 
-/** ST as exported: `call x` → `JSR(x,0)` (SPEC §4.5), `step.member` → operand (SPEC §8.4). */
+/**
+ * ST as exported: `call x` → `JSR(x,0)` (SPEC §4.5), `step.member` → operand (SPEC §8.4),
+ * `TRUE`/`FALSE` → `1`/`0` (SPEC §8.4).
+ */
 function rewriteSt(text: string, operands: Map<string, string>): string {
-  return rewriteStepRefs(rewriteCalls(text), operands);
+  return rewriteBoolLiterals(rewriteStepRefs(rewriteCalls(text), operands));
 }
 
 function rewriteGraph(graph: Graph, operands: Map<string, string>): Graph {
   return {
     ...graph,
     steps: graph.steps.map((s) => ({ ...s, action: s.action.map((l) => rewriteSt(l, operands)) })),
-    transitions: graph.transitions.map((t) => ({ ...t, condition: rewriteStepRefs(t.condition, operands) })),
+    transitions: graph.transitions.map((t) => ({ ...t, condition: rewriteSt(t.condition, operands) })),
   };
 }
 

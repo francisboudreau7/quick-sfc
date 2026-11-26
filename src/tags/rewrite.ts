@@ -27,6 +27,18 @@ export function rewriteCalls(text: string): string {
   });
 }
 
+/**
+ * Rewrites the IEC literals `TRUE` / `FALSE` to `1` / `0`: Studio 5000 ST has no such keywords
+ * (tp02 import, 2026-11-26). Skips strings, comments, members (`x.TRUE`) and typed literals.
+ */
+export function rewriteBoolLiterals(text: string): string {
+  return mapIdentifiers(text, (word, i, j) => {
+    const k = key(word);
+    if ((k !== "true" && k !== "false") || precededByDot(text, i)) return undefined;
+    return { text: k === "true" ? "1" : "0", next: j };
+  });
+}
+
 type Replace = (word: string, start: number, end: number) => { text: string; next: number } | undefined;
 
 /** Walks the ST, calling `replace` on every identifier outside strings, comments and literals. */

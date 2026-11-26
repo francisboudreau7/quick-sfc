@@ -11,7 +11,8 @@ export type { XmlElement } from "./xml.js";
 
 /** One routine of a program export (SPEC §4.5, §8.1). */
 export type L5XRoutine =
-  | { kind: "sfc"; name: string; graph: Graph; positions: L5XPositions }
+  /** `hiddenLinks`: graph links `from-to` written with Show="false" (hidden wires). */
+  | { kind: "sfc"; name: string; graph: Graph; positions: L5XPositions; hiddenLinks?: ReadonlySet<string> }
   /** ST routine: body lines, already rewritten (`call` → `JSR`, step references → operands). */
   | { kind: "st"; name: string; lines: string[] };
 
@@ -38,6 +39,12 @@ export interface L5XOptions {
    * descriptions don't show beside the steps (test pack question).
    */
   nameComments?: boolean;
+  /**
+   * Default: same as `nameComments`. Hide the description boxes (HideDesc="true", the way Studio
+   * stores a hidden description; verified by the tp01_hidden import, 2026-11-26). The names stay
+   * in the tag descriptions, for the Tags list and the Phase 4 import.
+   */
+  hideDescriptions?: boolean;
 }
 
 /** First action line written when `nameComments` is on. Phase 4 import strips it. */
@@ -209,10 +216,19 @@ interface Counters {
   actionNo: number;
   describe: boolean;
   nameComments: boolean;
+  hide: boolean;
 }
 
-function sfcRoutine(name: string, graph: Graph, positions: L5XPositions, c: Counters): string[] {
-  const { tagLines, describe, nameComments } = c;
+function sfcRoutine(
+  name: string,
+  graph: Graph,
+  positions: L5XPositions,
+  c: Counters,
+  hidden: ReadonlySet<string> = new Set(),
+): string[] {
+  const { tagLines, describe, nameComments, hide } = c;
+  const hideAttr = hide ? "true" : "false";
+  const withDesc = describe && (hide || !nameComments);
   const routine: string[] = [
     `<Routine Name="${name}" Type="SFC">`,
     '<SFCContent SheetSize="Letter - 8.5 x 11 in" SheetOrientation="Landscape" StepName="Step" TransitionName="Tran" ActionName="Action" StopName="Stop">',
@@ -236,9 +252,11 @@ function sfcRoutine(name: string, graph: Graph, positions: L5XPositions, c: Coun
     const op = operand("Step", s.index);
     const sid = allocate(s.id);
     const { x, y } = pos(s.id);
-    tagLines.push(sfcStepTag(op, s.presetMs, describe ? stepDescription(s) : undefined));
+    // Studio draws a tag description as a box over the action box and ignores HideDesc
+    // (tp01 import, 2026-11-26): with name comments, the name lives only in the comment.
+    tagLines.push(sfcStepTag(op, s.presetMs, withDesc ? stepDescription(s) : undefined));
     const head =
-      `<Step ID="${sid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="false" DescX="${x + 40}" DescY="${y - 20}" DescWidth="0" ` +
+      `<Step ID="${sid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 40}" DescY="${y - 20}" DescWidth="0" ` +
       `InitialStep="${s.initial ? "true" : "false"}" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true"`;
     const actionLines = nameComments ? [stepNameComment(s.name, s.description), ...s.action] : s.action;
     if (actionLines.length === 0) {
@@ -262,9 +280,10 @@ function sfcRoutine(name: string, graph: Graph, positions: L5XPositions, c: Coun
     const op = operand("Tran", t.index);
     const tid = allocate(t.id);
     const { x, y } = pos(t.id);
-    tagLines.push(boolTag(op, describe ? t.name : undefined));
+    // No description box for transitions either: it covers the condition text (tp01 import).
+    tagLines.push(boolTag(op, withDesc ? t.name : undefined));
     routine.push(
-      `<Transition ID="${tid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="false" DescX="${x + 60}" DescY="${y - 20}" DescWidth="0">`,
+      `<Transition ID="${tid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 60}" DescY="${y - 20}" DescWidth="0">`,
       "<Condition>",
       ...stLines([t.condition]),
       "</Condition>",
@@ -288,10 +307,11 @@ function sfcRoutine(name: string, graph: Graph, positions: L5XPositions, c: Coun
     const from = ids.get(l.from);
     const to = ids.get(l.to);
     if (from === undefined || to === undefined) throw new Error(`L5X: link ${l.from} -> ${l.to} refers to an unknown id`);
-    return [from, to] as const;
+    return [from, to, !hidden.has(`${l.from}-${l.to}`)] as const;
   });
   links.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  for (const [a, b] of links) routine.push(`<DirectedLink FromID="${a}" ToID="${b}" Show="true"/>`);
+  // Show="false": a hidden wire; Studio draws connector labels at both ends (tp05 import)
+  for (const [a, b, show] of links) routine.push(`<DirectedLink FromID="${a}" ToID="${b}" Show="${show}"/>`);
   routine.push("</SFCContent>", "</Routine>");
   return routine;
 }
@@ -323,9 +343,10 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
     actionNo: 0,
     describe: options.describeElements ?? true,
     nameComments: options.nameComments ?? true,
+    hide: options.hideDescriptions ?? options.nameComments ?? true,
   };
   const routineLines = routines.flatMap((r) =>
-    r.kind === "sfc" ? sfcRoutine(r.name, r.graph, r.positions, counters) : stRoutine(r.name, r.lines),
+    r.kind === "sfc" ? sfcRoutine(r.name, r.graph, r.positions, counters, r.hiddenLinks) : stRoutine(r.name, r.lines),
   );
   const tagLines = counters.tagLines;
 

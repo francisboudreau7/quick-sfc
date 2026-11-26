@@ -401,6 +401,19 @@ interface Pass {
 }
 
 export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}): string {
+  return decide(graph, layout, options).svg;
+}
+
+/**
+ * Jump wires drawn as cross-references (hidden wires) with these options, as graph link ids
+ * `from-to`. The L5X export hides the same links (Show="false") with the app's default view
+ * (textbook look, actions shown), so Studio and the app agree (tp05 import, 2026-11-26).
+ */
+export function hiddenJumpLinks(graph: Graph, layout: Layout, options: SvgOptions = { look: "textbook" }): Set<string> {
+  return decide(graph, layout, options).xref;
+}
+
+function decide(graph: Graph, layout: Layout, options: SvgOptions): { svg: string; xref: Set<string> } {
   const look: SvgLook = options.look ?? "studio";
   const M = look === "studio" ? STUDIO : TEXTBOOK;
   const showActions = options.showActions ?? true;
@@ -442,7 +455,7 @@ export function renderSvg(graph: Graph, layout: Layout, options: SvgOptions = {}
     xref.add(best!.id);
     pass = best!.pass ?? drawPass(env, xref);
   }
-  return pass.svg;
+  return { svg: pass.svg, xref };
 }
 
 function lessThan(a: number[], b: number[]): boolean {
@@ -459,17 +472,22 @@ function drawPass(env: Env, xref: Set<string>): Pass {
   // ---- cross-reference labels: target at the source, "from T…" at the target ----
   const labelOf = (s: GStep): string => (numbers ? String(s.index + 1) : s.name);
   const xrefLabel = new Map<string, Fitted>();
-  const fromNames = new Map<GraphId, string[]>();
+  const fromTrans = new Map<GraphId, GTransition[]>();
+  /** Targets entered by a hidden wire only: their dashed stub is centred on the step. */
+  const centred = new Set<GraphId>();
   for (const j of xrefs) {
     xrefLabel.set(j.id, fitChars(labelOf(stepById.get(j.target)!), 16));
-    const list = fromNames.get(j.target) ?? [];
-    list.push(transById.get(j.from)!.name);
-    fromNames.set(j.target, list);
+    const list = fromTrans.get(j.target) ?? [];
+    list.push(transById.get(j.from)!);
+    fromTrans.set(j.target, list);
+    if (j.top) centred.add(j.target);
   }
+  // a drawn jump entering the same step from the top takes the centre
+  for (const j of jumps) if (j.top) centred.delete(j.target);
   const fromLabel = new Map<GraphId, { fitted: Fitted; full: string }>();
-  for (const [t, names] of fromNames) {
-    const full = `from ${names.join(", ")}`;
-    fromLabel.set(t, { fitted: fitChars(full, 28), full });
+  for (const [t, ts] of fromTrans) {
+    const full = ts.length === 1 ? `${ts[0]!.name} ${ts[0]!.condition}` : ts.map((x) => x.name).join(", ");
+    fromLabel.set(t, { fitted: fitChars(full, 28), full: `from ${full}` });
   }
 
   // ---- graph links drawn as straight lines ----
@@ -880,7 +898,7 @@ function drawPass(env: Env, xref: Set<string>): Pass {
     addText(lx, ly, lw, M.labelSize, "start", j.id);
     extend(sx - M.arrowW, sy, lx + lw, tipY);
     lines.push(
-      `<g class="qsfc-wire qsfc-xref" data-id="${escapeXml(j.id)}"><title>${escapeXml(`jump to ${target.name}`)}</title>` +
+      `<g class="qsfc-wire qsfc-xref" data-id="${escapeXml(j.id)}"><title>${escapeXml(`jump to ${target.name} (hidden wire)`)}</title>` +
         `<path class="qsfc-wire-line" d="${pathD(line)}"/><path class="qsfc-arrow" d="${arrowD([sx, tipY], 0, 1)}"/>` +
         `${textEl("qsfc-jump-label", lx, ly, label, labelOf(target))}</g>`,
     );
@@ -1013,17 +1031,29 @@ function drawPass(env: Env, xref: Set<string>): Pass {
   }
   out.push(`<g class="qsfc-steps">${steps.join("")}</g>`);
 
-  // "from T…" marks of the cross-references, above their target.
+  // Incoming ends of the hidden wires: a dashed arrow into the top of the target, labelled
+  // with the source transition (mockup docs/mockups/xref, option C).
   if (fromLabel.size > 0) {
     const marks: string[] = [];
     for (const [t, label] of fromLabel) {
       const nd = layout.nodes.get(t)!;
-      const lx = colX[nd.col]! + labelDx;
-      const ly = rowY[nd.row]! - M.stepH / 2 - 4;
+      const top = rowY[nd.row]! - M.stepH / 2;
+      const ax = colX[nd.col]! + (centred.has(t) ? 0 : 12);
+      const ay = top - M.labelSize - 8;
+      const line: Array<[number, number]> = [
+        [ax, ay],
+        [ax, top - M.arrowL + 1],
+      ];
+      const lx = ax + labelDx;
+      const ly = ay + M.labelSize - 1;
       const lw = sansWidth(label.fitted.text, M.labelSize);
-      marks.push(textEl("qsfc-xref-from", lx, ly, label.fitted, label.full));
+      marks.push(
+        `<g class="qsfc-xref-in"><title>${escapeXml(`${label.full} (hidden wire)`)}</title>` +
+          `<path class="qsfc-wire-line" d="${pathD(line)}"/><path class="qsfc-arrow" d="${arrowD([ax, top], 0, 1)}"/>` +
+          `${textEl("qsfc-xref-from", lx, ly, label.fitted, label.full)}</g>`,
+      );
       addText(lx, ly, lw, M.labelSize, "start", `from-${t}`);
-      extend(lx, ly - M.labelSize, lx + lw, ly);
+      extend(ax - M.arrowW, ay, lx + lw, top);
     }
     out.push(`<g class="qsfc-xref-marks">${marks.join("")}</g>`);
   }
@@ -1200,6 +1230,7 @@ function css(look: SvgLook): string {
     `${L} .qsfc-wire,${L} .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-linejoin:miter}`,
     `${L} g.qsfc-wire{stroke:none}`,
     `${L} .qsfc-arrow{fill:var(--qsfc-line);stroke:none}`,
+    `${L} .qsfc-xref .qsfc-wire-line,${L} .qsfc-xref-in .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-dasharray:4 3}`,
     `${L} .qsfc-bar{fill:none;stroke:var(--qsfc-line);stroke-width:${studio ? 1.5 : 1.6}}`,
     `${L} .qsfc-step-box,${L} .qsfc-step-inner{fill:var(--qsfc-box-fill);stroke:var(--qsfc-box-stroke);stroke-width:${studio ? 1.25 : 1.5}}`,
     `${L} .qsfc-step-inner{fill:none}`,

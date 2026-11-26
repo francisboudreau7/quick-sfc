@@ -417,6 +417,14 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - "Watch mode": open a file being edited in vim/VS Code; the diagram follows its saves.
 - ✅ Acceptance: as in your file, plus the items above.
 
+**Implementation design (Phase 3):**
+- Layout (chosen 2026-11-25): editor | diagram | **collapsible Tags sidebar** (toolbar toggle); Problems stays at the bottom. The splitters can be dragged.
+- Editor: **CodeMirror 6**, bundled into the single HTML file. It has qSFC syntax highlighting, red/yellow underlines from the diagnostics, and autocomplete for keywords, step names after `->`, step members after `name.`, known tags and qualifiers.
+- Live: the chart is recompiled after a short pause in typing (~150 ms). On errors, the last valid diagram stays, dimmed, with a "showing last valid diagram" badge.
+- Cross-navigation: clicking a step or transition in the diagram selects its line, and moving the cursor highlights the element under it. Clicking a problem puts the cursor on its line.
+- Files: New, Open, **Save (Ctrl+S)**, Save As. In Edge/Chrome they write back to the file; in Firefox, Save downloads the file. The window warns before closing with unsaved changes.
+- Watch mode (Edge/Chrome): File → "Watch file…" follows a file edited elsewhere (vim, VS Code) and redraws on each save, with the editor read-only meanwhile. Firefox gets a "Reload from disk" button instead.
+
 ### Phase 4: L5X import (round trip)
 - L5X → syntax tree → `.qsfc` text; actions, qualifiers, presets and descriptions preserved.
 - Anything we can't represent (Stop elements, text boxes, ...) is reported, never silently dropped.

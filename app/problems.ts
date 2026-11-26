@@ -4,6 +4,7 @@
  */
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import type { Graph, TagInfo } from "../src/model/graph.js";
+import { elementAtLine } from "./nav.js";
 
 /** Errors first, then warnings; each by line, then column, then code. */
 export function orderProblems(diags: readonly Diagnostic[]): Diagnostic[] {
@@ -46,23 +47,7 @@ export function problemKey(d: Diagnostic): string {
  * its converge bar. Only possible when there is a graph (no errors).
  */
 export function problemTarget(d: Diagnostic, graph: Graph | undefined): string | undefined {
-  if (!graph) return undefined;
-  const line = d.span.line;
-  for (const s of graph.steps) {
-    if (s.node.span.line === line) return s.id;
-  }
-  for (const t of graph.transitions) {
-    if (t.node.span.line === line) return t.id;
-  }
-  for (const s of graph.steps) {
-    if (s.node.action.some((a) => a.span.line === line)) return s.id;
-  }
-  for (const b of graph.branches) {
-    if (!b.node) continue;
-    if (b.flow === "diverge" && b.node.span.line === line) return b.id;
-    if (b.flow === "converge" && b.node.endSpan?.line === line) return b.id;
-  }
-  return undefined;
+  return elementAtLine(graph, d.span.line);
 }
 
 /** Name of the tag whose use (or declaration line) the diagnostic points at, if any. */

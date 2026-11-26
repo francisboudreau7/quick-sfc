@@ -18,7 +18,7 @@ Status: **all Phase 0 questions answered** (2026-11-25). Nothing has been implem
 | Q11 | **No converter** for old `.qsfc` files; the repo's test cases are rewritten by hand |
 | Q12 | **Same GitHub repo (quick-sfc), new major version** on a branch; the Python code moves to `legacy/`, and the branch is merged when Phase 1 passes |
 | Q13 | UI in **English only** |
-| Q14 | Diagram look: **mockups of both** (Studio 5000 look and textbook IEC/GRAFCET look) at the start of Phase 2, then decide |
+| Q14 | Diagram look: **textbook IEC/GRAFCET (Look B)**, chosen from the Phase 2 mockups. Step names by default, with a GRAFCET numbering option |
 | Q15 | **Both renderings**: ASCII in the CLI (`qsfc show`) from Phase 1, a drawn SVG diagram in the app from Phase 2, plus "copy as text" |
 | new | **PLCopen XML import and export** are added to the future work |
 

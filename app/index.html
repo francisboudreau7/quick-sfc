@@ -5,10 +5,113 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QuickSFC</title>
 <meta name="generator" content="QuickSFC __VERSION__">
+<meta name="color-scheme" content="light dark">
 <style>/*__STYLES__*/</style>
 </head>
 <body>
-<div id="app"></div>
+<div class="app" id="app">
+  <header class="toolbar">
+    <span class="brand" aria-hidden="true">q<b>SFC</b></span>
+    <nav class="menubar" aria-label="Main menu">
+      <div class="menu">
+        <button type="button" class="btn menu-btn" id="file-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="file-menu">File <span class="caret" aria-hidden="true"></span></button>
+        <div class="dropdown" id="file-menu" role="menu" aria-labelledby="file-btn" hidden>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="open"><span>Open .qsfc…</span><kbd>Ctrl+O</kbd></button>
+          <div role="separator" class="menu-sep"></div>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="export-l5x"><span>Export L5X…</span><kbd>Ctrl+E</kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="export-svg"><span>Export diagram as SVG…</span><kbd></kbd></button>
+        </div>
+      </div>
+      <div class="menu">
+        <button type="button" class="btn menu-btn" id="view-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="view-menu">View <span class="caret" aria-hidden="true"></span></button>
+        <div class="dropdown" id="view-menu" role="menu" aria-labelledby="view-btn" hidden>
+          <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="numbers" aria-checked="false"><span class="check" aria-hidden="true"></span><span>GRAFCET step numbers</span></button>
+          <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="actions" aria-checked="true"><span class="check" aria-hidden="true"></span><span>Show actions</span></button>
+          <div role="separator" class="menu-sep"></div>
+          <div class="menu-label" id="theme-label">Theme</div>
+          <div role="group" aria-labelledby="theme-label">
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="theme" data-value="system" aria-checked="true"><span class="radio" aria-hidden="true"></span><span>System</span></button>
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="theme" data-value="light" aria-checked="false"><span class="radio" aria-hidden="true"></span><span>Light</span></button>
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="theme" data-value="dark" aria-checked="false"><span class="radio" aria-hidden="true"></span><span>Dark</span></button>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <span class="sep" aria-hidden="true"></span>
+    <div class="group" role="group" aria-label="Zoom">
+      <button type="button" class="btn" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)"><span aria-hidden="true">−</span></button>
+      <button type="button" class="btn zoom-val" id="zoom-reset" aria-label="Zoom 100 %, reset to 100 %" title="Reset to 100 %">100 %</button>
+      <button type="button" class="btn" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)"><span aria-hidden="true">+</span></button>
+      <button type="button" class="btn" id="zoom-fit" title="Fit the diagram in the window (0)">Fit</button>
+    </div>
+    <div class="file-info" id="file-info" hidden>
+      <span class="dot" id="file-dot" aria-hidden="true"></span>
+      <span class="file-name" id="file-name"></span>
+      <span class="routine" id="file-routine"></span>
+    </div>
+    <button type="button" class="btn primary" id="export-btn" data-cmd="export-l5x">Export L5X</button>
+  </header>
+
+  <main class="body">
+    <section class="canvas-wrap" aria-label="Diagram">
+      <div class="canvas" id="canvas" tabindex="0" aria-label="Diagram canvas: drag or scroll to pan, Ctrl+wheel to zoom" hidden>
+        <div class="stage" id="stage"></div>
+      </div>
+      <div class="empty" id="welcome">
+        <div class="empty-card">
+          <svg class="empty-art" viewBox="0 0 64 64" aria-hidden="true"><rect x="20" y="4" width="24" height="18" rx="1"/><rect x="23" y="7" width="18" height="12" rx="1"/><path d="M32 22v10M24 32h16M32 32v8"/><rect x="20" y="40" width="24" height="18" rx="1"/></svg>
+          <h1>Welcome to QuickSFC</h1>
+          <p>Open a chart written in qSFC to see its diagram, its tags and its problems, then export it to Studio 5000 as L5X.</p>
+          <button type="button" class="btn primary big" id="welcome-open">Open a .qsfc file</button>
+          <p class="hint">Or drop a <code>.qsfc</code> file anywhere on this window.</p>
+        </div>
+      </div>
+      <div class="empty" id="broken" hidden>
+        <div class="empty-card">
+          <svg class="empty-art err" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24"/><path d="M32 18v18M32 44v1"/></svg>
+          <h1>Fix the errors below to see the diagram</h1>
+          <p id="broken-detail"></p>
+        </div>
+      </div>
+    </section>
+
+    <aside class="tags" aria-labelledby="tags-title">
+      <h2 class="panel-title" id="tags-title">Tags <span class="count" id="tag-count">0</span></h2>
+      <p class="panel-empty" id="tags-empty">Open a chart to see its tags.</p>
+      <table class="tag-table" id="tag-table" hidden>
+        <thead>
+          <tr>
+            <th scope="col" aria-sort="ascending"><button type="button" class="sort" data-sort="name">Name<span class="arrow" aria-hidden="true"></span></button></th>
+            <th scope="col"><button type="button" class="sort" data-sort="type">Type<span class="arrow" aria-hidden="true"></span></button></th>
+            <th scope="col" class="num"><button type="button" class="sort" data-sort="uses">Uses<span class="arrow" aria-hidden="true"></span></button></th>
+            <th scope="col"><button type="button" class="sort" data-sort="description">Description<span class="arrow" aria-hidden="true"></span></button></th>
+          </tr>
+        </thead>
+        <tbody id="tag-body"></tbody>
+      </table>
+    </aside>
+  </main>
+
+  <section class="problems" id="problems" aria-labelledby="problems-toggle">
+    <h2 class="panel-title">
+      <button type="button" class="panel-toggle" id="problems-toggle" aria-expanded="true" aria-controls="problem-list">
+        <span class="chev" aria-hidden="true"></span>Problems <span class="count" id="problem-count">0</span>
+      </button>
+    </h2>
+    <ul class="problem-list" id="problem-list" aria-label="Problems"></ul>
+  </section>
+
+  <footer class="status" id="status">
+    <span id="status-file">No chart open</span>
+    <span id="status-counts"></span>
+    <span id="status-problems"></span>
+    <span class="right">qSFC __VERSION__</span>
+  </footer>
+</div>
+
+<input type="file" id="file-input" accept=".qsfc,.txt,text/plain" hidden>
+<div class="drop-overlay" id="drop-overlay" hidden><div>Drop the <code>.qsfc</code> file to open it</div></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script>/*__SCRIPT__*/</script>
 </body>
 </html>

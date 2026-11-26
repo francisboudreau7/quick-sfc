@@ -8,8 +8,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } f
 import { bracketMatching, HighlightStyle, indentOnInput, indentService, StreamLanguage, syntaxHighlighting, type StringStream } from "@codemirror/language";
 import { lintGutter, lintKeymap, setDiagnostics, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import {
+  Decoration,
   drawSelection,
   EditorView,
   highlightActiveLine,
@@ -17,11 +18,14 @@ import {
   highlightSpecialChars,
   keymap,
   lineNumbers,
+  ViewPlugin,
+  type DecorationSet,
+  type ViewUpdate,
 } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import { completeLine, type CompletionInfo } from "./complete.js";
-import { indentAfter, indentStructure, TOKEN_STYLE, tokenizeLine, type Token } from "./highlight.js";
+import { headerOf, lineKind, indentAfter, indentStructure, TOKEN_STYLE, tokenizeLine, type Token } from "./highlight.js";
 import { spanToRange } from "./nav.js";
 
 interface LineState {
@@ -79,6 +83,41 @@ const qsfcIndent = indentService.of((ctx, pos) => {
   return indentStructure(line.text, prev, ctx.unit) ?? indentAfter(prev[0], ctx.unit);
 });
 
+/**
+ * Routine header lines (`sfc x`, `st x`) that start a second (or later) routine get a dashed
+ * separator above them; a file with one routine looks as before.
+ */
+const headerLine = Decoration.line({ class: "cm-qsfc-header" });
+function headerDecorations(view: EditorView): DecorationSet {
+  const b = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+  let seen = false; // a routine started above (a header, or steps without a header)
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const h = headerOf(line.text);
+    if (h) {
+      if (h.keyword === "program") continue;
+      if (seen) b.add(line.from, line.from, headerLine);
+      seen = true;
+    } else if (!seen && !["blank", "comment", "tag", "action"].includes(lineKind(line.text).kind)) {
+      seen = true;
+    }
+  }
+  return b.finish();
+}
+const routineHeaders = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = headerDecorations(view);
+    }
+    update(u: ViewUpdate): void {
+      if (u.docChanged) this.decorations = headerDecorations(u.view);
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
 const qsfcHighlight = HighlightStyle.define([
   { tag: t.keyword, color: "var(--syn-kw)", fontWeight: "600" },
   { tag: t.operatorKeyword, color: "var(--syn-stkw)", fontWeight: "600" },
@@ -106,6 +145,7 @@ const theme = EditorView.theme({
   ".cm-gutters": { backgroundColor: "var(--surface-2)", color: "var(--muted)", borderRight: "1px solid var(--border)" },
   ".cm-activeLineGutter": { backgroundColor: "var(--accent-soft)", color: "var(--text)" },
   ".cm-activeLine": { backgroundColor: "var(--active-line)" },
+  ".cm-line.cm-qsfc-header": { borderTop: "1px dashed var(--border-strong)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--selection) !important",
   },
@@ -153,6 +193,11 @@ export interface EditorCallbacks {
   onCursor(line: number, col: number): void;
   /** Current completion data (from the last compile). */
   completionInfo(): CompletionInfo;
+  /**
+   * Go to definition (F12, Ctrl+click): where the name at `pos` (0-based in `lineText`)
+   * is defined, as a 1-based line and column, or undefined.
+   */
+  definition?(lineText: string, pos: number): { line: number; col: number } | undefined;
 }
 
 export interface Editor {
@@ -204,6 +249,15 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
     return { from: line.from + r.from, to: line.from + r.to, options, validFor: /^\w*$/ };
   };
 
+  /** Jumps to the definition of the name at document offset `pos`. True when it did. */
+  const goToDefinition = (pos: number): boolean => {
+    const line = view.state.doc.lineAt(pos);
+    const at = cb.definition?.(line.text, pos - line.from);
+    if (!at) return false;
+    editor.goTo(at.line, at.col, true);
+    return true;
+  };
+
   const extensions: Extension[] = [
       extraKeys,
       lineNumbers(),
@@ -215,6 +269,7 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       bracketMatching(),
       indentOnInput(),
       highlightActiveLine(),
+      routineHeaders,
       highlightSelectionMatches(),
       search({ top: true }),
       lintGutter(),
@@ -229,10 +284,21 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
         ...historyKeymap,
         ...lintKeymap,
         { key: "Mod-/", run: toggleComment },
+        { key: "F12", run: (v) => goToDefinition(v.state.selection.main.head) },
         indentWithTab,
       ]),
       readOnly.of(EditorState.readOnly.of(false)),
       theme,
+      EditorView.domEventHandlers({
+        mousedown(e, v) {
+          // Ctrl+click (Cmd+click) on a routine name or a jump target: go to its definition.
+          if (e.button !== 0 || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return false;
+          const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+          if (pos === null || !goToDefinition(pos)) return false;
+          e.preventDefault();
+          return true;
+        },
+      }),
       EditorView.contentAttributes.of({ "aria-label": "qSFC source", spellcheck: "false", autocorrect: "off", autocapitalize: "off" }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) cb.onChange();

@@ -21,9 +21,18 @@ export interface TagLike {
   uses: ReadonlyArray<{ line: number; col: number }>;
 }
 
+export interface RoutineInfo {
+  name: string;
+  kind: "sfc" | "st";
+  /** The first routine of the file (SPEC §4.5). */
+  main?: boolean;
+}
+
 export interface CompletionInfo {
   steps: readonly StepInfo[];
   tags: readonly TagLike[];
+  /** Routines of the file, for `call name;` and `JSR(name, 0);`. */
+  routines?: readonly RoutineInfo[];
 }
 
 export type OptionType = "keyword" | "variable" | "type" | "property" | "class" | "constant";
@@ -102,11 +111,17 @@ export const LINE_KEYWORDS: ReadonlyArray<Option> = [
   { label: "parallel", type: "keyword", detail: "parallel branch (all legs run)", boost: 1 },
   { label: "end", type: "keyword", detail: "end of a select / parallel block", boost: 1 },
   { label: "tag", type: "keyword", apply: "tag ", detail: "tag name [: TYPE] [\"description\"]" },
-  { label: "sfc", type: "keyword", apply: "sfc ", detail: "routine name (first line)" },
+  { label: "sfc", type: "keyword", apply: "sfc ", detail: "sfc name: starts an SFC routine" },
+  { label: "st", type: "keyword", apply: "st ", detail: "st name: starts an ST routine" },
+  { label: "program", type: "keyword", apply: "program ", detail: "program name (before the first routine)" },
 ];
 
 const CONDITION_KEYWORDS = ["AND", "OR", "XOR", "NOT", "TRUE", "FALSE", "MOD"];
-const ACTION_KEYWORDS = [...ST_KEYWORDS];
+const ACTION_KEYWORDS = [...ST_KEYWORDS, "call"];
+
+function routineOption(r: RoutineInfo): Option {
+  return { label: r.name, type: "class", detail: `${r.kind.toUpperCase()} routine${r.main ? " · main" : ""}` };
+}
 
 function formatMs(ms: number): string {
   if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
@@ -147,7 +162,14 @@ function completeST(
   where: "condition" | "action",
 ): CompletionResult | null {
   const before = line.slice(0, pos);
-  const member = /([A-Za-z_]\w*)[ \t]*\.(\w*)$/.exec(before);
+  // `call name` and `JSR(name`: routine names (SPEC §4.5).
+  const callM = /(?:^|[^\w.])call[ \t]+(\w*)$/i.exec(before) ?? /(?:^|[^\w.])JSR[ \t]*\([ \t]*(\w*)$/i.exec(before);
+  if (callM) {
+    if (where === "condition") return null; // E602: a call is a statement
+    const typed = callM[1]!;
+    return { from: pos - typed.length, to: pos, options: (info.routines ?? []).map(routineOption) };
+  }
+  const member =/([A-Za-z_]\w*)[ \t]*\.(\w*)$/.exec(before);
   if (member) {
     const base = member[1]!;
     const typed = member[2]!;

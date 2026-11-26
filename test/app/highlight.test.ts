@@ -212,3 +212,52 @@ describe("indentStructure", () => {
     expect(indentStructure("-- a", [])).toBe(0);
   });
 });
+
+describe("routines and calls (SPEC §4.5)", () => {
+  it("`program`, `sfc` and `st` headers are keywords with a defined name", () => {
+    expect(toks("program tank")).toEqual([
+      ["program", "kw"],
+      ["tank", "def"],
+    ]);
+    expect(toks("st main // main routine")).toEqual([
+      ["st", "kw"],
+      ["main", "def"],
+      ["// main routine", "comment"],
+    ]);
+    expect(lineKind("ST alarms").kind).toBe("header");
+    expect(lineKind("program").kind).toBe("header");
+  });
+
+  it("`st := 1;` and `program = 2` stay ST (same rule as the parser)", () => {
+    expect(lineKind("st := 1;").kind).toBe("action");
+    expect(lineKind("program = 2;").kind).toBe("action");
+    expect(toks("st := 1;")[0]).toEqual(["st", "ident"]);
+  });
+
+  it("`call` before a routine name is a keyword, in actions and ST", () => {
+    expect(toks("  call fill_seq;")).toEqual([
+      ["call", "kw"],
+      ["fill_seq", "ident"],
+      [";", "punct"],
+    ]);
+    expect(toks("IF go THEN CALL alarms; END_IF;").map(([t, k]) => `${t}:${k}`)).toContain("CALL:kw");
+    // `call` alone, or a member named call, is not the statement
+    expect(toks("call := 1;")[0]).toEqual(["call", "ident"]);
+    expect(toks("x.call := 1;")[2]).toEqual(["call", "member"]);
+  });
+
+  it("headerOf gives the keyword and the name", async () => {
+    const { headerOf } = await import("../../app/highlight.js");
+    expect(headerOf("  sfc fill_seq")).toEqual({ keyword: "sfc", name: "fill_seq" });
+    expect(headerOf("PROGRAM tank")).toEqual({ keyword: "program", name: "tank" });
+    expect(headerOf("st := 1;")).toBeUndefined();
+    expect(headerOf("step fill")).toBeUndefined();
+  });
+
+  it("a new line after `st name` is indented like an action", async () => {
+    const { indentAfter } = await import("../../app/highlight.js");
+    expect(indentAfter("st alarms")).toBe(2);
+    expect(indentAfter("sfc fill")).toBe(0);
+    expect(indentAfter("program tank")).toBe(0);
+  });
+});

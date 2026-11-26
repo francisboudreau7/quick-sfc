@@ -42,7 +42,13 @@ interface BranchPlan {
   id?: GraphId;
 }
 
-export function lower(chart: Chart): Graph {
+/** First operand numbers of this routine (SPEC §4.5: numbered across the whole file). */
+export interface OperandBase {
+  steps: number;
+  transitions: number;
+}
+
+export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions: 0 }): Graph {
   const stepNodes = allSteps(chart);
   const transNodes = allTransitions(chart);
   const stepId = new Map<StepNode, GraphId>();
@@ -54,7 +60,7 @@ export function lower(chart: Chart): Graph {
     stepId.set(s, id);
     const g: GStep = {
       id,
-      index,
+      index: base.steps + index,
       name: s.name.text,
       initial: s.initial,
       presetMs: s.presetMs ?? 0,
@@ -68,7 +74,7 @@ export function lower(chart: Chart): Graph {
     const id = `t${index}`;
     transId.set(t, id);
     transIndex.set(t, index);
-    return { id, index, name: t.name.text, auto: t.auto, condition: t.condition.text, node: t };
+    return { id, index: base.transitions + index, name: t.name.text, auto: t.auto, condition: t.condition.text, node: t };
   });
 
   const info = collectInfo(chart);

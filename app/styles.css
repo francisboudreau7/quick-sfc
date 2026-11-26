@@ -42,6 +42,11 @@
   --warn-line: #d4a106;
   --cur: #1a5fb4;
   --cur-glow: rgba(26, 95, 180, 0.35);
+  /* routine kind badges */
+  --kind-sfc: #1a5fb4;
+  --kind-sfc-bg: #e6effa;
+  --kind-st: #6639ba;
+  --kind-st-bg: #efe7fb;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -86,6 +91,10 @@
     --warn-line: #e3b341;
     --cur: #79b0ff;
     --cur-glow: rgba(121, 176, 255, 0.45);
+    --kind-sfc: #79b0ff;
+    --kind-sfc-bg: #1d2d44;
+    --kind-st: #d2a8ff;
+    --kind-st-bg: #33264a;
     color-scheme: dark;
   }
 }
@@ -130,6 +139,10 @@
   --warn-line: #e3b341;
   --cur: #79b0ff;
   --cur-glow: rgba(121, 176, 255, 0.45);
+  --kind-sfc: #79b0ff;
+  --kind-sfc-bg: #1d2d44;
+  --kind-st: #d2a8ff;
+  --kind-st-bg: #33264a;
   color-scheme: dark;
 }
 
@@ -270,7 +283,58 @@ body.resizing-y, body.resizing-y * { cursor: row-resize !important; user-select:
 [aria-checked="true"] > .radio::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 
 /* ---------------------------------------------------------------- canvas */
-.canvas-wrap { position: relative; min-width: 0; min-height: 0; display: grid; grid-column: 3; }
+.canvas-wrap { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-column: 3; }
+.canvas-wrap > .diagram-area { grid-row: 2; }
+.diagram-area { position: relative; min-width: 0; min-height: 0; display: grid; }
+
+/* routine tabs (several routines in one file): scroll sideways, never wrap */
+.routine-tabs {
+  grid-row: 1; display: flex; gap: 2px; padding: 6px 8px 0; overflow-x: auto; overflow-y: hidden;
+  background: var(--toolbar); border-bottom: 1px solid var(--border); scrollbar-width: thin;
+}
+.routine-tab {
+  display: inline-flex; align-items: center; gap: 6px; flex: none; white-space: nowrap; cursor: pointer;
+  border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; padding: 5px 10px;
+  background: transparent; font-size: 13px; color: var(--muted); margin-bottom: -1px;
+}
+.routine-tab:hover { color: var(--text); background: var(--surface-2); }
+.routine-tab.on { background: var(--surface); border-color: var(--border); color: var(--text); font-weight: 600; }
+.routine-tab:focus-visible { outline-offset: -2px; }
+.kind { font-size: 10px; font-weight: 700; line-height: 1.3; border-radius: 3px; padding: 1px 4px; letter-spacing: 0.02em; flex: none; }
+.kind-sfc { background: var(--kind-sfc-bg); color: var(--kind-sfc); }
+.kind-st { background: var(--kind-st-bg); color: var(--kind-st); }
+.main-pill { font-size: 10px; font-weight: 400; border: 1px solid var(--border-strong); border-radius: 8px; padding: 0 5px; color: var(--muted); }
+
+/* ST routine: a call summary card instead of a diagram */
+.st-view {
+  overflow: auto; min-height: 0; padding: 24px 16px; display: flex; justify-content: center; align-items: flex-start;
+  background-color: var(--surface-2);
+  background-image: radial-gradient(var(--dots) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.st-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px;
+  width: min(460px, 100%); box-shadow: var(--shadow);
+}
+.st-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; font-size: 15px; font-weight: 400; }
+.st-title b { word-break: break-word; }
+.badge { font-size: 11px; background: var(--toolbar); border-radius: 8px; padding: 1px 7px; color: var(--muted); }
+.st-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 14px 0 6px; }
+.st-card .muted { color: var(--muted); margin: 4px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--border-strong); border-radius: 14px;
+  padding: 2px 10px 2px 4px; background: var(--surface); color: var(--accent); cursor: pointer; font-size: 13px;
+}
+.chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+.chip:disabled { color: var(--muted); cursor: default; padding-left: 10px; }
+.tree {
+  margin: 0; font: 12.5px/1.5 var(--mono); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; overflow-x: auto; color: var(--muted);
+}
+.tree-name { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.tree-name:hover { text-decoration: underline; }
+.tree-name.current { color: var(--text); font-weight: 700; }
 .canvas {
   overflow: auto; min-height: 0; cursor: grab;
   background-color: var(--surface-2);

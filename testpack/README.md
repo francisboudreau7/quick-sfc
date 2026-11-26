@@ -122,3 +122,27 @@ Diagram: `idle` → `start` → simultaneous divergence:
 Then simultaneous convergence → `TRUE` → back to `idle`.
 
 [Verify] This is the one link shape nobody has tested: the parallel branch's leg links **directly into a selection convergence leg**. If Studio refuses the import, copy the error text. I'll then change how this case is generated (the rest of the pack doesn't depend on it).
+
+## tp08_routines: several routines in one program (added after Phase 1)
+
+One Program `tp08_routines` with **5 routines**, in this order:
+
+| Routine | Type | What it does |
+|---|---|---|
+| `main` | ST | **Main routine.** `JSR(fill_seq,0);` `JSR(mixer, 0);` `JSR(alarms,0);` and `busy_lamp := Step_001.X OR Step_004.X;` |
+| `fill_seq` | SFC | `idle` → `start_btn` → `fill` (3 s) → `fill.DN` → `count` → `TRUE` → back to `idle`. The `count` action is `JSR(count_cycles,0);` |
+| `mixer` | SFC | `stopped` → `Step_001.X` → `mix` → `NOT Step_001.X` → back to `stopped` |
+| `alarms` | ST | `alarm := level_high AND NOT valve;` |
+| `count_cycles` | ST | `cycles := cycles + 1;` |
+
+Check:
+- Program Properties → Configuration: **Main = `main`**.
+- Operands **continue** across the two charts: `fill_seq` has `Step_000`-`Step_002`, `Tran_000`-`Tran_002`, and `mixer` has `Step_003`, `Step_004`, `Tran_003`, `Tran_004`. Every operand appears once in the program tags.
+- Tags: `cycles` (DINT, *Finished cycles*), `start_btn` (BOOL, *Start push button*), and BOOLs `alarm`, `busy_lamp`, `level_high`, `mixer_on`, `valve`.
+- Optional run test: in Run mode, set `start_btn` to 1. `fill_seq` goes to `fill`, and `mixer` goes to `mix` at the same time. After 3 s, `count` runs once (`cycles` + 1) and both charts go back to their first step.
+
+[Verify]:
+1. The **ST routines** import (this is the first `<Routine Type="ST">` qSFC writes), and Verify gives 0 errors.
+2. **`JSR(name,0);` in ST** is accepted, both in an ST routine (`main`) and in an SFC action (`count`). If Studio wants another form (for example `JSR(name);`), copy the error text.
+3. Two SFC routines in one program with operands continuing (`Step_003`…) import without a name conflict.
+4. `mixer` reads `fill_seq`'s step (`Step_001.X`) without errors.

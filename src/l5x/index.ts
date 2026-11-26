@@ -4,10 +4,21 @@
  */
 import type { Graph, GStep, TagInfo } from "../model/graph.js";
 import type { L5XPositions } from "../model/positions.js";
-import { descendants, parseXml, XmlError, type XmlElement } from "./xml.js";
+import { descendants, parseXml, textOf, XmlError, type XmlElement } from "./xml.js";
 
 export { parseXml, XmlError } from "./xml.js";
 export type { XmlElement } from "./xml.js";
+
+/** One routine of a program export (SPEC §4.5, §8.1). */
+export type L5XRoutine =
+  | { kind: "sfc"; name: string; graph: Graph; positions: L5XPositions }
+  /** ST routine: body lines, already rewritten (`call` → `JSR`, step references → operands). */
+  | { kind: "st"; name: string; lines: string[] };
+
+export interface L5XProgramOptions extends Omit<L5XOptions, "routineName"> {
+  /** Default: the first routine. */
+  mainRoutineName?: string;
+}
 
 export interface L5XOptions {
   programName: string;
@@ -186,18 +197,24 @@ function stepDescription(s: GStep): string {
   return s.description ? `${s.name}\r\n${s.description}` : s.name;
 }
 
+/** One SFC routine program (the Phase 1 export). */
 export function writeL5X(graph: Graph, positions: L5XPositions, tags: TagInfo[], options: L5XOptions): string {
-  const { programName, routineName } = options;
-  const revision = options.softwareRevision ?? "32.01";
-  const controller = options.controllerName ?? "QuickSFC";
-  const describe = options.describeElements ?? true;
-  const nameComments = options.nameComments ?? true;
-  assertName(programName, "program");
-  assertName(routineName, "routine");
+  const { routineName, ...rest } = options;
+  return writeProgramL5X([{ kind: "sfc", name: routineName, graph, positions }], tags, rest);
+}
 
-  const tagLines: TagLines[] = [];
+interface Counters {
+  tagLines: TagLines[];
+  /** Action operands are numbered across the whole program. */
+  actionNo: number;
+  describe: boolean;
+  nameComments: boolean;
+}
+
+function sfcRoutine(name: string, graph: Graph, positions: L5XPositions, c: Counters): string[] {
+  const { tagLines, describe, nameComments } = c;
   const routine: string[] = [
-    `<Routine Name="${routineName}" Type="SFC">`,
+    `<Routine Name="${name}" Type="SFC">`,
     '<SFCContent SheetSize="Letter - 8.5 x 11 in" SheetOrientation="Landscape" StepName="Step" TransitionName="Tran" ActionName="Action" StopName="Stop">',
   ];
 
@@ -215,7 +232,6 @@ export function writeL5X(graph: Graph, positions: L5XPositions, tags: TagInfo[],
     return p;
   };
 
-  let actionNo = 0;
   for (const s of graph.steps) {
     const op = operand("Step", s.index);
     const sid = allocate(s.id);
@@ -230,7 +246,7 @@ export function writeL5X(graph: Graph, positions: L5XPositions, tags: TagInfo[],
       continue;
     }
     routine.push(head + ">");
-    const aop = operand("Action", actionNo++);
+    const aop = operand("Action", c.actionNo++);
     tagLines.push(sfcActionTag(aop));
     routine.push(
       `<Action ID="${nextId++}" Operand="${aop}" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">`,
@@ -277,6 +293,41 @@ export function writeL5X(graph: Graph, positions: L5XPositions, tags: TagInfo[],
   links.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   for (const [a, b] of links) routine.push(`<DirectedLink FromID="${a}" ToID="${b}" Show="true"/>`);
   routine.push("</SFCContent>", "</Routine>");
+  return routine;
+}
+
+/** ST routine. UNVERIFIED in Studio (test pack tp08): format taken from the ST of SFC actions. */
+function stRoutine(name: string, lines: string[]): string[] {
+  return [`<Routine Name="${name}" Type="ST">`, ...stLines(lines.length ? lines : [""]), "</Routine>"];
+}
+
+/** A program with one or more routines (SPEC §4.5, §8.1). Routines are written in the given order. */
+export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options: L5XProgramOptions): string {
+  const { programName } = options;
+  const revision = options.softwareRevision ?? "32.01";
+  const controller = options.controllerName ?? "QuickSFC";
+  if (routines.length === 0) throw new Error("L5X: a program needs at least one routine");
+  const main = options.mainRoutineName ?? routines[0]!.name;
+  assertName(programName, "program");
+  const routineKeys = new Set<string>();
+  for (const r of routines) {
+    assertName(r.name, "routine");
+    const k = r.name.toLowerCase();
+    if (routineKeys.has(k)) throw new Error(`L5X: duplicate routine name ${r.name}`);
+    routineKeys.add(k);
+  }
+  if (!routineKeys.has(main.toLowerCase())) throw new Error(`L5X: main routine ${main} is not in the program`);
+
+  const counters: Counters = {
+    tagLines: [],
+    actionNo: 0,
+    describe: options.describeElements ?? true,
+    nameComments: options.nameComments ?? true,
+  };
+  const routineLines = routines.flatMap((r) =>
+    r.kind === "sfc" ? sfcRoutine(r.name, r.graph, r.positions, counters) : stRoutine(r.name, r.lines),
+  );
+  const tagLines = counters.tagLines;
 
   for (const t of tags) tagLines.push(userTag(t));
   const seen = new Set<string>();
@@ -303,19 +354,19 @@ export function writeL5X(graph: Graph, positions: L5XPositions, tags: TagInfo[],
     '<Tags Use="Context">',
     "</Tags>",
     '<Programs Use="Context">',
-    `<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="${routineName}" Disabled="false" UseAsFolder="false">`,
+    `<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="${main}" Disabled="false" UseAsFolder="false">`,
     "<Tags>",
     ...tagLines.flatMap((t) => t.lines),
     "</Tags>",
     "<Routines>",
-    ...routine,
+    ...routineLines,
     "</Routines>",
     "</Program>",
     "</Programs>",
     "</Controller>",
     "</RSLogix5000Content>",
   ];
-  return "﻿" + lines.join("\r\n");
+  return "\uFEFF" + lines.join("\r\n");
 }
 
 /** Self-check of an L5X text (SFC structure, operands, BOM and CRLF). [] = OK. */
@@ -346,6 +397,14 @@ export function checkL5X(xml: string): string[] {
   for (const p of descendants(root, "Program")) {
     const main = p.attrs["MainRoutineName"];
     if (main !== undefined && !routineNames.has(main.toLowerCase())) problems.push(`MainRoutineName ${main} has no routine`);
+  }
+
+  // every JSR in ST must name a routine of the file
+  for (const line of descendants(root, "Line")) {
+    const text = textOf(line);
+    for (const m of text.matchAll(/\bJSR\s*\(\s*([A-Za-z_]\w*)/gi)) {
+      if (!routineNames.has(m[1]!.toLowerCase())) problems.push(`JSR to ${m[1]} has no routine`);
+    }
   }
 
   for (const sfc of descendants(root, "SFCContent")) {

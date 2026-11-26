@@ -468,7 +468,7 @@ describe("W400 / W401", () => {
 
 describe("robustness", () => {
   it("empty chart and steps without actions", () => {
-    expect(analyzeEmpty()).toEqual({ tags: [], diagnostics: [] });
+    expect(analyzeEmpty()).toEqual({ tags: [], diagnostics: [], calls: [] });
   });
   it("garbage ST never throws", () => {
     const garbage = ["))) ((( ]]] [[[", "x := := := ;;;", "'unterminated", "(* open", "a.b.c.d[1][2].e", "1.2.3 .. ..", "IF IF THEN THEN", "@ # $ % ^", "f(", "f(,,,)", ":= 1", "x :="];

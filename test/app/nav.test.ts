@@ -100,3 +100,33 @@ describe("spanToRange", () => {
     expect(spanToRange({ line: 99, col: 1 }, line, lines.length)).toEqual({ from: offsets[3]!, to: offsets[3]! + 3 });
   });
 });
+
+describe("go to definition (F12, Ctrl+click)", () => {
+  const defs = {
+    routines: [
+      { name: "main", line: 7 },
+      { name: "fill_seq", line: 13 },
+    ],
+    steps: [{ name: "idle", line: 14, col: 6 }],
+  };
+  it("finds the routine name in `call x` and `JSR(x`", async () => {
+    const { referenceAt, definitionAt } = await import("../../app/nav.js");
+    expect(referenceAt("  call fill_seq;", 9)).toEqual({ kind: "routine", name: "fill_seq", from: 7, to: 15 });
+    expect(referenceAt("  call fill_seq;", 7)?.name).toBe("fill_seq"); // start of the name
+    expect(referenceAt("  call fill_seq;", 15)?.name).toBe("fill_seq"); // end of the name
+    expect(referenceAt("  call fill_seq;", 3)).toBeUndefined(); // on `call`
+    expect(referenceAt("  JSR(fill_seq, 0);", 8)?.name).toBe("fill_seq");
+    expect(referenceAt("  jsr ( Fill_Seq , 0);", 10)?.name).toBe("Fill_Seq");
+    expect(referenceAt("  JSR(fill_seq, x);", 17)).toBeUndefined(); // second argument
+    expect(referenceAt("  ABS(fill_seq);", 8)).toBeUndefined();
+    expect(referenceAt("  // call fill_seq;", 12)).toBeUndefined();
+    expect(definitionAt("  CALL FILL_SEQ;", 9, defs)).toEqual({ line: 13, col: 1 });
+    expect(definitionAt("  call nope;", 8, defs)).toBeUndefined();
+    expect(definitionAt("  motor := 1;", 3, defs)).toBeUndefined();
+  });
+  it("finds a jump target's step", async () => {
+    const { referenceAt, definitionAt } = await import("../../app/nav.js");
+    expect(referenceAt("-- done -> idle", 12)).toEqual({ kind: "step", name: "idle", from: 11, to: 15 });
+    expect(definitionAt("-- done -> idle", 12, defs)).toEqual({ line: 14, col: 6 });
+  });
+});

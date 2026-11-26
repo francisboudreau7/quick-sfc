@@ -5,9 +5,11 @@
  * app/index.html; the pure logic in app/{state,problems,format,highlight,complete,nav,
  * dirty,splitter,watch}.ts.
  */
-import { compile, exportL5X, routineName, type CompileResult } from "../src/compile.js";
-import { allSteps } from "../src/model/ast.js";
+import { compile, exportL5X, routineName, type CompiledRoutine, type CompileResult } from "../src/compile.js";
+import type { Layout } from "../src/layout/index.js";
+import { allSteps, key, sfcCharts } from "../src/model/ast.js";
 import type { Diagnostic } from "../src/model/diagnostics.js";
+import type { Graph } from "../src/model/graph.js";
 import { renderSvg } from "../src/render/svg.js";
 import type { CompletionInfo } from "./complete.js";
 import {
@@ -24,7 +26,17 @@ import {
 } from "./dirty.js";
 import { createEditor } from "./editor.js";
 import { chartCounts, DEFAULT_TAG_SORT, nextTagSort, plural, sortTags, usesTitle, type TagSort, type TagSortKey } from "./format.js";
-import { elementAtLine, pickElement, sourceOfElement } from "./nav.js";
+import { definitionAt, elementAtLine, pickElement, sourceOfElement } from "./nav.js";
+import {
+  callTree,
+  findRoutine,
+  notCalledText,
+  programName,
+  routineAtLine,
+  routineSummary,
+  stLinesText,
+  treeLines,
+} from "./routines.js";
 import { countProblems, orderProblems, problemKey, problemLocation, problemTag, problemTarget } from "./problems.js";
 import {
   dragFraction,
@@ -76,6 +88,8 @@ const ui = {
   editorHost: el("editor"),
   canvas: el("canvas"),
   stage: el("stage"),
+  routineTabs: el("routine-tabs"),
+  stView: el("st-view"),
   staleBadge: el("stale-badge"),
   welcome: el("welcome"),
   broken: el("broken"),
@@ -103,6 +117,8 @@ const ui = {
   problemCount: el("problem-count"),
   statusFile: el("status-file"),
   statusCounts: el("status-counts"),
+  statusRoutines: el("status-routines"),
+  statusRoutine: el("status-routine"),
   statusProblems: el("status-problems"),
   statusCursor: el("status-cursor"),
   watchBanner: el("watch-banner"),
@@ -157,10 +173,20 @@ let doc: Doc | undefined;
 let result: CompileResult | undefined;
 let diagnostics: Diagnostic[] = [];
 let exportable = false;
-/** Latest result with a diagram (graph); stays when the text gets errors. */
-let lastGood: CompileResult | undefined;
-/** The result whose diagram is in the stage now, and the view options it was drawn with. */
-let drawn: { result: CompileResult; key: string } | undefined;
+/** A diagram of one SFC routine. */
+interface Diagram {
+  graph: Graph;
+  layout: Layout;
+  name: string;
+}
+/**
+ * Last valid diagram of each SFC routine (by routine name, case-insensitive), and of each
+ * routine position (used when a routine was renamed since): they stay when the text gets errors.
+ */
+const lastGood = new Map<string, Diagram>();
+let lastGoodByIndex: Array<Diagram | undefined> = [];
+/** The diagram in the stage now, the routine position it belongs to, and the view options it was drawn with. */
+let drawn: { diagram: Diagram; index: number; key: string } | undefined;
 /** SVG text in the stage now: an edit that does not change the drawing skips the DOM update. */
 let drawnSvg = "";
 let zoom = 1;
@@ -193,23 +219,37 @@ const editor = createEditor(ui.editorHost, {
       cursorFrame = requestAnimationFrame(() => {
         cursorFrame = undefined;
         ui.statusCursor.textContent = doc ? `Ln ${cursor.line}, Col ${cursor.col}` : "";
+        // The diagram follows the cursor: another routine's line switches the tab.
+        if (doc && activeIndex() !== shownIndex) {
+          renderDiagram(false);
+          renderHeader();
+          renderStatus();
+        }
         highlightCursorElement(true);
       });
     }
   },
   completionInfo,
+  definition(lineText, pos) {
+    const r = result;
+    if (!r) return undefined;
+    const steps = sfcCharts(r.program).flatMap(allSteps).map((s) => ({ name: s.name.text, line: s.name.span.line, col: s.name.span.col }));
+    return definitionAt(lineText, pos, { routines: r.routines.map((x) => ({ name: x.name, line: x.lines.from })), steps });
+  },
 });
 
 function completionInfo(): CompletionInfo {
   const r = result;
   if (!r) return { steps: [], tags: [] };
-  const steps = allSteps(r.chart).map((s) => {
+  // Step names are shared by the whole file (SPEC §4.5): offer the steps of every SFC routine.
+  const steps = sfcCharts(r.program).flatMap(allSteps).map((s) => {
     const o: { name: string; presetMs?: number; description?: string; initial: boolean } = { name: s.name.text, initial: s.initial };
     if (s.presetMs !== undefined) o.presetMs = s.presetMs;
     if (s.description !== undefined) o.description = s.description;
     return o;
   });
-  return { steps, tags: r.tags };
+  const routines = r.routines.map((x, i) => ({ name: x.name, kind: x.kind, main: i === 0 }));
+  return { steps, tags: r.tags, routines };
 }
 
 /** Compiles the editor text now and updates every view. */
@@ -220,19 +260,22 @@ function runCompile(fit = false): void {
   const t0 = performance.now();
   const source = editor.getText();
   try {
-    result = compile(source);
+    result = compile(source, { fileName: doc.file.name });
   } catch (e) {
     toast(`Internal error while compiling: ${(e as Error).message}`, "error");
     return;
   }
   diagnostics = result.diagnostics;
   exportable = false;
-  if (result.graph) {
+  // Without errors every SFC routine has a graph (src/compile.ts).
+  const valid = result.routines.length > 0 && countProblems(result.diagnostics).errors === 0;
+  if (valid) {
     // Export-only checks (routine and program names) show up as problems too.
     const check = exportL5X(source, { fileName: doc.file.name });
     exportable = check.text !== undefined;
     diagnostics = check.diagnostics;
-    lastGood = result;
+    lastGoodByIndex = result.routines.map((r) => diagramOf(r));
+    for (const d of lastGoodByIndex) if (d) lastGood.set(key(d.name), d);
   }
   const t1 = performance.now();
   editor.setDiagnostics(diagnostics);
@@ -327,8 +370,10 @@ async function confirmDiscard(action: string): Promise<boolean> {
 function setDoc(file: FileState, text: string, handle: FileHandle | undefined, initial: string): void {
   doc = { file, initial, handle };
   result = undefined;
-  lastGood = undefined;
+  lastGood.clear();
+  lastGoodByIndex = [];
   drawn = undefined;
+  shownIndex = -1;
   selectedProblem = undefined;
   editor.setText(text, true);
   updateDirty();
@@ -610,19 +655,36 @@ function exportL5XCmd(): void {
   toast(`Exported ${out}`);
 }
 
+/** Why the active routine's diagram can't be exported as SVG, or undefined. */
+function svgReason(): string | undefined {
+  if (!doc) return "Open a .qsfc file first";
+  const active = activeRoutine();
+  if (active?.kind === "st") return `${active.name} is an ST routine: it has no diagram. Open an SFC routine's tab to export its diagram`;
+  if (!active?.graph) return "Fix the errors first: there is no diagram to export";
+  return undefined;
+}
+
 function exportSvgCmd(): void {
   flushCompile();
-  if (!doc || !result?.graph) {
-    toast(doc ? "Fix the errors first: there is no diagram to export" : "Open a .qsfc file first", "error");
+  const reason = svgReason();
+  const active = activeRoutine();
+  const d = active && diagramOf(active);
+  if (reason || !doc || !d) {
+    toast(reason ?? "Nothing to export", "error");
     return;
   }
-  const out = svgFileName(doc.file.name);
-  download(out, svgOf(result), "image/svg+xml");
+  // Several routines: one SVG per routine, named after it.
+  const out = (result?.routines.length ?? 0) > 1 ? `${d.name}.svg` : svgFileName(doc.file.name);
+  download(out, svgOf(d), "image/svg+xml");
   toast(`Exported ${out}`);
 }
 
-function svgOf(r: CompileResult): string {
-  return renderSvg(r.graph!, r.layout!, {
+function diagramOf(r: CompiledRoutine): Diagram | undefined {
+  return r.graph && r.layout ? { graph: r.graph, layout: r.layout, name: r.name } : undefined;
+}
+
+function svgOf(d: Diagram): string {
+  return renderSvg(d.graph, d.layout, {
     look: "textbook",
     numbering: view.numbers ? "numbers" : "names",
     showActions: view.showActions,
@@ -650,16 +712,19 @@ function renderHeader(): void {
     b.title = reason ?? (doc ? `Download ${l5xFileName(doc.file.name)} for Studio 5000` : "");
   }
   const svgItem = document.querySelector<HTMLElement>('[data-cmd="export-svg"]')!;
-  const noSvg = !result?.graph;
-  svgItem.setAttribute("aria-disabled", String(noSvg));
-  svgItem.title = noSvg ? (doc ? "Fix the errors first: there is no diagram" : "Open a .qsfc file first") : "";
+  const noSvg = svgReason();
+  svgItem.setAttribute("aria-disabled", String(!!noSvg));
+  svgItem.title = noSvg ?? "";
   for (const cmd of ["save", "save-as"]) {
     document.querySelector<HTMLElement>(`[data-cmd="${cmd}"]`)!.setAttribute("aria-disabled", String(!doc));
   }
   if (!doc || !result) return;
   const { errors, warnings } = countProblems(diagnostics);
   ui.fileName.textContent = doc.file.name;
-  ui.fileRoutine.textContent = `routine ${routineName(result.chart, doc.file.name)}`;
+  ui.fileRoutine.textContent =
+    result.routines.length > 1
+      ? `program ${programName(result.program, result.routines)}`
+      : `routine ${result.routines[0]?.name ?? routineName(result.chart, doc.file.name)}`;
   ui.fileDot.className = `dot ${errors ? "err" : warnings ? "warn" : "ok"}`;
   ui.fileInfo.title = errors ? plural(errors, "error") : warnings ? plural(warnings, "warning") : "No problems";
 }
@@ -668,15 +733,181 @@ function viewKey(): string {
   return `${view.numbers}|${view.showActions}`;
 }
 
+/** Index of the routine the cursor is in (-1: none). */
+function activeIndex(): number {
+  return doc && result ? routineAtLine(result.routines, cursor.line) : -1;
+}
+
+function activeRoutine(): CompiledRoutine | undefined {
+  const i = activeIndex();
+  return i >= 0 ? result?.routines[i] : undefined;
+}
+
+/** What the diagram pane shows for the active routine. */
+function activeView(): { index: number; active?: CompiledRoutine; shown?: Diagram; stale: boolean } {
+  const index = activeIndex();
+  const active = index >= 0 ? result?.routines[index] : undefined;
+  if (!doc) return { index, stale: false };
+  if (active?.kind === "st") return { index, active, stale: false };
+  const now = active && diagramOf(active);
+  if (now) return { index, active, shown: now, stale: false };
+  // Errors (or an empty text): the routine's last valid diagram, dimmed.
+  const old = active ? (lastGood.get(key(active.name)) ?? lastGoodByIndex[index]) : lastGoodByIndex[0];
+  const out: { index: number; active?: CompiledRoutine; shown?: Diagram; stale: boolean } = { index, stale: !!old };
+  if (active) out.active = active;
+  if (old) out.shown = old;
+  return out;
+}
+
+/** Routine position shown in the diagram pane now (to notice when the cursor leaves it). */
+let shownIndex = -1;
+/** Signature of the routine tabs in the DOM (rebuilt only when routines change). */
+let tabsKey = "";
+
+function renderTabs(routines: readonly CompiledRoutine[], index: number): void {
+  const show = !!doc && routines.length > 1;
+  ui.routineTabs.hidden = !show;
+  if (!show) {
+    if (tabsKey) ui.routineTabs.replaceChildren();
+    tabsKey = "";
+    return;
+  }
+  const sig = routines.map((r) => `${r.kind}:${r.name}`).join("|");
+  if (sig !== tabsKey) {
+    tabsKey = sig;
+    const tabs = routines.map((r, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "routine-tab";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-controls", "diagram-area");
+      b.id = `routine-tab-${i}`;
+      b.dataset["index"] = String(i);
+      b.append(kindBadge(r.kind), cell("span", r.name, "tab-name"));
+      if (i === 0) {
+        const main = cell("span", "main", "main-pill");
+        main.title = "Main routine: Studio runs it every scan";
+        b.append(main);
+      }
+      b.title = `${r.kind.toUpperCase()} routine ${r.name}${i === 0 ? " (main routine)" : ""}: lines ${r.lines.from}-${r.lines.to}`;
+      b.addEventListener("click", () => openRoutine(i, true));
+      return b;
+    });
+    ui.routineTabs.replaceChildren(...tabs);
+  }
+  for (const b of ui.routineTabs.querySelectorAll<HTMLElement>('[role="tab"]')) {
+    const on = Number(b.dataset["index"]) === index;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+    b.classList.toggle("on", on);
+    if (on && index !== shownIndex) b.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+function kindBadge(kind: "sfc" | "st"): HTMLElement {
+  const k = cell("span", kind.toUpperCase(), `kind kind-${kind}`);
+  k.setAttribute("aria-label", kind === "sfc" ? "SFC" : "ST");
+  return k;
+}
+
+/** Shows routine `i`: moves the editor cursor to its first line (the diagram follows). */
+function openRoutine(i: number, focusEditor: boolean): void {
+  const r = result?.routines[i];
+  if (!r) return;
+  editor.goTo(r.lines.from, 1, focusEditor);
+}
+
+function openRoutineNamed(name: string): void {
+  const r = result && findRoutine(result.routines, name);
+  if (r) openRoutine(result!.routines.indexOf(r), true);
+}
+
+ui.routineTabs.addEventListener("keydown", (e) => {
+  const tabs = [...ui.routineTabs.querySelectorAll<HTMLElement>('[role="tab"]')];
+  const i = tabs.indexOf(document.activeElement as HTMLElement);
+  if (i < 0) return;
+  let to: number;
+  if (e.key === "ArrowRight") to = (i + 1) % tabs.length;
+  else if (e.key === "ArrowLeft") to = (i - 1 + tabs.length) % tabs.length;
+  else if (e.key === "Home") to = 0;
+  else if (e.key === "End") to = tabs.length - 1;
+  else return;
+  e.preventDefault();
+  openRoutine(to, false);
+  tabs[to]!.focus();
+});
+
+/** The card shown instead of a diagram for an ST routine. */
+function renderStCard(r: CompiledRoutine, index: number): void {
+  const routines = result?.routines ?? [];
+  const isMain = index === 0;
+  const card = document.createElement("div");
+  card.className = "st-card";
+  const title = document.createElement("h2");
+  title.className = "st-title";
+  title.append(kindBadge("st"), cell("b", r.name));
+  if (isMain) title.append(cell("span", "main routine", "badge"));
+  card.append(title, cell("p", stLinesText(r, isMain), "muted"));
+
+  const chips = (names: readonly string[]): HTMLElement => {
+    const box = document.createElement("div");
+    box.className = "chips";
+    for (const n of names) {
+      const target = findRoutine(routines, n);
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      if (target) b.append(kindBadge(target.kind));
+      b.append(cell("span", target?.name ?? n));
+      b.title = target ? `Open ${target.name} (line ${target.lines.from})` : `There is no routine ${n}`;
+      b.disabled = !target;
+      b.addEventListener("click", () => openRoutineNamed(n));
+      box.append(b);
+    }
+    return box;
+  };
+  card.append(cell("h3", "Calls"));
+  card.append(r.calls.length ? chips(r.calls) : cell("p", "nothing", "muted"));
+  card.append(cell("h3", "Called by"));
+  card.append(r.calledBy.length ? chips(r.calledBy) : cell("p", notCalledText(isMain), "muted"));
+
+  card.append(cell("h3", "Call tree"));
+  const tree = document.createElement("pre");
+  tree.className = "tree";
+  treeLines(callTree(routines, result?.calls ?? [])).forEach((l, i) => {
+    if (i > 0) tree.append("\n");
+    tree.append(l.lead);
+    const target = findRoutine(routines, l.name);
+    if (target) {
+      const b = cell("button", l.name, `tree-name${key(target.name) === key(r.name) ? " current" : ""}`) as HTMLButtonElement;
+      b.type = "button";
+      b.title = `Open ${target.name}`;
+      b.addEventListener("click", () => openRoutineNamed(l.name));
+      tree.append(b);
+    } else tree.append(l.name);
+    tree.append(l.tail);
+  });
+  card.append(tree);
+  ui.stView.replaceChildren(card);
+}
+
 function renderDiagram(fit: boolean): void {
-  const shown = result?.graph ? result : lastGood;
-  const stale = !!doc && !result?.graph && !!lastGood;
+  const v = activeView();
+  const { shown, stale } = v;
+  const st = v.active?.kind === "st";
+  renderTabs(result?.routines ?? [], v.index);
+  shownIndex = v.index;
+  // Position of the routine in the pane (an empty text keeps the first routine's last diagram).
+  const pos = Math.max(0, v.index);
+  ui.stView.hidden = !doc || !st;
   ui.canvas.hidden = !doc || !shown;
-  ui.broken.hidden = !doc || !!shown;
+  ui.broken.hidden = !doc || !!shown || st;
   ui.staleBadge.hidden = !stale;
   ui.canvas.classList.toggle("stale", stale);
   for (const id of ["zoom-out", "zoom-reset", "zoom-in", "zoom-fit"]) el<HTMLButtonElement>(id).disabled = !shown;
   if (!doc) return;
+  if (st) renderStCard(v.active!, v.index);
+  else ui.stView.replaceChildren();
   if (!shown) {
     ui.stage.replaceChildren();
     drawn = undefined;
@@ -690,12 +921,13 @@ function renderDiagram(fit: boolean): void {
     ui.broken.classList.toggle("is-empty", empty);
     return;
   }
-  const key = viewKey();
-  if (!drawn || drawn.result !== shown || drawn.key !== key) {
-    const first = !drawn;
+  const vk = viewKey();
+  if (!drawn || drawn.diagram.graph !== shown.graph || drawn.key !== vk || drawn.index !== pos) {
+    // A new routine in the pane (tab switch) is fitted like a newly opened chart.
+    const first = !drawn || drawn.index !== pos;
     const svgText = svgOf(shown);
     const same = !first && svgText === drawnSvg;
-    drawn = { result: shown, key };
+    drawn = { diagram: shown, index: pos, key: vk };
     if (same) {
       applySelectionHighlight(false);
       highlightCursorElement(false);
@@ -704,7 +936,7 @@ function renderDiagram(fit: boolean): void {
     drawnSvg = svgText;
     ui.stage.innerHTML = svgText;
     const svg = ui.stage.querySelector("svg")!;
-    svg.setAttribute("aria-label", `SFC diagram of ${routineName(shown.chart, doc.file.name)}`);
+    svg.setAttribute("aria-label", `SFC diagram of ${shown.name}`);
     svgSize = { width: Number(svg.getAttribute("width")) || 1, height: Number(svg.getAttribute("height")) || 1 };
     if (fit || first) requestAnimationFrame(() => fitToWindow());
     else setZoom(zoom);
@@ -801,12 +1033,23 @@ function renderStatus(): void {
     return;
   }
   ui.statusFile.textContent = doc.file.name;
-  const c = chartCounts(result?.graph);
-  ui.statusCounts.textContent = c
-    ? `${plural(c.steps, "step")} · ${plural(c.transitions, "transition")} · ${plural(c.branches, "branch", "branches")}`
-    : lastGood
-      ? "Showing last valid diagram"
-      : "No diagram";
+  const routines = result?.routines ?? [];
+  const multi = routines.length > 1;
+  const v = activeView();
+  ui.statusRoutines.hidden = !multi;
+  ui.statusRoutines.textContent = multi ? routineSummary(routines) : "";
+  ui.statusRoutine.hidden = !multi || !v.active;
+  ui.statusRoutine.replaceChildren(...(multi && v.active ? [cell("b", v.active.name)] : []));
+  ui.statusRoutine.title = v.active ? `Active routine (${v.active.kind.toUpperCase()})` : "";
+  const c = chartCounts(v.active?.graph);
+  ui.statusCounts.textContent =
+    v.active?.kind === "st"
+      ? `ST routine · ${plural(v.active.node.kind === "st" ? v.active.node.body.length : 0, "line")}`
+      : c
+        ? `${plural(c.steps, "step")} · ${plural(c.transitions, "transition")} · ${plural(c.branches, "branch", "branches")}`
+        : v.stale
+          ? "Showing last valid diagram"
+          : "No diagram";
   const { errors, warnings } = countProblems(diagnostics);
   ui.statusProblems.replaceChildren(
     cell("span", plural(errors, "error"), errors ? "err" : "ok"),
@@ -846,7 +1089,7 @@ function applySelectionHighlight(scroll: boolean): void {
   if (!doc || !selectedProblem || !result) return;
   const d = diagnostics.find((x) => problemKey(x) === selectedProblem);
   if (!d) return;
-  const id = problemTarget(d, drawn?.result.graph);
+  const id = problemTarget(d, drawn?.diagram.graph);
   if (id) {
     const target = stageElement(id);
     if (target) {
@@ -868,7 +1111,7 @@ function applySelectionHighlight(scroll: boolean): void {
 let cursorElement: string | undefined;
 /** Highlights the diagram element written on the cursor line. */
 function highlightCursorElement(scroll: boolean): void {
-  const id = doc ? elementAtLine(drawn?.result.graph, cursor.line) : undefined;
+  const id = doc ? elementAtLine(drawn?.diagram.graph, cursor.line) : undefined;
   const changed = id !== cursorElement;
   cursorElement = id;
   for (const e of ui.stage.querySelectorAll(".qsfc-cur")) {
@@ -897,7 +1140,7 @@ function scrollIntoCanvas(target: Element): void {
 
 /** A click (not a drag) on the diagram: put the cursor on the element's line. */
 function diagramClick(target: EventTarget | null): void {
-  const graph = drawn?.result.graph;
+  const graph = drawn?.diagram.graph;
   if (!graph) return;
   const ids: string[] = [];
   for (let n = target as Element | null; n && n !== ui.stage; n = n.parentElement) {

@@ -82,16 +82,20 @@
     <div class="splitter v" id="split-editor" role="separator" aria-orientation="vertical" aria-label="Resize the editor" aria-controls="editor-pane" tabindex="0"></div>
 
     <section class="canvas-wrap" aria-label="Diagram">
-      <div class="canvas" id="canvas" tabindex="0" aria-label="Diagram canvas: click an element to jump to its line, drag or scroll to pan, Ctrl+wheel to zoom" hidden>
-        <div class="stage" id="stage"></div>
-      </div>
-      <div class="stale-badge" id="stale-badge" role="status" hidden>Showing last valid diagram</div>
-      <div class="empty" id="broken" hidden>
-        <div class="empty-card">
-          <svg class="empty-art err" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24"/><path d="M32 18v18M32 44v1"/></svg>
-          <h1 id="broken-title">Fix the errors below to see the diagram</h1>
-          <p id="broken-detail"></p>
+      <div class="routine-tabs" id="routine-tabs" role="tablist" aria-label="Routines" hidden></div>
+      <div class="diagram-area" id="diagram-area">
+        <div class="canvas" id="canvas" tabindex="0" aria-label="Diagram canvas: click an element to jump to its line, drag or scroll to pan, Ctrl+wheel to zoom" hidden>
+          <div class="stage" id="stage"></div>
         </div>
+        <div class="stale-badge" id="stale-badge" role="status" hidden>Showing last valid diagram</div>
+        <div class="empty" id="broken" hidden>
+          <div class="empty-card">
+            <svg class="empty-art err" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24"/><path d="M32 18v18M32 44v1"/></svg>
+            <h1 id="broken-title">Fix the errors below to see the diagram</h1>
+            <p id="broken-detail"></p>
+          </div>
+        </div>
+        <div class="st-view" id="st-view" hidden></div>
       </div>
     </section>
     <div class="splitter v" id="split-tags" role="separator" aria-orientation="vertical" aria-label="Resize the Tags sidebar" aria-controls="tags-pane" tabindex="0"></div>
@@ -138,9 +142,11 @@
 
   <footer class="status" id="status">
     <span id="status-file">No chart open</span>
+    <span id="status-routines" hidden></span>
     <span id="status-counts"></span>
     <span id="status-problems"></span>
     <span id="status-cursor"></span>
+    <span id="status-routine" hidden></span>
     <span class="right">qSFC __VERSION__</span>
   </footer>
 </div>
@@ -162,7 +168,7 @@
   <form method="dialog">
     <h2 id="about-title">QuickSFC <span id="about-version"></span></h2>
     <p>A drafting language for IEC 61131-3 Sequential Function Charts, with live diagrams and Studio 5000 L5X export. This single file works offline; nothing you type leaves your computer.</p>
-    <p class="about-keys">F1 cheat sheet · Ctrl+S save · Ctrl+Space complete · Ctrl+E export L5X</p>
+    <p class="about-keys">F1 cheat sheet · Ctrl+S save · Ctrl+Space complete · F12 or Ctrl+click go to definition · Ctrl+E export L5X</p>
     <div class="confirm-actions"><button type="submit" class="btn primary" value="ok">OK</button></div>
   </form>
 </dialog>

@@ -21,6 +21,11 @@ Status: **all Phase 0 questions answered** (2026-11-25). Nothing has been implem
 | Q14 | Diagram look: **textbook IEC/GRAFCET (Look B)**, chosen from the Phase 2 mockups. Step names by default, with a GRAFCET numbering option |
 | Q15 | **Both renderings**: ASCII in the CLI (`qsfc show`) from Phase 1, a drawn SVG diagram in the app from Phase 2, plus "copy as text" |
 | new | **PLCopen XML import and export** are added to the future work |
+| R1 | (2026-11-25) **Several routines per file**: a `sfc name` or `st name` line starts a routine, which runs to the next header; one file = one Program; optional `program name` line |
+| R2 | **The first routine is the main routine** (`MainRoutineName`) |
+| R3 | Calls are written **`call name;`**, exported as `JSR(name,0);`; Studio's `JSR(name, 0);` is accepted too |
+| R4 | Diagram pane: **routine tabs that follow the cursor**; an ST routine shows a call summary |
+| R5 | **Ladder routines come later** (Phase 5), in Studio's neutral text |
 
 ---
 
@@ -425,14 +430,38 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - Files: New, Open, **Save (Ctrl+S)**, Save As. In Edge/Chrome they write back to the file; in Firefox, Save downloads the file. The window warns before closing with unsaved changes.
 - Watch mode (Edge/Chrome): File → "Watch file…" follows a file edited elsewhere (vim, VS Code) and redraws on each save, with the editor read-only meanwhile. Firefox gets a "Reload from disk" button instead.
 
+### Phase 3.5: Several routines and calls
+- One file = one Program: `program name`, then `sfc name` / `st name` routines (SPEC §4.5). The first routine is main.
+- `call name;` (and native `JSR(name, 0);`) in ST routines and SFC actions, checked against the routines (E600-E602, W600-W603), autocompleted, highlighted, click-to-jump.
+- One namespace and one operand numbering across the file (Studio keeps them at program scope); step members readable from any routine.
+- Export: several `<Routine>`s (SFC and ST), `MainRoutineName` = first routine. CLI `show` prints every routine.
+- App: tabs above the diagram, one per routine, following the cursor; an ST routine shows what it calls and who calls it. Mockup first.
+- Test pack tp08 (several routines, ST routine, JSR from ST and from an SFC action, operands across two charts).
+- ✅ Acceptance: tp08 imports and verifies in Studio; one-routine files export byte-identical to before.
+
 ### Phase 4: L5X import (round trip)
 - L5X → syntax tree → `.qsfc` text; actions, qualifiers, presets and descriptions preserved.
 - Anything we can't represent (Stop elements, text boxes, ...) is reported, never silently dropped.
 - Tests: export → import → export gives the same file; your real `MainProgram.L5X` imports.
 - ✅ Acceptance: as in your file.
 
+### Phase 5: Ladder routines (planned, not started)
+- **Syntax: Studio's neutral text**, one rung per `rung` line, an optional `"comment"`, the instructions on the same line or indented below it:
+  ```
+  ladder main
+    rung "Run the sequence"
+      XIC(auto_mode) XIO(fault) JSR(fill_seq,0);
+    rung XIC(start_btn) [OTE(lamp), TON(t1,?,?)];
+  ```
+  It maps 1:1 to the L5X `<Rung>` text (format verified by Test_Basic, L5X_GUIDE §5), so export, import and round trip are cheap, and it's the text students see in Studio. A friendlier syntax (`auto_mode & !fault -> JSR fill_seq`) can be added later as sugar.
+- Checks: known instructions and their argument counts (XIC XIO OTE OTL OTU ONS OSR OSF TON TOF RTO CTU CTD RES MOV ADD SUB MUL DIV EQU NEQ LES LEQ GRT GEQ JSR NOP …), balanced `[ , ]` branches, `;` at the end, unique ONS storage bits, tag types inferred from the instruction (XIC → BOOL, TON → TIMER, MOV → numeric).
+- Diagram: first a rung list (text, with the tags highlighted and click-to-jump); a drawn ladder (rails, contacts, coils, branches, instruction boxes) as a second step, reusing the routine tabs from Phase 3.5.
+- Reuse `l5x_sfc` (Python) only as a reference for the rung grammar and drawing rules; it is ported, not called.
+- Test pack: rungs with branches, nested branches, timers, ONS, JSR to an SFC; a mixed ladder + SFC + ST program.
+- Open questions to ask before starting: rung syntax details (one line vs. indented), whether to draw the ladder in the first step, the instruction set for the first version.
+
 ### Later (not planned in detail)
-Several actions per step with all IEC qualifiers (Q10) · PLCopen XML **import and export** (platform-agnostic: Beremiz, OpenPLC, CODESYS) · GRAFCET-only features (§3.4) · editing the diagram graphically · ladder via `l5x_sfc` · simulation (step through the chart, toggle inputs).
+Several actions per step with all IEC qualifiers (Q10) · PLCopen XML **import and export** (platform-agnostic: Beremiz, OpenPLC, CODESYS) · GRAFCET-only features (§3.4) · editing the diagram graphically · simulation (step through the chart, toggle inputs).
 
 ---
 

@@ -7,9 +7,11 @@ import type {
   BranchNode,
   Chart,
   Name,
+  ProgramNode,
   Sequence,
   SourceText,
   StepNode,
+  StRoutineNode,
   TagDecl,
   TagType,
   TransitionNode,
@@ -22,6 +24,12 @@ import { checkCdata, contentEnd, isWs, mask, parseDuration, readString, skipWs }
 export { checkName, closest, editDistance, isKeyword, NAME_RE } from "./names.js";
 
 export interface ParseResult {
+  /** The whole file (SPEC §4.5). */
+  program: ProgramNode;
+  /**
+   * The first SFC routine (an empty chart when there is none). Its `tagDecls` hold every
+   * `tag` line of the file. Shortcut for one-routine files.
+   */
   chart: Chart;
   diagnostics: Diagnostic[];
 }
@@ -34,7 +42,9 @@ export function parse(source: string): ParseResult {
     // Defensive: the parser must never throw (live coding). Report and return what we have.
     p.diags.push(error("E000", { line: 1, col: 1 }, `internal parser error: ${String(e)}`));
   }
-  return { chart: p.chart, diagnostics: sortDiagnostics(p.diags) };
+  const first = p.program.routines.find((r) => r.kind === "sfc");
+  const chart: Chart = first?.kind === "sfc" ? first.chart : { tagDecls: p.program.tagDecls, body: [] };
+  return { program: p.program, chart, diagnostics: sortDiagnostics(p.diags) };
 }
 
 const TAG_TYPES: readonly TagType[] = ["BOOL", "DINT", "REAL", "TIMER"];
@@ -65,12 +75,50 @@ function looksLikeV1(t: string): boolean {
   return /@[A-Za-z_]\w*\s*\(/.test(masked) || /(->|>>)\s*@/.test(masked);
 }
 
+/**
+ * Dedent a block of lines (SPEC §4.3): drop blank lines at the start and blank or comment
+ * lines at the end, remove the common leading whitespace. Blank lines get text "".
+ */
+function dedent(buf: BufferedLine[]): SourceText[] {
+  const first = buf.findIndex((b) => b.kind !== "blank");
+  let last = -1;
+  for (let k = buf.length - 1; k >= 0; k--) {
+    if (buf[k]!.kind === "st") {
+      last = k;
+      break;
+    }
+  }
+  if (first < 0 || last < 0) return [];
+  const kept = buf.slice(first, last + 1);
+  let prefix: string | undefined;
+  for (const b of kept) {
+    if (b.kind === "blank") continue;
+    const ws = /^[ \t]*/.exec(b.raw)![0];
+    if (prefix === undefined) prefix = ws;
+    else {
+      let k = 0;
+      while (k < prefix.length && k < ws.length && prefix[k] === ws[k]) k++;
+      prefix = prefix.slice(0, k);
+    }
+  }
+  const cut = (prefix ?? "").length;
+  return kept.map((b) => {
+    if (b.kind === "blank") return { text: "", span: { line: b.line, col: 1 } };
+    const text = b.raw.slice(cut).trimEnd();
+    return { text, span: { line: b.line, col: cut + 1, endLine: b.line, endCol: cut + 1 + text.length } };
+  });
+}
+
 class Parser {
   readonly diags: Diagnostic[] = [];
-  readonly chart: Chart = { tagDecls: [], body: [] };
+  readonly program: ProgramNode = { routines: [], tagDecls: [] };
+  /** Current SFC routine (null before the first one, or while in an ST routine). */
+  private sfc: Chart | null = null;
+  /** Current ST routine. */
+  private st: StRoutineNode | null = null;
+  private stBuffer: BufferedLine[] = [];
   private readonly lines: string[];
-  private readonly stack: Frame[] = [];
-  private seenContent = false;
+  private stack: Frame[] = [];
 
   /** Step whose action lines are being collected. */
   private owner: StepNode | null = null;
@@ -86,6 +134,17 @@ class Parser {
     this.lines = source.split(/\r?\n/);
   }
 
+  /** The SFC chart new elements go into; starts a header-less SFC routine when needed. */
+  private get chart(): Chart {
+    if (!this.sfc) {
+      this.closeRoutine();
+      const chart: Chart = { tagDecls: this.program.tagDecls, body: [] };
+      this.program.routines.push({ kind: "sfc", chart });
+      this.sfc = chart;
+    }
+    return this.sfc;
+  }
+
   private get current(): Sequence {
     const top = this.stack[this.stack.length - 1];
     return top ? top.leg : this.chart.body;
@@ -96,18 +155,47 @@ class Parser {
       const raw = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
       this.line(i + 1, raw);
     });
+    this.closeRoutine();
+    this.assignAutoNames();
+  }
+
+  /** Ends the current routine: closes its action block or ST body, reports open branches. */
+  private closeRoutine(): void {
     this.flush();
+    this.owner = null;
     for (const f of this.stack) {
       this.diags.push(
         error("E206", f.node.span, `\`${f.node.kind}\` at line ${f.node.span.line} is never closed: add \`end\``),
       );
     }
-    this.assignAutoNames();
+    this.stack = [];
+    this.flushSt();
+    this.sfc = null;
+    this.st = null;
+    this.after = "it comes before the first step";
+    this.orphanReported = false;
   }
 
   private line(n: number, raw: string): void {
     const indent = /^[ \t]*/.exec(raw)![0].length;
     const t = raw.slice(indent);
+    const word = /^[A-Za-z_]\w*/.exec(t)?.[0].toLowerCase();
+    const rest = t.slice(word?.length ?? 0);
+    // `st := 1;` is ST, `st main` is a header
+    const headerShape = rest.trim() === "" || /^\s+(?![:=])\S/.test(rest) || /^\s*\/\//.test(rest);
+    if (word === "program" && headerShape) {
+      this.programHeader(n, raw, indent);
+      return;
+    }
+    if ((word === "sfc" || word === "st") && headerShape) {
+      this.closeRoutine();
+      this.header(n, raw, indent, word);
+      return;
+    }
+    if (this.st) {
+      this.stLine(n, raw, indent, t, word);
+      return;
+    }
     if (t.trim() === "") {
       if (this.owner) this.buffer.push({ line: n, raw, kind: "blank" });
       return;
@@ -117,7 +205,6 @@ class Parser {
         error("E100", lineSpan(n, indent, raw.trimEnd().length),
           "this looks like qSFC version 1 syntax (`S@name(...)`); see SPEC §11 for the new form"),
       );
-      this.seenContent = true;
       return;
     }
     if (t.startsWith("//")) {
@@ -134,13 +221,7 @@ class Parser {
       this.bar(n, raw, indent);
       return;
     }
-    const word = /^[A-Za-z_]\w*/.exec(t)?.[0].toLowerCase();
     switch (word) {
-      case "sfc":
-        this.flush();
-        this.header(n, raw, indent);
-        this.structure("the `sfc` header");
-        return;
       case "tag":
         this.structure("a `tag` line");
         this.tag(n, raw, indent);
@@ -160,7 +241,6 @@ class Parser {
         this.branchEnd(n, raw, indent);
         return;
       default:
-        this.seenContent = true;
         if (this.owner) {
           this.buffer.push({ line: n, raw, kind: "st" });
         } else if (!this.orphanReported) {
@@ -177,7 +257,6 @@ class Parser {
   /** Common bookkeeping for every structure line. */
   private structure(what: string): void {
     this.flush();
-    this.seenContent = true;
     this.owner = null;
     this.orphanReported = false;
     this.after = `it follows ${what}`;
@@ -193,27 +272,102 @@ class Parser {
 
   // ---- header -------------------------------------------------------------
 
-  private header(n: number, raw: string, indent: number): void {
+  /** Reads `keyword name`; reports E101 / E107 and returns the name. */
+  private headerName(n: number, raw: string, indent: number, keyword: string, what: string): Name | undefined {
     const end = contentEnd(raw);
     const span = lineSpan(n, indent, end);
-    if (this.chart.header) {
-      this.diags.push(error("E210", span, "the `sfc` header can appear only once"));
-      return;
-    }
-    if (this.seenContent) {
-      this.diags.push(error("E210", span, "the `sfc` header must be the first line of the file (comments and blank lines may come before it)"));
-    }
-    let i = skipWs(raw, indent + 3, end);
+    let i = skipWs(raw, indent + keyword.length, end);
     const start = i;
     while (i < end && !isWs(raw[i])) i++;
     if (start === i) {
-      this.diags.push(error("E101", span, "the `sfc` header needs a routine name: `sfc name`"));
-      return;
+      this.diags.push(error("E101", span, `\`${keyword}\` needs a ${what} name: \`${keyword} name\``));
+      return undefined;
     }
     const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
-    this.diags.push(...checkName(name.text, name.span));
-    this.chart.header = name;
-    this.extraText(n, raw, i, end, `the routine name \`${name.text}\``);
+    this.diags.push(...checkName(name.text, name.span, { reserved: true }));
+    this.used.add(key(name.text));
+    this.extraText(n, raw, i, end, `the ${what} name \`${name.text}\``);
+    return name;
+  }
+
+  private programHeader(n: number, raw: string, indent: number): void {
+    const span = lineSpan(n, indent, contentEnd(raw));
+    if (this.program.header) {
+      this.diags.push(error("E210", span, "the `program` line can appear only once"));
+      return;
+    }
+    if (this.program.routines.length > 0) {
+      this.diags.push(
+        error("E210", span, "the `program` line must come before the first routine (comments, blank lines and `tag` lines may come before it)"),
+      );
+    }
+    const name = this.headerName(n, raw, indent, "program", "program");
+    if (name) this.program.header = name;
+  }
+
+  private header(n: number, raw: string, indent: number, kind: "sfc" | "st"): void {
+    const span = lineSpan(n, indent, contentEnd(raw));
+    const name = this.headerName(n, raw, indent, kind, "routine");
+    if (kind === "sfc") {
+      const chart: Chart = { tagDecls: this.program.tagDecls, body: [] };
+      if (name) chart.header = name;
+      this.program.routines.push(name ? { kind, name, chart, span } : { kind, chart, span });
+      this.sfc = chart;
+      this.after = "it follows the `sfc` header";
+    } else {
+      const routine: StRoutineNode = { kind, name: name ?? { text: "", span: { line: n, col: indent + 1 } }, body: [], span };
+      this.program.routines.push(routine);
+      this.st = routine;
+      this.stBuffer = [];
+    }
+  }
+
+  // ---- ST routine body --------------------------------------------------------
+
+  private stLine(n: number, raw: string, indent: number, t: string, word: string | undefined): void {
+    if (t.trim() === "") {
+      this.stBuffer.push({ line: n, raw, kind: "blank" });
+      return;
+    }
+    if (t.startsWith("//")) {
+      this.stBuffer.push({ line: n, raw, kind: "comment" });
+      return;
+    }
+    if (word === "tag") {
+      this.tag(n, raw, indent);
+      return;
+    }
+    const structural = t.startsWith("--")
+      ? "transition"
+      : t.startsWith("|")
+        ? "`|`"
+        : word === "init" || word === "step"
+          ? "step"
+          : word === "select" || word === "parallel" || word === "end"
+            ? `\`${word}\``
+            : undefined;
+    if (structural) {
+      const routine = this.st!;
+      this.diags.push(
+        error("E222", lineSpan(n, indent, raw.trimEnd().length),
+          `${structural} lines belong to an \`sfc\` routine; \`${routine.name.text}\` is an \`st\` routine`,
+          "start an SFC routine with `sfc name` before this line"),
+      );
+      return;
+    }
+    this.stBuffer.push({ line: n, raw, kind: "st" });
+  }
+
+  private flushSt(): void {
+    const routine = this.st;
+    if (!routine) return;
+    routine.body = dedent(this.stBuffer);
+    this.stBuffer = [];
+    for (const a of routine.body) {
+      if (a.text === "") continue;
+      checkCdata(a.text, a.span, this.diags);
+      this.scanIdentifiers(a.text);
+    }
   }
 
   // ---- tag ----------------------------------------------------------------
@@ -256,7 +410,7 @@ class Parser {
       i = d.next;
     }
     this.extraText(n, raw, i, end, `the declaration of tag \`${name.text}\``);
-    this.chart.tagDecls.push(decl);
+    this.program.tagDecls.push(decl);
   }
 
   private description(n: number, raw: string, i: number, end: number): { value: string; next: number } {
@@ -328,43 +482,16 @@ class Parser {
     if (!owner) return;
     const buf = this.buffer;
     this.buffer = [];
-    const first = buf.findIndex((b) => b.kind !== "blank");
-    let last = -1;
-    for (let k = buf.length - 1; k >= 0; k--) {
-      if (buf[k]!.kind === "st") {
-        last = k;
-        break;
-      }
-    }
-    if (first < 0 || last < 0) {
-      owner.action = [];
-      return;
-    }
-    const kept = buf.slice(first, last + 1);
-    let prefix: string | undefined;
-    for (const b of kept) {
-      if (b.kind === "blank") continue;
-      const ws = /^[ \t]*/.exec(b.raw)![0];
-      if (prefix === undefined) prefix = ws;
-      else {
-        let k = 0;
-        while (k < prefix.length && k < ws.length && prefix[k] === ws[k]) k++;
-        prefix = prefix.slice(0, k);
-      }
-    }
-    const cut = (prefix ?? "").length;
-    const action: SourceText[] = kept.map((b) => {
-      if (b.kind === "blank") return { text: "", span: { line: b.line, col: 1 } };
-      const text = b.raw.slice(cut).trimEnd();
-      return { text, span: { line: b.line, col: cut + 1, endLine: b.line, endCol: cut + 1 + text.length } };
-    });
+    const action = dedent(buf);
     owner.action = action;
-    action.forEach((a, k) => {
-      if (kept[k]!.kind === "blank") return;
+    const kinds = new Map(buf.map((b) => [b.line, b.kind]));
+    for (const a of action) {
+      const kind = kinds.get(a.span.line);
+      if (kind === "blank") continue;
       checkCdata(a.text, a.span, this.diags);
       this.scanIdentifiers(a.text);
-      if (kept[k]!.kind === "st") this.checkQualifier(a);
-    });
+      if (kind === "st") this.checkQualifier(a);
+    }
   }
 
   /** E110: IEC action qualifiers are [Later] (SPEC §4.3). */
@@ -491,7 +618,7 @@ class Parser {
   // ---- auto names -------------------------------------------------------------
 
   private assignAutoNames(): void {
-    for (const d of this.chart.tagDecls) this.used.add(key(d.name.text));
+    for (const d of this.program.tagDecls) this.used.add(key(d.name.text));
     let k = 1;
     for (const t of this.unnamed) {
       while (this.used.has(`t${k}`)) k++;

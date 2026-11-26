@@ -67,14 +67,14 @@ export function main(argv: string[]): number {
   const name = basename(args.file);
 
   if (args.command === "check") {
-    const { diagnostics } = compile(source);
+    const { diagnostics } = compile(source, { fileName: name });
     report(diagnostics, name);
     if (!hasErrors(diagnostics)) console.error(`${name}: OK`);
     return hasErrors(diagnostics) ? 1 : 0;
   }
 
   if (args.command === "show") {
-    const { text, diagnostics } = showAscii(source);
+    const { text, diagnostics } = showAscii(source, { fileName: name });
     report(diagnostics, name);
     if (text === undefined) return 1;
     console.log(text);

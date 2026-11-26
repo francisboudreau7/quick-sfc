@@ -55,14 +55,15 @@ Reading it: `idle` is the initial step and resets the motor. When the start butt
 
 ### 3.1 File
 - Extension `.qsfc`, UTF-8 text, with LF or CRLF line endings.
-- One file holds **one SFC routine**.
+- One file holds **one Program**: one or more routines that share the program's tags (§4.5). A file without routine headers holds one SFC routine, as before.
 
 ### 3.2 Lines
 Each line is one of the following, chosen by its **first word**. Leading spaces and tabs are ignored.
 
 | First word | Line kind | Section |
 |---|---|---|
-| `sfc` | header | §4.1 |
+| `program` | program header | §4.5 |
+| `sfc`, `st` | routine header | §4.1, §4.5 |
 | `tag` | tag override | §7.4 |
 | `init`, `step` | step | §4.2 |
 | `--` | transition | §4.4 |
@@ -70,7 +71,7 @@ Each line is one of the following, chosen by its **first word**. Leading spaces 
 | `\|` | leg separator | §5 |
 | `end` | branch end | §5 |
 | *(empty)* or `//` | blank / comment | §3.3 |
-| anything else | **action line**, part of the step above | §4.3 |
+| anything else | **action line**, part of the step above (§4.3); in an `st` routine, a line of its ST body (§4.5) |
 
 Keywords are **case-insensitive** (`step`, `Step` and `STEP` are the same). They are only recognized as the first word of a line.
 
@@ -86,11 +87,11 @@ Steps, transitions and tags all follow **Studio 5000 tag naming rules**, so that
 - at most **40 characters**
 - no `__` (two underscores in a row), and no `_` at the end
 - **case-insensitive**: `Fill` and `fill` are the same name
-- not a qSFC keyword (`sfc tag init step select parallel end`)
+- not a qSFC keyword (`program sfc st call tag init step select parallel end`)
 - not an ST keyword (`AND OR XOR NOT MOD TRUE FALSE IF THEN ELSIF ELSE END_IF CASE OF END_CASE FOR TO BY DO END_FOR WHILE END_WHILE REPEAT UNTIL END_REPEAT EXIT RETURN`)
 - not a generated operand name: `Step_` + digits, `Tran_` + digits, `Action_` + digits (§8.2)
 
-**One namespace:** a name can't be used by two things. Two steps, a step and a transition, or a step and a tag can't share a name.
+**One namespace:** a name can't be used by two things. Two steps, a step and a transition, a step and a tag, or a routine and any of these can't share a name. The namespace covers the whole file (all routines), because Studio keeps step, transition and tag names at program scope.
 
 ### 3.5 Durations
 Used for step presets.
@@ -116,8 +117,8 @@ unit     = "ms" | "s" | "m" | "h"
 ```
 sfc fill_and_check
 ```
-- Optional. If present, it must be the first non-blank, non-comment line.
-- It sets the **routine name** in the L5X. Without it, the routine name comes from the file name (invalid characters become `_`, and the result must still be a valid name).
+- Optional for the first routine of the file. It starts an SFC routine (§4.5) and sets its **routine name** in the L5X.
+- When the file starts with steps and no header, that first SFC routine is named after the file (invalid characters become `_`, and the result must still be a valid name).
 
 ### 4.2 Steps [P1]
 ```
@@ -185,6 +186,47 @@ Examples:
 -- done: count >= 10 -> idle
 -- TRUE -> idle
 ```
+
+### 4.5 Program, routines and calls [P3.5]
+A file is one **Program** made of one or more routines. They share the program's tags.
+
+```
+program tank                 // optional: the Program name
+
+st main                      // ST routine; the first routine is the main routine
+  call fill_seq;             // runs the SFC routine fill_seq (exported as JSR(fill_seq,0);)
+  call alarms;
+
+sfc fill_seq                 // SFC routine: steps, transitions, branches as in §4-§6
+init idle
+-- start_btn AND main_ok
+step fill 5s
+  valve [:=] 1;
+-- fill.DN -> idle
+
+st alarms
+  alarm := level_high AND NOT pump;
+```
+
+**Routines**
+- `sfc name` starts an SFC routine and `st name` starts an ST routine. A routine runs until the next routine header.
+- If the file starts with steps and no header, that first SFC routine is named after the file (§4.1).
+- The **first routine is the main routine** (`MainRoutineName` in the L5X). It is the only one Studio runs by itself; every other routine runs only when something calls it.
+- An **ST routine's body** is every line until the next header, except `tag` lines (§7.4), which can appear anywhere. The body is dedented like an action (§4.3): the common leading whitespace is removed, and blank lines at its start and end are dropped. `//` comment lines inside it are part of the ST and are exported, but comment lines after its last code line are not (they usually introduce the next routine).
+- Step, transition, branch lines (`init`, `step`, `--`, `select`, `parallel`, `|`, `end`) inside an ST routine are an error (E222).
+- Names are shared by the whole file (§3.4): a step `fill` in one SFC routine can be read from any routine as `fill.X`, `fill.DN`… and is exported as its operand.
+- Operands are numbered across the whole file (`Step_000`… continue from one SFC routine to the next), because Studio keeps them at program scope.
+- A jump (`-> target`) can't leave its SFC routine (E303 says where the step is).
+
+**Program header**
+- `program name` sets the Program name. It is optional and must come before the first routine (comments and blank lines may precede it). Without it, the Program takes the main routine's name (CLI `--program` overrides both).
+
+**Calls**
+- `call name;` runs routine `name` once each time it is executed. It is a statement, so it belongs in an action or an ST routine, not in a condition (E602). It is exported as Studio's `JSR(name,0);`.
+- Studio's own `JSR(name, 0);` is also accepted; its first argument is checked the same way.
+- The routine must exist (E600). Calling the main routine (W602) or a routine calling itself (W601) is a warning; so is a routine that nothing calls and that isn't the main routine (W600).
+- **[Later]** Parameters (`call name(in1, in2)`), ladder routines (PLAN Phase 5).
+- A JSR in an SFC action runs while the step is active (qualifier N). When the step goes inactive, the called routine is no longer scanned and keeps its state.
 
 ---
 
@@ -395,8 +437,10 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 - **Program** export (`TargetType="Program"`, `ContainsContext="true"`).
 - UTF-8 **with BOM**, **CRLF** line endings, ST and descriptions in CDATA.
 - `SoftwareRevision`: `32.01` by default, configurable (CLI `--version`).
-- **Names.** Routine = header or file name. Program = routine name unless set otherwise (CLI `--program`). Controller (context only) = `QuickSFC`.
-- The Program's `MainRoutineName` is the SFC routine, so the chart runs right after import.
+- **Names.** Routine = header or file name. Program = `program` header, else the main routine's name; CLI `--program` overrides both. Controller (context only) = `QuickSFC`.
+- The Program's `MainRoutineName` is the first routine (§4.5), so the program runs right after import.
+- Routines are written in file order. An SFC routine is a `<Routine Type="SFC">` with its own element IDs (from 0); an ST routine is a `<Routine Type="ST">` whose `<STContent>` has one `<Line>` per body line (an empty body gets one empty line).
+- `call name;` is written `JSR(name,0);`; the rest of the line is unchanged.
 
 ### 8.2 Elements
 | qSFC | L5X |
@@ -437,6 +481,7 @@ Beyond the language rules, the exporter refuses to write a file when:
 - deep nesting
 - a selection convergence with legs coming from jumps (§6.4)
 - a program and its SFC routine having the same name (§8.1)
+- several routines in one program, an ST routine, `JSR(name,0);` in ST (from an ST routine and from an SFC action), and operands continuing across two SFC routines (§4.5)
 
 ---
 
@@ -471,7 +516,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 **Structure (E2xx)**
 | Code | Message (example) |
 |---|---|
-| E200 | the file has no steps |
+| E200 | the file has no steps / SFC routine `fill_seq` has no steps |
 | E201 | a chain must start with a step; this transition has nothing before it |
 | E202 | two steps in a row: `fill` and `check`; add a transition between them |
 | E203 | two transitions in a row; add a step between them |
@@ -481,7 +526,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E207 | a branch needs at least 2 legs (separate them with `\|`) |
 | E208 | empty leg between `\|` and `end` |
 | E209 | this action line has no step above it (it follows a transition) |
-| E210 | `sfc` header must be the first line, and appear only once |
+| E210 | `program` must come before the first routine, and appear only once |
 | E211 | `select` must follow a step |
 | E212 | each `select` leg must start with a transition (`-- condition`) |
 | E213 | each `select` leg must end with a transition; leg 2 ends with step `reject` |
@@ -493,6 +538,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E219 | unexpected text after the jump target `idle` |
 | E220 | inside a branch, a jump must be the last transition of a `select` leg |
 | E221 | at least one leg of this `select` must continue (it is inside another branch, so the flow can't stop here) |
+| E222 | `step` lines belong to an `sfc` routine; `main` is an `st` routine |
 
 **Chart rules (E3xx / W3xx)**
 | Code | Message (example) |
@@ -531,6 +577,17 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | W403 | `valve = 1;` compares and does nothing; did you mean `:=`? |
 | W404 | tag `spare` is declared but never used |
 
+**Routines and calls (E6xx / W6xx)**
+| Code | Message (example) |
+|---|---|
+| E600 | `call fil_seq`: there is no routine `fil_seq`; did you mean `fill_seq`? |
+| E601 | write `call routine_name;` |
+| E602 | `call` is a statement: it can't be used in a condition |
+| W600 | routine `alarms` is never called (only the main routine runs by itself) |
+| W601 | routine `alarms` calls itself |
+| W602 | `main` is the main routine: Studio already runs it every scan |
+| W603 | ST routine `alarms` is empty |
+
 **Export (E5xx)**
 | Code | Message (example) |
 |---|---|
@@ -547,10 +604,11 @@ The grammar is line-based. The ordering rules (alternation, branch shapes) are c
 
 ```
 file        = { line } ;
-line        = blank | comment | header | tag_decl | step | action_line
+line        = blank | comment | program | header | tag_decl | step | action_line
             | transition | "select" | "parallel" | "|" | "end" ;
 
-header      = "sfc" NAME ;
+program     = "program" NAME ;
+header      = ( "sfc" | "st" ) NAME ;
 tag_decl    = "tag" NAME [ ":" TYPE ] [ STRING ] ;
 step        = ( "init" | "step" ) NAME [ DURATION ] [ STRING ] ;
 transition  = "--" [ NAME ":" ] CONDITION [ "->" NAME ] ;

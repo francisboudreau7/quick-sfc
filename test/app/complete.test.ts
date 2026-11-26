@@ -142,3 +142,50 @@ describe("types after tag name :", () => {
     expect(at("select |")).toBeNull();
   });
 });
+
+describe("routines (SPEC §4.5)", () => {
+  const withRoutines: CompletionInfo = {
+    ...info,
+    routines: [
+      { name: "main", kind: "st", main: true },
+      { name: "fill_seq", kind: "sfc" },
+      { name: "alarms", kind: "st" },
+    ],
+  };
+  const atR = (text: string, opts: { explicit?: boolean } = {}) => {
+    const pos = text.indexOf("|");
+    const line = text.slice(0, pos) + text.slice(pos + 1);
+    const r = completeLine(line, pos, withRoutines, opts);
+    return r && { ...r, labels: r.options.map((o) => o.label), word: line.slice(r.from, r.to) };
+  };
+
+  it("offers program, sfc and st at the start of a line", () => {
+    const r = atR("pro|");
+    expect(r?.labels).toContain("program");
+    expect(atR("s|")?.labels).toEqual(expect.arrayContaining(["sfc", "st", "step"]));
+  });
+
+  it("offers routine names after `call `", () => {
+    const r = atR("  call fi|");
+    expect(r?.word).toBe("fi");
+    expect(r?.labels).toEqual(["main", "fill_seq", "alarms"]);
+    expect(r?.options[1]?.detail).toBe("SFC routine");
+    expect(r?.options[0]?.detail).toBe("ST routine · main");
+    expect(atR("  CALL |")?.labels).toEqual(["main", "fill_seq", "alarms"]);
+  });
+
+  it("offers routine names as the first argument of JSR(", () => {
+    expect(atR("  JSR(|")?.labels).toEqual(["main", "fill_seq", "alarms"]);
+    expect(atR("  jsr( al|")?.word).toBe("al");
+    // second argument: ordinary ST completion
+    expect(atR("  JSR(alarms, st|")?.labels).toContain("start_btn");
+  });
+
+  it("no routine names in a condition (a call is a statement, E602)", () => {
+    expect(atR("-- call |")).toBeNull();
+  });
+
+  it("`call` is offered among the action keywords", () => {
+    expect(atR("  x := 1; ca|")?.labels).toContain("call");
+  });
+});

@@ -5,9 +5,9 @@
  */
 
 export type TokKind =
-  | "kw" // qSFC keyword at line start, `--`, `|`
+  | "kw" // qSFC keyword at line start, `--`, `|`, `call` in ST
   | "stkw" // ST keyword (AND, IF, TRUE...)
-  | "def" // name defined on this line: step, tag, sfc header
+  | "def" // name defined on this line: step, tag, routine or program header
   | "label" // transition name (`name:`)
   | "target" // jump target after `->`
   | "arrow" // `->`
@@ -49,7 +49,7 @@ export const TOKEN_STYLE: Readonly<Record<TokKind, string>> = {
   punct: "punctuation",
 };
 
-export const QSFC_KEYWORDS = ["sfc", "tag", "init", "step", "select", "parallel", "end"] as const;
+export const QSFC_KEYWORDS = ["program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end"] as const;
 
 export const ST_KEYWORDS = new Set([
   "AND", "OR", "XOR", "NOT", "MOD", "TRUE", "FALSE", "IF", "THEN", "ELSIF", "ELSE", "END_IF",
@@ -136,6 +136,7 @@ export function tokenizeST(s: string, from: number, to: number, out: Token[] = [
       let kind: TokKind;
       if (prevMeaningful?.kind === "punct" && s[prevMeaningful.from] === "." && prevMeaningful.to === i) kind = "member";
       else if (ST_KEYWORDS.has(w.toUpperCase())) kind = "stkw";
+      else if (w.toLowerCase() === "call" && /^[ \t]+[A-Za-z_]/.test(s.slice(e, to))) kind = "kw"; // `call name;` (SPEC §4.5)
       else {
         let k = e;
         while (s[k] === " " || s[k] === "\t") k++;
@@ -213,8 +214,12 @@ export function lineKind(line: string): { kind: LineKind; start: number; word?: 
   if (t.startsWith("|")) return { kind: "bar", start };
   const word = /^[A-Za-z_]\w*/.exec(t)?.[0];
   switch (word?.toLowerCase()) {
+    case "program":
     case "sfc":
-      return { kind: "header", start, word };
+    case "st":
+      // Same rule as the parser: `st main` is a header, `st := 1;` is ST.
+      if (isHeaderShape(t.slice(word!.length))) return { kind: "header", start, word };
+      return { kind: "action", start };
     case "tag":
       return { kind: "tag", start, word };
     case "init":
@@ -228,6 +233,19 @@ export function lineKind(line: string): { kind: LineKind; start: number; word?: 
     default:
       return { kind: "action", start };
   }
+}
+
+/** The text after `program` / `sfc` / `st` makes the line a header (src/parse). */
+function isHeaderShape(rest: string): boolean {
+  return rest.trim() === "" || /^\s+(?![:=])\S/.test(rest) || /^\s*\/\//.test(rest);
+}
+
+/** Header line `program name`, `sfc name` or `st name` (SPEC §4.5): the keyword and the name. */
+export function headerOf(line: string): { keyword: "program" | "sfc" | "st"; name: string } | undefined {
+  const { kind, word, start } = lineKind(line);
+  if (kind !== "header") return undefined;
+  const name = /^[ \t]+([A-Za-z_]\w*)/.exec(line.slice(start + word!.length))?.[1] ?? "";
+  return { keyword: word!.toLowerCase() as "program" | "sfc" | "st", name };
 }
 
 /** Tokens of one source line (no line break). Gaps between tokens are plain text. */
@@ -385,6 +403,8 @@ export function indentAfter(prev: string | undefined, unit = 2): number {
     case "bar":
       return width + unit;
     case "header":
+      // An ST routine's body is indented like an action; an SFC routine starts at 0.
+      return lineKind(prev).word?.toLowerCase() === "st" ? unit : 0;
     case "tag":
       return 0;
     default:

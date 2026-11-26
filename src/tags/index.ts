@@ -1,2 +1,2 @@
-export { analyzeTags } from "./analyze.js";
-export { rewriteStepRefs } from "./rewrite.js";
+export { analyzeTags, type CallRef, type TagAnalysis } from "./analyze.js";
+export { rewriteCalls, rewriteStepRefs } from "./rewrite.js";

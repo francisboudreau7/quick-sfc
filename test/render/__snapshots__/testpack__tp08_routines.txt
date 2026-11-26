@@ -1,0 +1,13 @@
+╔═══════════╗ ◄ from T3
+║   idle    ║
+╚═════╤═════╝
+      ┼ start_btn
+┌─────┴─────┐
+│ fill  3s  │─[ valve [:=] 1; ]
+└─────┬─────┘
+      ┼ fill.DN
+┌─────┴─────┐
+│   count   │─[ call count_cycles; ]
+└─────┬─────┘
+      ┼ TRUE
+      → idle (T3)

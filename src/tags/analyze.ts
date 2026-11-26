@@ -2,7 +2,7 @@
  * Tag analysis (SPEC §7, §9.2 E400-E410, W302, W400-W404): scans every action and condition,
  * creates tags, infers their types and reports ST slips.
  */
-import { type Chart, type SourceText, type TagDecl, type TagType, key, walk } from "../model/ast.js";
+import { type Chart, type ProgramNode, type SourceText, type TagDecl, type TagType, key, walk } from "../model/ast.js";
 import { type Diagnostic, type Span, error, sortDiagnostics, warning } from "../model/diagnostics.js";
 import type { TagInfo } from "../model/graph.js";
 import { type LineIn, type Scan, type Tok, scan } from "./lexer.js";
@@ -13,7 +13,7 @@ const STEP_MEMBERS = [
 ];
 const MEMBER_BY_KEY = new Map(STEP_MEMBERS.map((m) => [m.toLowerCase(), m]));
 
-const QSFC_KEYWORDS = new Set(["sfc", "tag", "init", "step", "select", "parallel", "end"]);
+const QSFC_KEYWORDS = new Set(["program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end"]);
 const RESERVED_RE = /^(step|tran|action)_\d+$/i;
 const MAX_TAG_NAME = 40;
 
@@ -90,19 +90,53 @@ function closest(name: string, candidates: string[], max: number): string | unde
   return best;
 }
 
-export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagnostic[] } {
+/** A `call name;` statement or a `JSR(name, ...)` call found in the ST (SPEC §4.5). */
+export interface CallRef {
+  /** Called routine, as written. */
+  name: string;
+  span: Span;
+  via: "call" | "jsr";
+  /** Routine the call is written in (as written; "" for a header-less first routine). */
+  from: string;
+}
+
+export interface TagAnalysis {
+  tags: TagInfo[];
+  diagnostics: Diagnostic[];
+  /** Every routine call, in file order. Checked against the routines by src/validate. */
+  calls: CallRef[];
+}
+
+/**
+ * Analyzes the tags of a chart or of a whole program (every SFC routine and ST routine;
+ * one namespace, SPEC §3.4 and §4.5).
+ */
+export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
+  const program: ProgramNode =
+    "routines" in input ? input : { routines: [{ kind: "sfc", chart: input }], tagDecls: input.tagDecls };
+  const charts = program.routines.flatMap((r) => (r.kind === "sfc" ? [r.chart] : []));
   const diags: Diagnostic[] = [];
+  const calls: CallRef[] = [];
   const recs = new Map<string, Rec>();
   const parent = new Map<string, string>();
 
   // ---- namespaces -------------------------------------------------------------------------
   const stepsByKey = new Map<string, { name: string; presetMs?: number }>();
   const transKeys = new Set<string>();
-  for (const el of walk(chart.body)) {
-    if (el.kind === "step") {
-      if (!stepsByKey.has(key(el.name.text))) stepsByKey.set(key(el.name.text), { name: el.name.text, presetMs: el.presetMs });
-    } else if (el.kind === "transition") transKeys.add(key(el.name.text));
+  const routineKeys = new Set<string>();
+  for (const r of program.routines) {
+    const name = r.kind === "sfc" ? r.name?.text : r.name.text;
+    if (name) routineKeys.add(key(name));
   }
+  for (const chart of charts) {
+    for (const el of walk(chart.body)) {
+      if (el.kind === "step") {
+        if (!stepsByKey.has(key(el.name.text))) stepsByKey.set(key(el.name.text), { name: el.name.text, presetMs: el.presetMs });
+      } else if (el.kind === "transition") transKeys.add(key(el.name.text));
+    }
+  }
+  /** Routine the unit being analyzed belongs to. */
+  let currentRoutine = "";
 
   const getRec = (k: string): Rec => {
     let r = recs.get(k);
@@ -126,7 +160,7 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
 
   // ---- declarations -----------------------------------------------------------------------
   const declType = new Map<string, TagType>();
-  for (const d of chart.tagDecls) {
+  for (const d of program.tagDecls) {
     const k = key(d.name.text);
     const r = getRec(k);
     r.decls.push(d);
@@ -374,6 +408,13 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
       const idTok = this.toks[this.pos++] as Tok;
       if (this.isP(this.peek(), "(")) {
         this.pos++;
+        // JSR(routine, ...): the first argument is a routine, not a tag (SPEC §4.5)
+        const target = this.peek();
+        if (key(idTok.t) === "jsr" && target && target.k === "id" && !this.isP(this.toks[this.pos + 1], ".")) {
+          calls.push({ name: target.t, span: spanOf(target), via: "jsr", from: currentRoutine });
+          this.pos++;
+          if (this.isP(this.peek(), ",")) this.pos++;
+        }
         this.args();
         return { cls: "call", tags: [], real: false };
       }
@@ -562,7 +603,8 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
     }
   };
 
-  const processUnit = (lines: LineIn[], isCond: boolean, stepName?: string): void => {
+  /** `label`: what the W402 message names, e.g. "the action of `fill`". */
+  const processUnit = (lines: LineIn[], isCond: boolean, label = "the action"): void => {
     const sc = scan(lines);
     const toks = sc.toks;
     const mkParser = (ts: Tok[]): Parser => new Parser(ts, sc);
@@ -602,7 +644,7 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
     if (!isCond && toks.length) {
       const last = toks[toks.length - 1] as Tok;
       if (!(last.k === "p" && last.t === ";")) {
-        diags.push(warning("W402", spanOf(last), `the action of \`${stepName ?? "?"}\` doesn't end with \`;\``, "end the last statement with `;`"));
+        diags.push(warning("W402", spanOf(last), `${label} doesn't end with \`;\``, "end the last statement with `;`"));
       }
     }
 
@@ -615,6 +657,21 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
         if (ci >= 0 && (ai0 < 0 || ci < ai0)) ts = ts.slice(ci + 1);
       }
       if (!ts.length) continue;
+      // `call routine;` (SPEC §4.5)
+      const c0 = ts[0] as Tok;
+      if (c0.k === "id" && key(c0.t) === "call") {
+        const target = ts[1];
+        const end = ts[ts.length - 1] as Tok;
+        const whole = { line: c0.line, col: c0.col, endLine: end.line, endCol: end.end };
+        if (isCond) {
+          diags.push(error("E602", whole, "`call` is a statement: it can't be used in a condition", "call the routine from an action, or test its result in the condition"));
+        } else if (ts.length === 2 && target && target.k === "id") {
+          calls.push({ name: target.t, span: spanOf(target), via: "call", from: currentRoutine });
+        } else {
+          diags.push(error("E601", whole, "write `call routine_name;`", "one routine name after `call`, then `;`"));
+        }
+        continue;
+      }
       const ai = depth0(ts, isAssign);
       if (ai >= 0) {
         const opTok = ts[ai] as Tok;
@@ -653,11 +710,19 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
 
   const toLines = (st: SourceText): LineIn => ({ text: st.text, line: st.span.line, col: st.span.col });
 
-  for (const el of walk(chart.body)) {
-    if (el.kind === "step") {
-      if (el.action.length) processUnit(el.action.map(toLines), false, el.name.text);
-    } else if (el.kind === "transition") {
-      if (el.condition.text.length) processUnit([toLines(el.condition)], true);
+  for (const r of program.routines) {
+    if (r.kind === "st") {
+      currentRoutine = r.name.text;
+      if (r.body.length) processUnit(r.body.map(toLines), false, `routine \`${r.name.text}\``);
+      continue;
+    }
+    currentRoutine = r.name?.text ?? "";
+    for (const el of walk(r.chart.body)) {
+      if (el.kind === "step") {
+        if (el.action.length) processUnit(el.action.map(toLines), false, `the action of \`${el.name.text}\``);
+      } else if (el.kind === "transition") {
+        if (el.condition.text.length) processUnit([toLines(el.condition)], true);
+      }
     }
   }
 
@@ -738,7 +803,13 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
       flagged.add(r.key);
       diags.push(error("E405", firstOcc.span, `\`${canonical}\` is a reserved name (${RESERVED_RE.test(canonical) ? "used for generated operands" : "qSFC keyword"})`));
     }
-    if (firstOcc && (stepsByKey.has(r.key) || transKeys.has(r.key))) {
+    if (firstOcc && routineKeys.has(r.key) && !stepsByKey.has(r.key) && !transKeys.has(r.key)) {
+      flagged.add(r.key);
+      diags.push(
+        error("E410", firstOcc.span, `\`${canonical}\` is a routine, not a tag`,
+          r.decls.length ? "names are shared by routines, steps, transitions and tags: rename one" : `run it with \`call ${canonical};\``),
+      );
+    } else if (firstOcc && (stepsByKey.has(r.key) || transKeys.has(r.key))) {
       flagged.add(r.key);
       const what = stepsByKey.has(r.key) ? "step" : "transition";
       diags.push(error("E410", firstOcc.span, `\`${canonical}\` is both a ${what} and a tag`, "names are shared by steps, transitions and tags: rename one"));
@@ -817,5 +888,5 @@ export function analyzeTags(chart: Chart): { tags: TagInfo[]; diagnostics: Diagn
     const y = b.name.toLowerCase();
     return x < y ? -1 : x > y ? 1 : 0;
   });
-  return { tags: infos, diagnostics: sortDiagnostics(diags) };
+  return { tags: infos, diagnostics: sortDiagnostics(diags), calls };
 }

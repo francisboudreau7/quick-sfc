@@ -26,8 +26,15 @@ import {
   type FlowGraph,
 } from "./flow.js";
 
-export function validate(chart: Chart): Diagnostic[] {
-  const v = new Validator(chart);
+export { validateProgram } from "./program.js";
+
+export interface ValidateContext {
+  /** Routine of every step of the file, by step key, to explain jumps to another routine. */
+  stepRoutine?: Map<string, string>;
+}
+
+export function validate(chart: Chart, context: ValidateContext = {}): Diagnostic[] {
+  const v = new Validator(chart, context);
   try {
     v.run();
   } catch (e) {
@@ -59,7 +66,10 @@ class Validator {
   /** Steps that start a top-level chain. */
   private readonly heads: StepNode[] = [];
 
-  constructor(private readonly chart: Chart) {
+  constructor(
+    private readonly chart: Chart,
+    private readonly context: ValidateContext,
+  ) {
     this.info = collectInfo(chart);
   }
 
@@ -224,7 +234,9 @@ class Validator {
   private initialRules(): void {
     const steps = allSteps(this.chart);
     if (steps.length === 0) {
-      this.err("E200", { line: 1, col: 1 }, "the file has no steps", "start with  init name");
+      const h = this.chart.header;
+      if (h) this.err("E200", h.span, `SFC routine \`${h.text}\` has no steps`, "start it with  init name");
+      else this.err("E200", { line: 1, col: 1 }, "the file has no steps", "start with  init name");
       return;
     }
     const inits = steps.filter((s) => s.initial);
@@ -277,8 +289,13 @@ class Validator {
       const target = t.jump.text;
       const s = steps.get(key(target));
       if (!s) {
+        const elsewhere = this.context.stepRoutine?.get(key(target));
         if (transitions.has(key(target))) {
           this.err("E304", t.jump.span, `jump target \`${target}\` is a transition; jumps go to steps`);
+        } else if (elsewhere !== undefined) {
+          this.err("E303", t.jump.span,
+            `jump target \`${target}\` is in routine \`${elsewhere}\`; a jump can't leave its routine`,
+            `to run another routine, use \`call ${elsewhere};\` in an action`);
         } else {
           const near = closest(target, stepNames);
           this.err("E303", t.jump.span,

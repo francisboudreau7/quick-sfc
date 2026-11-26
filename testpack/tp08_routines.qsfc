@@ -1,0 +1,35 @@
+// tp08: several routines in one program (SPEC §4.5)
+program tp08_routines
+
+tag start_btn "Start push button"
+tag cycles : DINT "Finished cycles"
+
+st main
+  // main routine: Studio runs it every scan
+  call fill_seq;
+  JSR(mixer, 0);
+  call alarms;
+  busy_lamp := fill.X OR mix.X;
+
+sfc fill_seq
+init idle
+-- start_btn
+step fill 3s "Fill the tank"
+  valve [:=] 1;
+-- fill.DN
+step count
+  call count_cycles;
+-- TRUE -> idle
+
+sfc mixer
+init stopped
+-- fill.X
+step mix
+  mixer_on [:=] 1;
+-- NOT fill.X -> stopped
+
+st alarms
+  alarm := level_high AND NOT valve;
+
+st count_cycles
+  cycles := cycles + 1;

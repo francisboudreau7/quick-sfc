@@ -86,7 +86,11 @@ describe("parse: lines", () => {
   });
 
   it("an empty file gives an empty chart", () => {
-    expect(parse("")).toEqual({ chart: { tagDecls: [], body: [] }, diagnostics: [] });
+    expect(parse("")).toEqual({
+      program: { routines: [], tagDecls: [] },
+      chart: { tagDecls: [], body: [] },
+      diagnostics: [],
+    });
   });
 });
 
@@ -295,14 +299,20 @@ describe("parse: header and tags (SPEC §4.1, §7.4)", () => {
     expect(parse(src("// c", "", "sfc ok", "init a")).diagnostics).toEqual([]);
   });
 
-  it("E210: header not first, or twice", () => {
-    const d = only(src("init a", "sfc late"), "E210");
-    expect(d).toHaveLength(1);
-    expect(parse(src("init a", "sfc late")).chart.header?.text).toBe("late");
-    const twice = parse(src("sfc one", "sfc two", "init a"));
-    expect(codes(twice.diagnostics)).toEqual(["E210"]);
-    expect(twice.chart.header?.text).toBe("one");
-    expect(only(src("tag x", "sfc late"), "E210")).toHaveLength(1);
+  it("a later `sfc` header starts a second routine (SPEC §4.5)", () => {
+    const { program, chart, diagnostics } = parse(src("init a", "-- x", "sfc late", "init b"));
+    expect(diagnostics).toEqual([]);
+    expect(program.routines.map((r) => [r.kind, r.name?.text])).toEqual([["sfc", undefined], ["sfc", "late"]]);
+    expect(chart.header).toBeUndefined();
+    expect(allSteps(chart).map((s) => s.name.text)).toEqual(["a"]);
+  });
+
+  it("E210: `program` after a routine, or twice", () => {
+    expect(only(src("init a", "program late"), "E210")).toHaveLength(1);
+    expect(only(src("program one", "program two", "init a"), "E210")).toHaveLength(1);
+    const ok = parse(src("// c", "tag x : DINT", "program p", "sfc s", "init a"));
+    expect(ok.diagnostics).toEqual([]);
+    expect(ok.program.header?.text).toBe("p");
   });
 
   it("header name checks and extra text", () => {
@@ -479,7 +489,7 @@ describe("parse: recovery", () => {
       'step good "unclosed',
       "sfc late",
     ));
-    expect(codes(diagnostics)).toEqual(["E209", "E101", "E104", "E219", "E105", "E204", "E205", "E106", "E210"]);
+    expect(codes(diagnostics)).toEqual(["E209", "E101", "E104", "E219", "E105", "E204", "E205", "E106"]);
     expect(allSteps(chart).map((s) => s.name.text)).toEqual(["2bad", "ok", "good"]);
   });
 

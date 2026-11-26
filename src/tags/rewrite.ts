@@ -8,6 +8,29 @@ const ID_RE = /[A-Za-z_][A-Za-z0-9_]*/y;
  * skips ST strings and comments; every other byte is copied unchanged.
  */
 export function rewriteStepRefs(text: string, operandByStepKey: Map<string, string>): string {
+  return mapIdentifiers(text, (word, i, j) => {
+    const operand = operandByStepKey.get(key(word));
+    return operand !== undefined && !precededByDot(text, i) && followedByMember(text, j) ? { text: operand, next: j } : undefined;
+  });
+}
+
+/**
+ * Rewrites the `call name` statement to Studio's `JSR(name,0)` (SPEC §4.5); the `;` and
+ * everything else is copied unchanged. Skips ST strings and comments.
+ */
+export function rewriteCalls(text: string): string {
+  return mapIdentifiers(text, (word, i, j) => {
+    if (key(word) !== "call" || precededByDot(text, i)) return undefined;
+    const m = /^[ \t]+([A-Za-z_][A-Za-z0-9_]*)/.exec(text.slice(j));
+    if (!m) return undefined;
+    return { text: `JSR(${m[1]},0)`, next: j + m[0].length };
+  });
+}
+
+type Replace = (word: string, start: number, end: number) => { text: string; next: number } | undefined;
+
+/** Walks the ST, calling `replace` on every identifier outside strings, comments and literals. */
+function mapIdentifiers(text: string, replace: Replace): string {
   const n = text.length;
   let out = "";
   let i = 0;
@@ -69,9 +92,9 @@ export function rewriteStepRefs(text: string, operandByStepKey: Map<string, stri
         i = k;
         continue;
       }
-      const operand = operandByStepKey.get(key(word));
-      out += operand !== undefined && !precededByDot(text, i) && followedByMember(text, j) ? operand : word;
-      i = j;
+      const r = replace(word, i, j);
+      out += r ? r.text : word;
+      i = r ? r.next : j;
       continue;
     }
     out += c;

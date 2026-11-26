@@ -30,7 +30,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <section>
 <h2>Elements</h2>
 <table>
-<tr><td><code><span class="k">sfc</span> name</code></td><td>optional header: routine name</td></tr>
+<tr><td><code><span class="k">sfc</span> name</code></td><td>header: starts an SFC routine (optional for the first one)</td></tr>
 <tr><td><code><span class="k">init</span> name</code></td><td>initial step (exactly one)</td></tr>
 <tr><td><code><span class="k">step</span> name 5s <span class="s">"desc"</span></code></td><td>step; preset and description optional</td></tr>
 <tr><td><code>  valve [:=] 1;</code></td><td>action: ST lines under the step (N)</td></tr>
@@ -87,6 +87,24 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 </section>
 
 <section>
+<h2>Several routines</h2>
+<pre><span class="k">program</span> tank          <span class="c">// optional, before the routines</span>
+<span class="k">st</span> main               <span class="c">// first routine = main</span>
+  <span class="k">call</span> fill_seq;      <span class="c">// exported as JSR(fill_seq,0);</span>
+  <span class="k">call</span> alarms;
+<span class="k">sfc</span> fill_seq
+<span class="k">init</span> idle
+<span class="k">--</span> start_btn
+<span class="k">step</span> fill 5s
+<span class="k">--</span> fill.DN <span class="k">-&gt;</span> idle
+<span class="k">st</span> alarms
+  alarm := level_high AND NOT valve;</pre>
+<ul>
+<li>A routine runs to the next <code>sfc</code>/<code>st</code> line. Tags and names are shared by the whole file.</li>
+<li><code>call</code> works in ST routines and in actions, not in conditions. <code>JSR(name, 0);</code> works too.</li>
+<li>Jumps stay inside their SFC routine; read another routine's step with <code>fill.X</code>.</li>
+</ul>
+
 <h2>Rules to remember</h2>
 <ul>
 <li>Steps and transitions alternate. A <code>select</code> block counts as a transition, a <code>parallel</code> block as a step.</li>

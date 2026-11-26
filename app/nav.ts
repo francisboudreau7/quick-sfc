@@ -5,6 +5,7 @@
  */
 import type { Span } from "../src/model/diagnostics.js";
 import type { Graph } from "../src/model/graph.js";
+import { tokenizeLine, type Token } from "./highlight.js";
 
 /**
  * The `data-id` of the diagram element written on `line` (1-based): a step line or one of
@@ -81,4 +82,51 @@ export function spanToRange(span: Span, line: (n: number) => LineText | undefine
   if (m) return { from, to: from + m[0].length };
   if (len === 0) return { from: ln.from, to: ln.from };
   return { from: ln.from + len - 1, to: ln.from + len };
+}
+
+/** A name the cursor can jump to the definition of (Ctrl+click / F12). */
+export interface Reference {
+  kind: "routine" | "step";
+  name: string;
+  /** 0-based offsets of the name in the line. */
+  from: number;
+  to: number;
+}
+
+/**
+ * The reference at `pos` (0-based offset in `line`, a cursor or a clicked character):
+ * a routine name in `call name` or as the first argument of `JSR(name`, or a jump
+ * target after `->`. Undefined elsewhere.
+ */
+export function referenceAt(line: string, pos: number): Reference | undefined {
+  const toks = tokenizeLine(line);
+  const i = toks.findIndex((t) => t.from <= pos && pos <= t.to && (t.kind === "ident" || t.kind === "target"));
+  const t = toks[i];
+  if (!t) return undefined;
+  const name = line.slice(t.from, t.to);
+  if (t.kind === "target") return { kind: "step", name, from: t.from, to: t.to };
+  const p1 = toks[i - 1];
+  const p2 = toks[i - 2];
+  const text = (x: Token | undefined): string => (x ? line.slice(x.from, x.to).toLowerCase() : "");
+  if (p1?.kind === "kw" && text(p1) === "call") return { kind: "routine", name, from: t.from, to: t.to };
+  if (p1?.kind === "punct" && text(p1) === "(" && p2?.kind === "func" && text(p2) === "jsr") return { kind: "routine", name, from: t.from, to: t.to };
+  return undefined;
+}
+
+export interface Definitions {
+  routines: ReadonlyArray<{ name: string; line: number }>;
+  steps: ReadonlyArray<{ name: string; line: number; col: number }>;
+}
+
+/** Where the reference at `pos` is defined: a routine's header line or a step's name. */
+export function definitionAt(line: string, pos: number, defs: Definitions): { line: number; col: number } | undefined {
+  const ref = referenceAt(line, pos);
+  if (!ref) return undefined;
+  const k = ref.name.toLowerCase();
+  if (ref.kind === "routine") {
+    const r = defs.routines.find((x) => x.name.toLowerCase() === k);
+    return r && { line: r.line, col: 1 };
+  }
+  const s = defs.steps.find((x) => x.name.toLowerCase() === k);
+  return s && { line: s.line, col: s.col };
 }

@@ -1,0 +1,49 @@
+== st main (main) ==
+calls: fill_seq, mixer, alarms
+
+  // main routine: Studio runs it every scan
+  call fill_seq;
+  JSR(mixer, 0);
+  call alarms;
+  busy_lamp := fill.X OR mix.X;
+
+== sfc fill_seq ==
+called by: main
+calls: count_cycles
+
+╔═══════════╗ ◄ from T3
+║   idle    ║
+╚═════╤═════╝
+      ┼ start_btn
+┌─────┴─────┐
+│ fill  3s  │─[ valve [:=] 1; ]
+└─────┬─────┘
+      ┼ fill.DN
+┌─────┴─────┐
+│   count   │─[ call count_cycles; ]
+└─────┬─────┘
+      ┼ TRUE
+      → idle (T3)
+
+== sfc mixer ==
+called by: main
+
+╔═════════╗ ◄ from T5
+║ stopped ║
+╚════╤════╝
+     ┼ fill.X
+┌────┴────┐
+│   mix   │─[ mixer_on [:=] 1; ]
+└────┬────┘
+     ┼ NOT fill.X
+     → stopped (T5)
+
+== st alarms ==
+called by: main
+
+  alarm := level_high AND NOT valve;
+
+== st count_cycles ==
+called by: fill_seq
+
+  cycles := cycles + 1;

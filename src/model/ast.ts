@@ -92,6 +92,41 @@ export interface Chart {
   body: Sequence;
 }
 
+/** An SFC routine (SPEC §4.5): `sfc name`, or the steps at the top of a file without a header. */
+export interface SfcRoutineNode {
+  kind: "sfc";
+  /** Same object as `chart.header`; absent for a header-less first routine (named after the file). */
+  name?: Name;
+  chart: Chart;
+  /** Span of the header line (absent for a header-less first routine). */
+  span?: Span;
+}
+
+/** An ST routine (SPEC §4.5): `st name` and its body. */
+export interface StRoutineNode {
+  kind: "st";
+  name: Name;
+  /** Body lines after dedent, like an action (SPEC §4.3). Empty array = empty routine. */
+  body: SourceText[];
+  span: Span;
+}
+
+export type RoutineNode = SfcRoutineNode | StRoutineNode;
+
+/** A whole file: one Program (SPEC §4.5). */
+export interface ProgramNode {
+  /** `program name` line. */
+  header?: Name;
+  /** File order. The first one is the main routine. */
+  routines: RoutineNode[];
+  /** Every `tag` line of the file (also copied into each chart's `tagDecls`). */
+  tagDecls: TagDecl[];
+}
+
+export function sfcCharts(program: ProgramNode): Chart[] {
+  return program.routines.flatMap((r) => (r.kind === "sfc" ? [r.chart] : []));
+}
+
 /** Walk every element depth-first in file order. */
 export function* walk(seq: Sequence): Generator<Element> {
   for (const el of seq) {

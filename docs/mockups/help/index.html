@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help view mockup</title>
+<style>
+:root { --bg:#e9ecf0; --surface:#fff; --s2:#f5f7f9; --line:#d5dae0; --fg:#1d2228; --muted:#59626e; --accent:#1a5fb4;
+  --syn-kw:#8250df; --syn-comment:#6e7781; --syn-str:#0a3069; --syn-num:#0a6f7a; --syn-def:#953800; --syn-type:#116329; }
+* { box-sizing:border-box; }
+body { margin:0; padding:16px; font:14px/1.45 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+h1 { font-size:18px; margin:0 0 4px; } .lead0 { color:var(--muted); margin:0 0 14px; max-width:980px; }
+.choices { background:#fff8e6; border:1px solid #e3c770; border-radius:8px; padding:10px 14px 10px 30px; max-width:1100px; margin:0 0 18px; }
+.choices li { margin:3px 0; }
+h2.part { font-size:15px; margin:22px 0 8px; }
+.view { background:var(--surface); border:1px solid #b9c0c8; border-radius:10px; box-shadow:0 8px 24px rgba(16,24,40,.12); max-width:1180px; overflow:hidden; }
+.chrome { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--s2); flex-wrap:wrap; }
+.tabs { display:flex; gap:2px; background:#e4e8ec; border-radius:7px; padding:2px; }
+.tabs button { border:0; background:transparent; padding:4px 12px; border-radius:5px; }
+.tabs button.on { background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.12); font-weight:600; }
+.sp { flex:1; }
+button { font:inherit; font-size:13px; border-radius:6px; padding:4px 10px; border:1px solid #b9c0c8; background:#fff; cursor:pointer; }
+button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.back { border:0; background:transparent; color:var(--accent); }
+.cols { display:grid; grid-template-columns:230px 1fr; min-height:520px; }
+.toc { border-right:1px solid var(--line); padding:12px; background:var(--s2); font-size:13.5px; }
+.toc-h { font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:10px 0 4px; }
+.toc ol, .toc ul { list-style:none; margin:0; padding:0; } .toc li { padding:4px 8px; border-radius:6px; }
+.toc li.on { background:#dbe7f7; color:#0b3d7a; font-weight:600; } .toc .n { display:inline-block; width:20px; color:var(--muted); }
+.search { width:100%; font:inherit; padding:5px 8px; border:1px solid var(--line); border-radius:6px; }
+.page { padding:16px 22px 22px; min-width:0; }
+.page h2 { margin:2px 0 4px; font-size:21px; } .page h3 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:18px 0 6px; }
+.crumb { color:var(--muted); font-size:12.5px; } .lead { margin:0 0 12px; font-size:15px; }
+code { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; background:var(--s2); padding:1px 4px; border-radius:3px; }
+pre.code { margin:0; font:12.5px/1.5 ui-monospace,Consolas,monospace; white-space:pre; background:var(--s2); padding:8px 10px; border-radius:6px; overflow-x:auto; }
+.ip-k { color:var(--syn-kw); font-weight:600; } .ip-c { color:var(--syn-comment); font-style:italic; } .ip-s { color:var(--syn-str); }
+.ip-n { color:var(--syn-num); } .ip-d { color:var(--syn-def); font-weight:600; } .ip-t, .ip-a { color:var(--syn-type); }
+.pg { border:1px solid var(--line); border-radius:8px; overflow:hidden; margin:8px 0; }
+.pg-bar { display:flex; align-items:center; gap:8px; padding:6px 10px; background:var(--s2); border-bottom:1px solid var(--line); }
+.pg-title { font-weight:600; font-size:12.5px; } .pg-note { color:var(--muted); font-size:12.5px; }
+.pg-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.pg-code { padding:8px; border-right:1px solid var(--line); outline:none; } .pg-code pre.code { background:transparent; padding:2px; }
+.pg-dia { padding:8px; background-image:radial-gradient(#d9dde3 1px, transparent 1px); background-size:12px 12px; overflow:auto; max-height:420px; }
+.pg-dia svg { max-width:100%; height:auto; }
+.pg-problems { list-style:none; margin:0; padding:5px 10px; border-top:1px solid var(--line); font-size:12.5px; }
+.pg-problems .ok::before { content:"✓ "; color:#1a7f37; } .pg-problems .error { color:#b42318; } .pg-problems .warning { color:#8a5c00; }
+.mini { display:grid; gap:4px; margin:10px 0; } .mini div { display:grid; grid-template-columns:150px 1fr; gap:10px; align-items:baseline; font-size:13.5px; }
+.try { background:#f2f7ff; border:1px solid #c9dcf5; border-radius:8px; padding:4px 14px 10px; margin-top:14px; }
+.try h3 { color:#0b3d7a; } .try ol { margin:0; padding-left:20px; } .try li { margin:6px 0; }
+.sol { font-size:12px; padding:2px 8px; margin-left:6px; } .try pre.code { margin-top:6px; background:#fff; }
+.pager { display:flex; justify-content:space-between; margin-top:18px; color:var(--accent); } .pager a:first-child { visibility:hidden; }
+.rules { margin:0; padding-left:18px; } .rules li { margin:3px 0; }
+table.codes { border-collapse:collapse; font-size:13.5px; } table.codes td { padding:3px 14px 3px 0; border-bottom:1px solid var(--line); }
+table.codes a, .also a { color:var(--accent); }
+.cheat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(330px, 1fr)); gap:4px 22px; }
+.cheat section h3 { margin:10px 0 4px; border-bottom:1px solid var(--line); padding-bottom:3px; }
+.cheat table { border-collapse:collapse; width:100%; } .cheat td { padding:3px 8px 3px 0; vertical-align:top; font-size:13px; }
+.cheat td:first-child { width:55%; } .cheat pre.code { padding:3px 6px; }
+.muted { color:var(--muted); font-size:12.5px; }
+@media (max-width: 820px) { .cols { grid-template-columns:1fr; } .toc { border-right:0; border-bottom:1px solid var(--line); } .pg-body { grid-template-columns:1fr; } .pg-code { border-right:0; border-bottom:1px solid var(--line); } .mini div { grid-template-columns:1fr; } }
+</style></head><body>
+<h1>Help view (mockup)</h1>
+<p class="lead0">Help → <b>Learning qSFC</b> / <b>Reference</b> / <b>Cheat sheet</b> open one view over the editor, with three tabs. Real diagrams and highlighting; the playground here is not live (in the app it is: edit the code, the diagram and the problems follow).</p>
+<ol class="choices">
+  <li><b>One Help view, three tabs.</b> F1 opens it on the cheat sheet; Esc or "Back to the editor" closes it and keeps your place. "Print / open as a page" gives the standalone page (printing, sharing).</li>
+  <li><b>Learning: 10 short lessons</b> (list on the left), each = one or two sentences, a playground, a three-line summary, "Try this" with solutions. No product names; IEC SFC words (step, transition, action, qualifier).</li>
+  <li><b>Playground:</b> the app's editor (highlighting, completion) and diagram (the look chosen in View), problems under it. Reset restores the example; "Open in the editor" copies it to a new, unsaved file. Edits are never saved. A Run button joins after Phase 4e.</li>
+  <li><b>Reference: one entry per feature</b>, always the same order: syntax → playground → rules (≤ 5 bullets) → problems you may see (each with a one-click example) → see also. Search on top. A "Problems" page lists every code with an example that triggers it.</li>
+  <li><b>Export and import</b> (the PLC file format) stay out of Learning; the Reference gets one short "Export and import" entry under Program, and the File-menu dialogs keep their own text.</li>
+  <li><b>Cheat sheet reordered</b> in the order you write a chart (6 numbered blocks, one printed page); "Rules to remember" moves to Learning, "In the app" to a Reference entry.</li>
+</ol>
+
+<h2 class="part">A · Learning qSFC (lesson 3)</h2>
+
+<div class="view">
+  <div class="chrome"><button class="back">← Back to the editor</button>
+    <div class="tabs"><button class="on">Learning</button><button class="">Reference</button><button class="">Cheat sheet</button></div>
+    <span class="sp"></span><button class="print">Print / open as a page</button></div>
+  <div class="cols">
+    <nav class="toc"><div class="toc-h">Learning qSFC</div><ol><li><span class="n">1</span>Steps and transitions</li><li><span class="n">2</span>Actions: driving outputs</li><li class="on"><span class="n">3</span>Time</li><li><span class="n">4</span>Choosing a path (select)</li><li><span class="n">5</span>Doing two things at once (parallel)</li><li><span class="n">6</span>Jumps and loops</li><li><span class="n">7</span>Tags, types and I/O</li><li><span class="n">8</span>Action qualifiers</li><li><span class="n">9</span>Several routines</li><li><span class="n">10</span>Reading the problems</li></ol></nav>
+    <main class="page">
+      <div class="crumb">Lesson 3 of 10</div>
+      <h2>Time</h2>
+      <p class="lead">Every step has its own timer. Give it a preset; <code>.done</code> turns on when it runs out.</p>
+      
+<div class="pg">
+  <div class="pg-bar"><span class="pg-title">Playground</span>
+    <span class="sp"></span><button>Reset</button><button class="primary">Open in the editor</button></div>
+  <div class="pg-body">
+    <div class="pg-code" contenteditable="true" spellcheck="false"><pre class="code"><span class="ip-k">init</span> <span class="ip-d">idle</span>
+<span class="ip-k">--</span> start_btn
+<span class="ip-k">step</span> <span class="ip-d">fill</span> <span class="ip-n">5s</span>
+  <span class="ip-k">on</span> valve
+<span class="ip-k">--</span> fill.done
+<span class="ip-k">step</span> <span class="ip-d">drain</span>
+  <span class="ip-k">on</span> drain_valve
+<span class="ip-k">--</span> <span class="ip-k">after</span> <span class="ip-n">3s</span> <span class="ip-k">-&gt;</span> <span class="ip-d">idle</span></pre></div>
+    <div class="pg-dia"><svg xmlns="http://www.w3.org/2000/svg" class="qsfc qsfc-look-textbook" viewBox="-16 -16 280 344" width="280" height="344" role="img">
+<style>.qsfc-look-textbook{--qsfc-bg:#ffffff;--qsfc-line:#111111;--qsfc-box-fill:#ffffff;--qsfc-box-stroke:#111111;--qsfc-name:#111111;--qsfc-caption:#444444;--qsfc-code:#111111;--qsfc-head-fill:#ffffff;--qsfc-head-text:#111111;--qsfc-tname-fill:#ffffff;--qsfc-tname-stroke:#111111;--qsfc-tname:#333333;--qsfc-trans-bar:#111111;--qsfc-label:#333333;}@media (prefers-color-scheme: dark){.qsfc-look-textbook:not(.qsfc-light *){--qsfc-bg:#141414;--qsfc-line:#e6e6e6;--qsfc-box-fill:#141414;--qsfc-box-stroke:#e6e6e6;--qsfc-name:#f2f2f2;--qsfc-caption:#bbbbbb;--qsfc-code:#eeeeee;--qsfc-head-fill:#141414;--qsfc-head-text:#eeeeee;--qsfc-tname-fill:#141414;--qsfc-tname-stroke:#e6e6e6;--qsfc-tname:#cccccc;--qsfc-trans-bar:#eeeeee;--qsfc-label:#cccccc;}}.qsfc-dark .qsfc-look-textbook{--qsfc-bg:#141414;--qsfc-line:#e6e6e6;--qsfc-box-fill:#141414;--qsfc-box-stroke:#e6e6e6;--qsfc-name:#f2f2f2;--qsfc-caption:#bbbbbb;--qsfc-code:#eeeeee;--qsfc-head-fill:#141414;--qsfc-head-text:#eeeeee;--qsfc-tname-fill:#141414;--qsfc-tname-stroke:#e6e6e6;--qsfc-tname:#cccccc;--qsfc-trans-bar:#eeeeee;--qsfc-label:#cccccc;}.qsfc-look-textbook .qsfc-bg{fill:var(--qsfc-bg)}.qsfc-look-textbook text{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;fill:var(--qsfc-name)}.qsfc-look-textbook .qsfc-wire,.qsfc-look-textbook .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-linejoin:miter}.qsfc-look-textbook g.qsfc-wire{stroke:none}.qsfc-look-textbook .qsfc-arrow{fill:var(--qsfc-line);stroke:none}.qsfc-look-textbook .qsfc-xref .qsfc-wire-line,.qsfc-look-textbook .qsfc-xref-in .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-dasharray:4 3}.qsfc-look-textbook .qsfc-bar{fill:none;stroke:var(--qsfc-line);stroke-width:1.6}.qsfc-look-textbook .qsfc-step-box,.qsfc-look-textbook .qsfc-step-inner{fill:var(--qsfc-box-fill);stroke:var(--qsfc-box-stroke);stroke-width:1.5}.qsfc-look-textbook .qsfc-step-inner{fill:none}.qsfc-look-textbook .qsfc-name{font-size:13px;font-weight:400;fill:var(--qsfc-name)}.qsfc-look-textbook .qsfc-caption{font-size:9.5px;fill:var(--qsfc-caption)}.qsfc-look-textbook .qsfc-side-name{font-size:10.5px;font-style:italic;fill:var(--qsfc-label)}.qsfc-look-textbook .qsfc-code{font-family:ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;font-size:11px;white-space:pre;fill:var(--qsfc-code)}.qsfc-look-textbook .qsfc-action-box{fill:var(--qsfc-box-fill);stroke:var(--qsfc-box-stroke);stroke-width:1.1}.qsfc-look-textbook .qsfc-action-head{fill:var(--qsfc-head-fill);stroke:none}.qsfc-look-textbook .qsfc-action-sep,.qsfc-look-textbook .qsfc-action-link,.qsfc-look-textbook .qsfc-tname-link{fill:none;stroke:var(--qsfc-box-stroke);stroke-width:1.1}.qsfc-look-textbook .qsfc-qualifier{font-size:10.5px;font-weight:700;fill:var(--qsfc-head-text)}.qsfc-look-textbook .qsfc-action-name{font-size:10px;fill:var(--qsfc-head-text)}.qsfc-look-textbook .qsfc-trans-bar{fill:var(--qsfc-trans-bar)}.qsfc-look-textbook .qsfc-tname-box{fill:var(--qsfc-tname-fill);stroke:var(--qsfc-tname-stroke);stroke-width:1}.qsfc-look-textbook .qsfc-tname{font-size:10.5px;font-weight:400;font-style:italic;fill:var(--qsfc-tname)}.qsfc-look-textbook .qsfc-jump-label,.qsfc-look-textbook .qsfc-xref-from{font-size:10.5px;font-style:italic;fill:var(--qsfc-label)}</style>
+<rect class="qsfc-bg" x="-16" y="-16" width="280" height="344"/>
+<g class="qsfc-wires"><path class="qsfc-wire qsfc-link" data-id="s0-t0" d="M45 62V89"/><path class="qsfc-wire qsfc-link" data-id="t0-s1" d="M45 89V116"/><path class="qsfc-wire qsfc-link" data-id="s1-t1" d="M45 160V187"/><path class="qsfc-wire qsfc-link" data-id="t1-s2" d="M45 187V214"/><path class="qsfc-wire qsfc-link" data-id="s2-t2" d="M45 258V285"/><g class="qsfc-wire qsfc-jump" data-id="t2-s0"><title>jump to idle</title><path class="qsfc-wire-line" d="M45 285V303H0V9H45V11"/><path class="qsfc-arrow" d="M45 18L41 10L49 10Z"/></g></g>
+<g class="qsfc-branches"></g>
+<g class="qsfc-transitions"><g class="qsfc-transition qsfc-auto" data-id="t0"><title>start_btn</title><rect class="qsfc-trans-bar" x="33" y="87" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="66" y="92.8">start_btn</text></g><g class="qsfc-transition qsfc-auto" data-id="t1"><title>fill.done</title><rect class="qsfc-trans-bar" x="33" y="185" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="66" y="190.8">fill.done</text></g><g class="qsfc-transition qsfc-auto" data-id="t2"><title>after 3s</title><rect class="qsfc-trans-bar" x="33" y="283" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="66" y="288.8">after 3s</text></g></g>
+<g class="qsfc-steps"><g class="qsfc-step qsfc-initial" data-id="s0"><title>idle — initial step (Step_000)</title><rect class="qsfc-step-box" x="23" y="18" width="44" height="44"/><rect class="qsfc-step-inner" x="27" y="22" width="36" height="36"/><text class="qsfc-name" x="45" y="44.7" text-anchor="middle">idle</text></g><g class="qsfc-step" data-id="s1"><title>fill — preset 5s (Step_001)</title><rect class="qsfc-step-box" x="23" y="116" width="44" height="44"/><text class="qsfc-name" x="45" y="139" text-anchor="middle">fill</text><text class="qsfc-caption" x="45" y="152" text-anchor="middle">5s</text><path class="qsfc-action-link" d="M67 138H85"/><g class="qsfc-action"><title>valve [:=] 1;</title><rect class="qsfc-action-box" x="85" y="116" width="122" height="44"/><path class="qsfc-action-sep" d="M105 116V160"/><text class="qsfc-qualifier" x="95" y="142" text-anchor="middle">N</text><text class="qsfc-code" x="112" y="141.5">valve [:=] 1;</text></g></g><g class="qsfc-step" data-id="s2"><title>drain (Step_002)</title><rect class="qsfc-step-box" x="22" y="214" width="46" height="44"/><text class="qsfc-name" x="45" y="240.7" text-anchor="middle">drain</text><path class="qsfc-action-link" d="M68 236H86"/><g class="qsfc-action"><title>drain_valve [:=] 1;</title><rect class="qsfc-action-box" x="86" y="214" width="162" height="44"/><path class="qsfc-action-sep" d="M106 214V258"/><text class="qsfc-qualifier" x="96" y="240" text-anchor="middle">N</text><text class="qsfc-code" x="113" y="239.5">drain_valve [:=] 1;</text></g></g></g>
+</svg>
+</div>
+  </div>
+  <ul class="pg-problems"><li class="ok">No problems</li></ul>
+</div>
+      <div class="mini">
+        <div><code>step fill 5s</code><span>preset: 5 s (units ms s m h, <code>1m30s</code>)</span></div>
+        <div><code>fill.done</code><span>the preset has elapsed (also <code>fill.time</code>: ms active)</span></div>
+        <div><code>-- after 3s</code><span>the step above has been active 3 s, no preset needed</span></div>
+      </div>
+      <div class="try">
+        <h3>Try this</h3>
+        <ol>
+          <li>Make filling last 2 minutes. <button class="sol">Show a solution</button></li>
+          <li>Stop filling early when <code>level_high</code> is on. <button class="sol open">Hide the solution</button>
+            <pre class="code"><span class="ip-k">--</span> fill.done <span class="ip-k">OR</span> level_high</pre></li>
+          <li>Light <code>busy_lamp</code> while filling or draining.</li>
+        </ol>
+      </div>
+      <div class="pager"><a>← Choosing a path</a><a class="next">Choosing a path (select) →</a></div>
+    </main>
+  </div>
+</div>
+<h2 class="part">B · Reference (the select entry)</h2>
+
+<div class="view">
+  <div class="chrome"><button class="back">← Back to the editor</button>
+    <div class="tabs"><button class="">Learning</button><button class="on">Reference</button><button class="">Cheat sheet</button></div>
+    <span class="sp"></span><button class="print">Print / open as a page</button></div>
+  <div class="cols">
+    <nav class="toc"><input class="search" placeholder="Search the reference"/><div class="toc-h">Basics</div><ul><li>Files and lines</li><li>Names</li><li>Comments</li><li>Durations</li></ul><div class="toc-h">Chart</div><ul><li>Steps</li><li>Transitions</li><li>Conditions</li><li>after</li><li>Jumps</li><li>Chains</li><li>End of a chart</li></ul><div class="toc-h">Branches</div><ul><li class="on">select</li><li>parallel</li><li>Nesting</li><li>Merging legs</li></ul><div class="toc-h">Actions</div><ul><li>ST actions</li><li>on, set, reset</li><li>Qualifiers N S R L D P</li></ul><div class="toc-h">Tags</div><ul><li>Automatic tags and types</li><li>tag lines and values</li><li>Step members</li><li>io block</li><li>controller block</li></ul><div class="toc-h">Program</div><ul><li>program, course, author</li><li>Routines</li><li>call</li><li>SFR and SFP</li><li>uses</li><li>Elements of other routines</li></ul><div class="toc-h">Problems</div><ul><li>Every message, by code</li></ul></nav>
+    <main class="page">
+      <div class="crumb">Reference · Branches</div>
+      <h2><code>select</code> — one leg runs</h2>
+      <pre class="code"><span class="ip-k">select</span>
+  <span class="ip-k">--</span> condition
+  ...
+<span class="ip-k">|</span>
+  <span class="ip-k">--</span> condition
+  ...
+<span class="ip-k">end</span></pre>
+      
+<div class="pg">
+  <div class="pg-bar"><span class="pg-title">Playground</span>
+    <span class="sp"></span><button>Reset</button><button class="primary">Open in the editor</button></div>
+  <div class="pg-body">
+    <div class="pg-code" contenteditable="true" spellcheck="false"><pre class="code"><span class="ip-k">init</span> <span class="ip-d">wait</span>
+<span class="ip-k">--</span> part_present
+<span class="ip-k">step</span> <span class="ip-d">measure</span> <span class="ip-n">1s</span>
+<span class="ip-k">select</span>
+  <span class="ip-k">--</span> measure.done <span class="ip-k">AND</span> size_big
+  <span class="ip-k">step</span> <span class="ip-d">push_big</span>
+    <span class="ip-k">on</span> pusher_big
+  <span class="ip-k">--</span> big_out <span class="ip-k">-&gt;</span> <span class="ip-d">wait</span>
+<span class="ip-k">|</span>
+  <span class="ip-k">--</span> measure.done <span class="ip-k">AND</span> <span class="ip-k">NOT</span> size_big
+  <span class="ip-k">step</span> <span class="ip-d">push_small</span>
+    <span class="ip-k">on</span> pusher_small
+  <span class="ip-k">--</span> small_out <span class="ip-k">-&gt;</span> <span class="ip-d">wait</span>
+<span class="ip-k">end</span></pre></div>
+    <div class="pg-dia"><svg xmlns="http://www.w3.org/2000/svg" class="qsfc qsfc-look-textbook" viewBox="-16 -16 621 389" width="621" height="389" role="img">
+<style>.qsfc-look-textbook{--qsfc-bg:#ffffff;--qsfc-line:#111111;--qsfc-box-fill:#ffffff;--qsfc-box-stroke:#111111;--qsfc-name:#111111;--qsfc-caption:#444444;--qsfc-code:#111111;--qsfc-head-fill:#ffffff;--qsfc-head-text:#111111;--qsfc-tname-fill:#ffffff;--qsfc-tname-stroke:#111111;--qsfc-tname:#333333;--qsfc-trans-bar:#111111;--qsfc-label:#333333;}@media (prefers-color-scheme: dark){.qsfc-look-textbook:not(.qsfc-light *){--qsfc-bg:#141414;--qsfc-line:#e6e6e6;--qsfc-box-fill:#141414;--qsfc-box-stroke:#e6e6e6;--qsfc-name:#f2f2f2;--qsfc-caption:#bbbbbb;--qsfc-code:#eeeeee;--qsfc-head-fill:#141414;--qsfc-head-text:#eeeeee;--qsfc-tname-fill:#141414;--qsfc-tname-stroke:#e6e6e6;--qsfc-tname:#cccccc;--qsfc-trans-bar:#eeeeee;--qsfc-label:#cccccc;}}.qsfc-dark .qsfc-look-textbook{--qsfc-bg:#141414;--qsfc-line:#e6e6e6;--qsfc-box-fill:#141414;--qsfc-box-stroke:#e6e6e6;--qsfc-name:#f2f2f2;--qsfc-caption:#bbbbbb;--qsfc-code:#eeeeee;--qsfc-head-fill:#141414;--qsfc-head-text:#eeeeee;--qsfc-tname-fill:#141414;--qsfc-tname-stroke:#e6e6e6;--qsfc-tname:#cccccc;--qsfc-trans-bar:#eeeeee;--qsfc-label:#cccccc;}.qsfc-look-textbook .qsfc-bg{fill:var(--qsfc-bg)}.qsfc-look-textbook text{font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;fill:var(--qsfc-name)}.qsfc-look-textbook .qsfc-wire,.qsfc-look-textbook .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-linejoin:miter}.qsfc-look-textbook g.qsfc-wire{stroke:none}.qsfc-look-textbook .qsfc-arrow{fill:var(--qsfc-line);stroke:none}.qsfc-look-textbook .qsfc-xref .qsfc-wire-line,.qsfc-look-textbook .qsfc-xref-in .qsfc-wire-line{fill:none;stroke:var(--qsfc-line);stroke-width:1.5;stroke-dasharray:4 3}.qsfc-look-textbook .qsfc-bar{fill:none;stroke:var(--qsfc-line);stroke-width:1.6}.qsfc-look-textbook .qsfc-step-box,.qsfc-look-textbook .qsfc-step-inner{fill:var(--qsfc-box-fill);stroke:var(--qsfc-box-stroke);stroke-width:1.5}.qsfc-look-textbook .qsfc-step-inner{fill:none}.qsfc-look-textbook .qsfc-name{font-size:13px;font-weight:400;fill:var(--qsfc-name)}.qsfc-look-textbook .qsfc-caption{font-size:9.5px;fill:var(--qsfc-caption)}.qsfc-look-textbook .qsfc-side-name{font-size:10.5px;font-style:italic;fill:var(--qsfc-label)}.qsfc-look-textbook .qsfc-code{font-family:ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;font-size:11px;white-space:pre;fill:var(--qsfc-code)}.qsfc-look-textbook .qsfc-action-box{fill:var(--qsfc-box-fill);stroke:var(--qsfc-box-stroke);stroke-width:1.1}.qsfc-look-textbook .qsfc-action-head{fill:var(--qsfc-head-fill);stroke:none}.qsfc-look-textbook .qsfc-action-sep,.qsfc-look-textbook .qsfc-action-link,.qsfc-look-textbook .qsfc-tname-link{fill:none;stroke:var(--qsfc-box-stroke);stroke-width:1.1}.qsfc-look-textbook .qsfc-qualifier{font-size:10.5px;font-weight:700;fill:var(--qsfc-head-text)}.qsfc-look-textbook .qsfc-action-name{font-size:10px;fill:var(--qsfc-head-text)}.qsfc-look-textbook .qsfc-trans-bar{fill:var(--qsfc-trans-bar)}.qsfc-look-textbook .qsfc-tname-box{fill:var(--qsfc-tname-fill);stroke:var(--qsfc-tname-stroke);stroke-width:1}.qsfc-look-textbook .qsfc-tname{font-size:10.5px;font-weight:400;font-style:italic;fill:var(--qsfc-tname)}.qsfc-look-textbook .qsfc-jump-label,.qsfc-look-textbook .qsfc-xref-from{font-size:10.5px;font-style:italic;fill:var(--qsfc-label)}</style>
+<rect class="qsfc-bg" x="-16" y="-16" width="621" height="389"/>
+<g class="qsfc-wires"><path class="qsfc-wire qsfc-link" data-id="s0-t0" d="M58 81V108"/><path class="qsfc-wire qsfc-link" data-id="t0-s1" d="M58 108V135"/><path class="qsfc-wire qsfc-link" data-id="s1-b1" d="M58 179V201"/><path class="qsfc-wire qsfc-link" data-id="b1.0-t1" d="M58 201V232"/><path class="qsfc-wire qsfc-link" data-id="t1-s2" d="M58 232V259"/><path class="qsfc-wire qsfc-link" data-id="s2-t2" d="M58 303V330"/><path class="qsfc-wire qsfc-link" data-id="b1.1-t3" d="M336 201V232"/><path class="qsfc-wire qsfc-link" data-id="t3-s3" d="M336 232V259"/><path class="qsfc-wire qsfc-link" data-id="s3-t4" d="M336 303V330"/><g class="qsfc-wire qsfc-jump" data-id="t2-b0.0"><title>jump to wait</title><path class="qsfc-wire-line" d="M58 330V348H0.5V9H58V30"/><path class="qsfc-arrow" d="M58 37L54 29L62 29Z"/></g><g class="qsfc-wire qsfc-jump" data-id="t4-b0.1"><title>jump to wait</title><path class="qsfc-wire-line" d="M336 330V348H589V17H65"/><path class="qsfc-arrow" d="M58 17L66 13L66 21Z"/></g></g>
+<g class="qsfc-branches"><g class="qsfc-branch qsfc-selection qsfc-diverge" data-id="b1"><path class="qsfc-bar" d="M44 201H350"/></g></g>
+<g class="qsfc-transitions"><g class="qsfc-transition qsfc-auto" data-id="t0"><title>part_present</title><rect class="qsfc-trans-bar" x="46" y="106" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="79" y="111.8">part_present</text></g><g class="qsfc-transition qsfc-auto" data-id="t1"><title>measure.done AND size_big</title><rect class="qsfc-trans-bar" x="46" y="230" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="79" y="235.8">measure.done AND size_big</text></g><g class="qsfc-transition qsfc-auto" data-id="t2"><title>big_out</title><rect class="qsfc-trans-bar" x="46" y="328" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="79" y="333.8">big_out</text></g><g class="qsfc-transition qsfc-auto" data-id="t3"><title>measure.done AND NOT size_big</title><rect class="qsfc-trans-bar" x="324" y="230" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="357" y="235.8">measure.done AND NOT size_big</text></g><g class="qsfc-transition qsfc-auto" data-id="t4"><title>small_out</title><rect class="qsfc-trans-bar" x="324" y="328" width="24" height="4"/><text class="qsfc-code qsfc-cond" x="357" y="333.8">small_out</text></g></g>
+<g class="qsfc-steps"><g class="qsfc-step qsfc-initial" data-id="s0"><title>wait — initial step (Step_000)</title><rect class="qsfc-step-box" x="36" y="37" width="44" height="44"/><rect class="qsfc-step-inner" x="40" y="41" width="36" height="36"/><text class="qsfc-name" x="58" y="63.7" text-anchor="middle">wait</text></g><g class="qsfc-step" data-id="s1"><title>measure — preset 1s (Step_001)</title><rect class="qsfc-step-box" x="24" y="135" width="68" height="44"/><text class="qsfc-name" x="58" y="158" text-anchor="middle">measure</text><text class="qsfc-caption" x="58" y="171" text-anchor="middle">1s</text></g><g class="qsfc-step" data-id="s2"><title>push_big (Step_002)</title><rect class="qsfc-step-box" x="22.5" y="259" width="71" height="44"/><text class="qsfc-name" x="58" y="285.7" text-anchor="middle">push_big</text><path class="qsfc-action-link" d="M93.5 281H111.5"/><g class="qsfc-action"><title>pusher_big [:=] 1;</title><rect class="qsfc-action-box" x="111.5" y="259" width="155" height="44"/><path class="qsfc-action-sep" d="M131.5 259V303"/><text class="qsfc-qualifier" x="121.5" y="285" text-anchor="middle">N</text><text class="qsfc-code" x="138.5" y="284.5">pusher_big [:=] 1;</text></g></g><g class="qsfc-step" data-id="s3"><title>push_small (Step_003)</title><rect class="qsfc-step-box" x="292.5" y="259" width="87" height="44"/><text class="qsfc-name" x="336" y="285.7" text-anchor="middle">push_small</text><path class="qsfc-action-link" d="M379.5 281H397.5"/><g class="qsfc-action"><title>pusher_small [:=] 1;</title><rect class="qsfc-action-box" x="397.5" y="259" width="169" height="44"/><path class="qsfc-action-sep" d="M417.5 259V303"/><text class="qsfc-qualifier" x="407.5" y="285" text-anchor="middle">N</text><text class="qsfc-code" x="424.5" y="284.5">pusher_small [:=] 1;</text></g></g></g>
+</svg>
+</div>
+  </div>
+  <ul class="pg-problems"><li class="ok">No problems</li></ul>
+</div>
+      <h3>Rules</h3>
+      <ul class="rules">
+        <li>Follows a step; each leg starts with a transition.</li>
+        <li>Legs are tested left to right: the first true condition wins.</li>
+        <li>A leg ends with a transition: a jump (<code>-&gt; wait</code>), or one that merges on the step after <code>end</code>.</li>
+        <li>At least two legs, separated by <code>|</code>.</li>
+      </ul>
+      <h3>Problems you may see</h3>
+      <table class="codes">
+        <tr><td><b>E211</b></td><td><code>select</code> must follow a step</td><td><a>example</a></td></tr>
+        <tr><td><b>E212</b></td><td>each leg must start with a transition</td><td><a>example</a></td></tr>
+        <tr><td><b>E214</b></td><td>legs that don't jump need a step after <code>end</code></td><td><a>example</a></td></tr>
+        <tr><td><b>E207</b></td><td>a branch needs at least 2 legs</td><td><a>example</a></td></tr>
+      </table>
+      <p class="also">See also: <a>parallel</a> · <a>Jumps</a> · <a>Merging legs</a></p>
+    </main>
+  </div>
+</div>
+<h2 class="part">C · Cheat sheet, reordered</h2>
+
+<div class="view">
+  <div class="chrome"><button class="back">← Back to the editor</button>
+    <div class="tabs"><button class="">Learning</button><button class="">Reference</button><button class="on">Cheat sheet</button></div>
+    <span class="sp"></span><button class="print">Print / open as a page</button></div>
+  <main class="page cheat">
+    <div class="cheat-grid">
+      <section><h3>1 · A chart</h3><table><tr><td><pre class="code"><span class="ip-k">init</span> <span class="ip-d">idle</span></pre></td><td>initial step (one per chart)</td></tr><tr><td><pre class="code"><span class="ip-k">step</span> <span class="ip-d">fill</span> <span class="ip-n">5s</span> <span class="ip-s">"Fill"</span></pre></td><td>step, preset, description</td></tr><tr><td><pre class="code"><span class="ip-k">--</span> start_btn</pre></td><td>transition</td></tr><tr><td><pre class="code"><span class="ip-k">--</span> <span class="ip-d">go</span>: a <span class="ip-k">AND</span> b</pre></td><td>named transition</td></tr><tr><td><pre class="code"><span class="ip-k">--</span> done <span class="ip-k">-&gt;</span> <span class="ip-d">idle</span></pre></td><td>jump</td></tr><tr><td><pre class="code"><span class="ip-c">// comment</span></pre></td><td>comment</td></tr></table></section>
+      <section><h3>2 · Actions</h3><table><tr><td><pre class="code">  valve [:=] <span class="ip-n">1</span>;</pre></td><td>ST under the step (N)</td></tr><tr><td><pre class="code">  <span class="ip-k">on</span> pump, fan</pre></td><td>on while active</td></tr><tr><td><pre class="code">  <span class="ip-k">set</span> alarm</pre></td><td>latch on · reset alarm: off</td></tr><tr><td><pre class="code">  S | R | L <span class="ip-n">5</span>s | D <span class="ip-n">2</span>s | P</pre></td><td>qualifier line starts an action</td></tr></table></section>
+      <section><h3>3 · Time and step members</h3><table><tr><td><pre class="code">fill.done   fill.DN</pre></td><td>preset elapsed</td></tr><tr><td><pre class="code">fill.active fill.X</pre></td><td>step active</td></tr><tr><td><pre class="code">fill.time   fill.T</pre></td><td>ms active</td></tr><tr><td><pre class="code"><span class="ip-k">--</span> <span class="ip-k">after</span> <span class="ip-n">5s</span></pre></td><td>step above active 5 s</td></tr></table></section>
+      <section><h3>4 · Branches</h3><table><tr><td><pre class="code"><span class="ip-k">select</span>
+  <span class="ip-k">--</span> a
+  <span class="ip-k">step</span> <span class="ip-d">x</span>
+<span class="ip-k">|</span>
+  <span class="ip-k">--</span> b
+  <span class="ip-k">step</span> <span class="ip-d">y</span>
+<span class="ip-k">end</span></pre></td><td>one leg runs</td></tr><tr><td><pre class="code"><span class="ip-k">parallel</span>
+  <span class="ip-k">step</span> <span class="ip-d">x</span>
+<span class="ip-k">|</span>
+  <span class="ip-k">step</span> <span class="ip-d">y</span>
+<span class="ip-k">end</span></pre></td><td>all legs run; the next transition waits for all</td></tr></table></section>
+      <section><h3>5 · Tags and I/O</h3><table><tr><td><pre class="code"><span class="ip-k">tag</span> <span class="ip-d">n</span> : <span class="ip-t">DINT</span> = <span class="ip-n">5</span> <span class="ip-s">"desc"</span></pre></td><td>type, value, description</td></tr><tr><td><pre class="code"><span class="ip-k">tag</span> <span class="ip-d">t1</span> : <span class="ip-t">TIMER</span> <span class="ip-n">3s</span></pre></td><td>timer preset</td></tr><tr><td><pre class="code"><span class="ip-k">io</span>
+  <span class="ip-d">start_btn</span>  <span class="ip-a">Local:1:I.Data.0</span>
+<span class="ip-k">end</span></pre></td><td>I/O names</td></tr></table></section>
+      <section><h3>6 · Program</h3><table><tr><td><pre class="code"><span class="ip-k">program</span> <span class="ip-d">tank</span> <span class="ip-s">"Title"</span></pre></td><td>name and title</td></tr><tr><td><pre class="code"><span class="ip-k">st</span> <span class="ip-d">main</span>
+  <span class="ip-k">call</span> fill;</pre></td><td>routines; the first one is main</td></tr><tr><td><pre class="code">SFR(fill, idle);  SFP(fill, Pause);</pre></td><td>reset / pause a chart</td></tr><tr><td><pre class="code"><span class="ip-k">uses</span> <span class="ip-d">INIT</span>, Main (main)</pre></td><td>routines not in this file</td></tr><tr><td><pre class="code"><span class="ip-k">controller</span>
+  <span class="ip-k">tag</span> <span class="ip-d">stop</span> : <span class="ip-t">BOOL</span>
+<span class="ip-k">end</span></pre></td><td>controller-scope tags</td></tr></table></section>
+    </div>
+    <p class="muted">One page, in the order you write a chart. "Rules to remember" and "In the app" move to Learning and the Reference.</p>
+  </main>
+</div>
+</body></html>

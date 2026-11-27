@@ -597,3 +597,136 @@ export function indentStructure(current: string, above: readonly string[], unit 
   }
   return Math.max(0, widthOf(prev) - unit);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Roles (editor colors, mockup docs/mockups/colors/roles.html): each token colored by what it does
+// in the chart, on top of its token kind. Pure; the editor, the previews and the Help use them.
+// ---------------------------------------------------------------------------------------------
+
+export type Role =
+  | "decl" // program sfc st uses controller tag io course author, `end` of an io / controller block
+  | "declname" // a name declared on a tag / routine / program line
+  | "stepkw" // init, step
+  | "stepdef" // the step's name on its own line
+  | "target" // a jump target (a step)
+  | "trans" // --, ->
+  | "label" // a transition's name
+  | "branch" // select parallel | end
+  | "action" // on set reset, qualifiers, call, := [:=], SFR SFP JSR
+  | "time" // durations, after
+  | "value" // numbers, strings
+  | "logic" // AND OR NOT XOR MOD TRUE FALSE
+  | "stctl" // IF THEN ELSE CASE … (ST control words)
+  | "func"
+  | "type"
+  | "address"
+  | "comment"
+  | "op"
+  | "ident"
+  | "member";
+
+/** Open blocks before a line, innermost last: `decl` (io, controller) or `branch` (select, parallel). */
+export type BlockStack = readonly ("decl" | "branch")[];
+
+/** The open blocks after `line`: io / controller and select / parallel push, `end` pops. */
+export function blocksAfter(line: string, stack: BlockStack): BlockStack {
+  const { kind, word } = lineKind(line);
+  const w = word?.toLowerCase();
+  if (kind === "io") return [...stack, "decl"];
+  if (kind === "branch") return [...stack, "branch"];
+  if (kind === "end") return stack.slice(0, -1);
+  // a block left open (E206) closes at a routine header
+  if (kind === "header" && (w === "sfc" || w === "st")) return [];
+  return stack;
+}
+
+const ACTION_WORDS = /^(on|set|reset|call|n|s|r|l|d|p)$/i;
+const LOGIC_WORDS = /^(and|or|not|xor|mod|true|false)$/i;
+
+/** The role of one token of `line` (`top`: the innermost open block, for `end`). */
+export function tokenRole(kind: TokKind, text: string, line: string, top?: "decl" | "branch"): Role {
+  switch (kind) {
+    case "kw": {
+      if (text === "--") return "trans";
+      if (text === "|") return "branch";
+      const w = text.toLowerCase();
+      if (w === "init" || w === "step") return "stepkw";
+      if (w === "after") return "time";
+      if (w === "select" || w === "parallel") return "branch";
+      if (w === "end") return top === "decl" ? "decl" : "branch";
+      if (ACTION_WORDS.test(text)) return "action";
+      return "decl";
+    }
+    case "def":
+      if (lineKind(line).kind === "step") return "stepdef";
+      if (/^\s*sfc\s+tags\b/i.test(line) && text.toLowerCase() === "tags") return "decl";
+      return "declname";
+    case "target":
+      return "target";
+    case "arrow":
+      return "trans";
+    case "label":
+      return "label";
+    case "duration":
+      return "time";
+    case "number":
+    case "string":
+      return "value";
+    case "stkw":
+      return LOGIC_WORDS.test(text) ? "logic" : "stctl";
+    case "func":
+      return /^(sfr|sfp|jsr)$/i.test(text) ? "action" : "func";
+    case "op":
+      return text === ":=" || text === "[:=]" ? "action" : "op";
+    case "punct":
+      return "op";
+    case "comment":
+      return "comment";
+    case "type":
+      return "type";
+    case "address":
+      return "address";
+    case "member":
+      return "member";
+    default:
+      return "ident";
+  }
+}
+
+/** CodeMirror / @lezer/highlight tag names for the roles (one tag per role). */
+export const ROLE_STYLE: Readonly<Record<Role, string>> = {
+  decl: "keyword",
+  declname: "attributeName",
+  stepkw: "definitionKeyword",
+  stepdef: "variableName.definition",
+  target: "variableName.special",
+  trans: "controlKeyword",
+  label: "labelName",
+  branch: "moduleKeyword",
+  action: "modifier",
+  time: "unit",
+  value: "number",
+  logic: "logicOperator",
+  stctl: "operatorKeyword",
+  func: "function.variableName",
+  type: "typeName",
+  address: "url",
+  comment: "lineComment",
+  op: "operator",
+  ident: "variableName",
+  member: "propertyName",
+};
+
+/** A step's members that are about time: colored as time after the step's name (`fill.done`). */
+export const TIME_MEMBERS = /^(dn|done|t|time|pre)$/i;
+
+/** S / T column (View → Structure column): what a line is in the chart, or "" for other lines. */
+export function structureMark(line: string): "S" | "S0" | "T" | "|" | "=" | "" {
+  const { kind, word } = lineKind(line);
+  const w = word?.toLowerCase();
+  if (kind === "step") return w === "init" ? "S0" : "S";
+  if (kind === "transition") return "T";
+  if (kind === "branch") return w === "parallel" ? "=" : "|";
+  if (kind === "bar" || kind === "end") return "|";
+  return "";
+}

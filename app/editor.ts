@@ -8,11 +8,13 @@ import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } f
 import { bracketMatching, HighlightStyle, indentOnInput, indentService, StreamLanguage, syntaxHighlighting, type StringStream } from "@codemirror/language";
 import { lintGutter, lintKeymap, setDiagnostics, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorSelection, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
+import { Compartment, EditorSelection, EditorState, RangeSetBuilder, StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
   Decoration,
   drawSelection,
   EditorView,
+  gutter,
+  GutterMarker,
   highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
@@ -25,7 +27,21 @@ import {
 import { tags as t } from "@lezer/highlight";
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import { completeLine, type CompletionInfo } from "./complete.js";
-import { headerOf, ioStateAfter, lineKind, indentAfter, indentStructure, TOKEN_STYLE, tokenizeLine, type Token } from "./highlight.js";
+import {
+  blocksAfter,
+  headerOf,
+  indentAfter,
+  indentStructure,
+  ioStateAfter,
+  lineKind,
+  ROLE_STYLE,
+  structureMark,
+  TIME_MEMBERS,
+  tokenizeLine,
+  tokenRole,
+  type BlockStack,
+  type Token,
+} from "./highlight.js";
 import { spanToRange } from "./nav.js";
 import { SNIPPETS, snippetContext, snippetLine, snippetTemplate, templateText, usedNames } from "./snippets.js";
 
@@ -36,16 +52,21 @@ interface LineState {
   ioHere: boolean;
   /** The next line is. */
   ioNext: boolean;
+  /** Open io / controller / select / parallel blocks at the start of the current line, and after it. */
+  blocksHere: BlockStack;
+  blocksNext: BlockStack;
 }
 
 const qsfcLanguage = StreamLanguage.define<LineState>({
   name: "qsfc",
-  startState: () => ({ line: undefined, toks: [], ioHere: false, ioNext: false }),
+  startState: () => ({ line: undefined, toks: [], ioHere: false, ioNext: false, blocksHere: [], blocksNext: [] }),
   copyState: (s) => ({ ...s }),
   token(stream: StringStream, state: LineState): string | null {
     if (stream.sol()) {
       state.ioHere = state.ioNext;
       state.ioNext = ioStateAfter(stream.string, state.ioHere);
+      state.blocksHere = state.blocksNext;
+      state.blocksNext = blocksAfter(stream.string, state.blocksHere);
     }
     if (stream.sol() || state.line !== stream.string) {
       state.line = stream.string;
@@ -62,7 +83,9 @@ const qsfcLanguage = StreamLanguage.define<LineState>({
       return null;
     }
     stream.pos = tok.to;
-    return TOKEN_STYLE[tok.kind];
+    // colored by role (what the word does in the chart), see app/highlight.ts
+    const top = state.blocksHere[state.blocksHere.length - 1];
+    return ROLE_STYLE[tokenRole(tok.kind, stream.string.slice(tok.from, tok.to), stream.string, top)];
   },
   languageData: { commentTokens: { line: "//" }, indentOnInput: /^\s*(?:--|\||end\b|(?:step|init)\s)/i },
 });
@@ -131,24 +154,120 @@ const routineHeaders = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+/**
+ * One style per role (app/highlight.ts ROLE_STYLE); the colors are CSS variables set per scheme
+ * (View → Colors: Vivid, Color-blind safe, Classic) in app/styles.css. Tags and members have no
+ * color of their own, so a step reference mark (stepRefs below) colors them from outside.
+ */
 const qsfcHighlight = HighlightStyle.define([
-  { tag: t.keyword, color: "var(--syn-kw)", fontWeight: "600" },
-  { tag: t.operatorKeyword, color: "var(--syn-stkw)", fontWeight: "600" },
-  { tag: t.definition(t.variableName), color: "var(--syn-def)", fontWeight: "600" },
-  { tag: t.labelName, color: "var(--syn-label)" },
-  { tag: t.special(t.variableName), color: "var(--syn-def)" },
-  { tag: t.controlOperator, color: "var(--syn-kw)", fontWeight: "600" },
-  { tag: t.unit, color: "var(--syn-num)" },
-  { tag: t.number, color: "var(--syn-num)" },
-  { tag: t.string, color: "var(--syn-str)" },
-  { tag: t.lineComment, color: "var(--syn-comment)", fontStyle: "italic" },
-  { tag: t.propertyName, color: "var(--syn-member)" },
-  { tag: t.function(t.variableName), color: "var(--syn-func)" },
+  { tag: t.keyword, color: "var(--syn-decl)", fontWeight: "var(--syn-decl-w)" },
+  { tag: t.attributeName, color: "var(--syn-declname)", fontWeight: "700" },
+  { tag: t.definitionKeyword, color: "var(--syn-stepkw)", fontWeight: "700" },
+  { tag: t.definition(t.variableName), color: "var(--syn-stepdef)", fontWeight: "600" },
+  { tag: t.special(t.variableName), color: "var(--syn-target)", fontWeight: "var(--syn-ref-w)" },
+  { tag: t.controlKeyword, color: "var(--syn-trans)", fontWeight: "700" },
+  { tag: t.labelName, color: "var(--syn-label)", fontWeight: "600" },
+  { tag: t.moduleKeyword, color: "var(--syn-branch)", fontWeight: "700" },
+  { tag: t.modifier, color: "var(--syn-action)", fontWeight: "700" },
+  { tag: t.unit, color: "var(--syn-time)", fontWeight: "var(--syn-time-w)", fontStyle: "var(--syn-time-style)" },
+  { tag: t.number, color: "var(--syn-value)", fontStyle: "var(--syn-value-style)" },
+  { tag: t.logicOperator, color: "var(--syn-logic)", fontWeight: "700" },
+  { tag: t.operatorKeyword, color: "var(--syn-stctl)", fontWeight: "700" },
+  { tag: t.function(t.variableName), color: "var(--syn-func)", fontStyle: "italic" },
   { tag: t.typeName, color: "var(--syn-type)" },
-  { tag: t.url, color: "var(--syn-num)" },
+  { tag: t.url, color: "var(--syn-type)" },
+  { tag: t.lineComment, color: "var(--syn-comment)", fontStyle: "italic" },
   { tag: t.operator, color: "var(--syn-op)" },
-  { tag: t.variableName, color: "var(--syn-ident)" },
 ]);
+
+// ---- step references: a step's name is colored wherever it is used (`fill.X`, SFR(…, fill)) ----
+
+const setStepNames = StateEffect.define<ReadonlySet<string>>();
+const stepNamesField = StateField.define<ReadonlySet<string>>({
+  create: () => new Set(),
+  update: (value, tr) => {
+    for (const e of tr.effects) if (e.is(setStepNames)) return e.value;
+    return value;
+  },
+});
+
+const stepRefMark = Decoration.mark({ class: "qsfc-stepref" });
+const stepTimeMark = Decoration.mark({ class: "qsfc-steptime" });
+const stepMemberMark = Decoration.mark({ class: "qsfc-stepmember" });
+
+function stepRefDecorations(view: EditorView): DecorationSet {
+  const names = view.state.field(stepNamesField);
+  const builder = new RangeSetBuilder<Decoration>();
+  if (!names.size) return builder.finish();
+  const doc = view.state.doc;
+  let inIo = false;
+  for (const { from, to } of view.visibleRanges) {
+    const first = doc.lineAt(from).number;
+    const last = doc.lineAt(to).number;
+    for (let n = first; n <= last; n++) {
+      const line = doc.line(n);
+      if (!/[A-Za-z_]/.test(line.text)) continue;
+      const toks = tokenizeLine(line.text, { inIo });
+      inIo = ioStateAfter(line.text, inIo);
+      for (let i = 0; i < toks.length; i++) {
+        const tk = toks[i]!;
+        if (tk.kind !== "ident" || !names.has(line.text.slice(tk.from, tk.to).toLowerCase())) continue;
+        const prev = toks[i - 1];
+        if (prev && prev.kind === "punct" && line.text.slice(prev.from, prev.to) === ".") continue;
+        builder.add(line.from + tk.from, line.from + tk.to, stepRefMark);
+        const dot = toks[i + 1];
+        const member = toks[i + 2];
+        if (dot && member && dot.kind === "punct" && line.text.slice(dot.from, dot.to) === "." && member.kind === "member") {
+          const m = line.text.slice(member.from, member.to);
+          builder.add(line.from + member.from, line.from + member.to, TIME_MEMBERS.test(m) ? stepTimeMark : stepMemberMark);
+          i += 2;
+        }
+      }
+    }
+  }
+  return builder.finish();
+}
+
+const stepRefs = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = stepRefDecorations(view);
+    }
+    update(u: ViewUpdate): void {
+      const namesChanged = u.transactions.some((tr) => tr.effects.some((e) => e.is(setStepNames)));
+      if (u.docChanged || u.viewportChanged || namesChanged) this.decorations = stepRefDecorations(u.view);
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
+
+// ---- S / T column (View → Structure column): what each line is in the chart ----
+
+class StructureMarker extends GutterMarker {
+  constructor(readonly mark: string) {
+    super();
+  }
+  override eq(other: StructureMarker): boolean {
+    return other.mark === this.mark;
+  }
+  override toDOM(): Node {
+    const span = document.createElement("span");
+    const m = this.mark;
+    span.className = `qsfc-st-mark ${m === "S" || m === "S0" ? "st-step" : m === "T" ? "st-trans" : "st-branch"}${m === "S0" ? " st-init" : ""}`;
+    span.textContent = m === "S0" ? "S" : m === "|" ? "┆" : m === "=" ? "═" : m;
+    if (m === "S0") span.title = "Initial step";
+    return span;
+  }
+}
+const STRUCTURE_MARKS = new Map(["S", "S0", "T", "|", "="].map((m) => [m, new StructureMarker(m)] as const));
+
+const structureColumn = gutter({
+  class: "qsfc-st-gutter",
+  lineMarker: (view, line) => STRUCTURE_MARKS.get(structureMark(view.state.doc.lineAt(line.from).text)) ?? null,
+  lineMarkerChange: (u) => u.docChanged,
+  initialSpacer: () => STRUCTURE_MARKS.get("S")!,
+});
 
 const theme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--surface)", color: "var(--text)", fontSize: "13.5px" },
@@ -157,6 +276,14 @@ const theme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--text)", borderLeftWidth: "2px" },
   "&.cm-focused": { outline: "none" },
   ".cm-gutters": { backgroundColor: "var(--surface-2)", color: "var(--muted)", borderRight: "1px solid var(--border)" },
+  ".qsfc-st-gutter .cm-gutterElement": { padding: "0 3px 0 6px", fontWeight: "700", fontSize: "11.5px", textAlign: "center", minWidth: "14px" },
+  ".qsfc-st-mark.st-step": { color: "var(--syn-step)" },
+  ".qsfc-st-mark.st-init": { textDecoration: "underline", textUnderlineOffset: "2px" },
+  ".qsfc-st-mark.st-trans": { color: "var(--syn-trans)" },
+  ".qsfc-st-mark.st-branch": { color: "var(--syn-branch)", opacity: "0.8" },
+  ".qsfc-stepref": { color: "var(--syn-ref)", fontWeight: "var(--syn-ref-w)" },
+  ".qsfc-stepmember": { color: "var(--syn-ref-member)" },
+  ".qsfc-steptime": { color: "var(--syn-ref-time)", fontStyle: "var(--syn-time-style)" },
   ".cm-activeLineGutter": { backgroundColor: "var(--accent-soft)", color: "var(--text)" },
   ".cm-activeLine": { backgroundColor: "var(--active-line)" },
   ".cm-line.cm-qsfc-header": { borderTop: "1px dashed var(--border-strong)" },
@@ -232,6 +359,10 @@ export interface Editor {
   /** The document's lines. */
   lines(): string[];
   focus(): void;
+  /** Step names of the program (lower case), colored wherever they are used. */
+  setStepNames(names: Iterable<string>): void;
+  /** View → Structure column: the S / T column left of the line numbers. */
+  setStructureColumn(on: boolean): void;
 }
 
 function renderDiag(d: Diagnostic): () => Node {
@@ -251,8 +382,17 @@ function renderDiag(d: Diagnostic): () => Node {
   };
 }
 
+/** The S / T column of new editors (main.ts sets it from View → Structure column). */
+let structureColumnDefault = true;
+export function setStructureColumnDefault(on: boolean): void {
+  structureColumnDefault = on;
+}
+
 export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys: Extension = []): Editor {
   const readOnly = new Compartment();
+  const stColumn = new Compartment();
+  let stOn = structureColumnDefault;
+  let stepNames: ReadonlySet<string> = new Set();
   let lastLine = -1;
   let lastCol = -1;
 
@@ -321,8 +461,9 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
     return true;
   };
 
-  const extensions: Extension[] = [
+  const extensions = (): Extension[] => [
       extraKeys,
+      stColumn.of(stOn ? structureColumn : []),
       lineNumbers(),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
@@ -336,6 +477,8 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       highlightSelectionMatches(),
       search({ top: true }),
       lintGutter(),
+      stepNamesField.init(() => stepNames),
+      stepRefs,
       qsfcLanguage,
       qsfcIndent,
       syntaxHighlighting(qsfcHighlight),
@@ -377,7 +520,7 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
         }
       }),
   ];
-  const view = new EditorView({ state: EditorState.create({ doc: "", extensions }), parent });
+  const view = new EditorView({ state: EditorState.create({ doc: "", extensions: extensions() }), parent });
 
   const editor: Editor = {
     view,
@@ -385,7 +528,7 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
     setText(text, resetHistory = false) {
       if (resetHistory) {
         const ro = view.state.readOnly;
-        view.setState(EditorState.create({ doc: text, extensions }));
+        view.setState(EditorState.create({ doc: text, extensions: extensions() }));
         if (ro) editor.setReadOnly(true);
         lastLine = 1;
         lastCol = 1;
@@ -437,6 +580,17 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
     },
     lines: () => view.state.doc.toJSON(),
     focus: () => view.focus(),
+    setStepNames(names) {
+      const next = new Set([...names].map((n) => n.toLowerCase()));
+      if (next.size === stepNames.size && [...next].every((n) => stepNames.has(n))) return;
+      stepNames = next;
+      view.dispatch({ effects: setStepNames.of(next) });
+    },
+    setStructureColumn(on) {
+      if (on === stOn) return;
+      stOn = on;
+      view.dispatch({ effects: stColumn.reconfigure(on ? structureColumn : []) });
+    },
   };
 
   return editor;

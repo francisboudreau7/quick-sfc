@@ -4,7 +4,7 @@
  * Unit-tested in test/app.
  */
 import type { ImportedRoutine, ImportNote, ImportResult } from "../src/import/index.js";
-import { ioStateAfter, tokenizeLine, type TokKind } from "./highlight.js";
+import { blocksAfter, ioStateAfter, TIME_MEMBERS, tokenizeLine, tokenRole, type BlockStack } from "./highlight.js";
 
 /** The editor's file name for an imported program: "MainProgram.qsfc". */
 export function importFileName(program: string): string {
@@ -38,38 +38,36 @@ export function notesTitle(notes: readonly ImportNote[]): string {
 
 const esc = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const CLASS: Partial<Record<TokKind, string>> = {
-  kw: "k",
-  stkw: "k",
-  def: "d",
-  label: "d",
-  target: "d",
-  arrow: "k",
-  duration: "n",
-  number: "n",
-  string: "s",
-  comment: "c",
-  type: "t",
-  address: "a",
-};
-
-/** The .qsfc text as HTML, highlighted with the editor's own tokenizer (class `ip-k` etc.). */
+/**
+ * The .qsfc text as HTML, highlighted like the editor: each token gets the class of its role
+ * (`ip-stepkw`, `ip-trans`…, app/highlight.ts), and a step's name where it is used `ip-ref`
+ * (its time members `ip-reftime`). Colors: app/styles.css (the editor's scheme) or the Help's
+ * printable page.
+ */
 export function previewHtml(source: string): string {
+  const lines = source.replace(/\n$/, "").split("\n");
+  const steps = new Set(lines.flatMap((l) => /^\s*(?:init|step)\s+([A-Za-z_]\w*)/i.exec(l)?.[1]?.toLowerCase() ?? []));
   let inIo = false;
-  return source
-    .replace(/\n$/, "")
-    .split("\n")
+  let blocks: BlockStack = [];
+  return lines
     .map((line) => {
       const tokens = tokenizeLine(line, { inIo });
+      const top = blocks[blocks.length - 1];
       inIo = ioStateAfter(line, inIo);
+      blocks = blocksAfter(line, blocks);
       let out = "";
       let at = 0;
+      let afterStep = false;
       for (const t of tokens) {
         if (t.from < at) continue;
         out += esc(line.slice(at, t.from));
-        const cls = CLASS[t.kind];
-        const text = esc(line.slice(t.from, t.to));
-        out += cls ? `<span class="ip-${cls}">${text}</span>` : text;
+        const raw = line.slice(t.from, t.to);
+        let cls: string = tokenRole(t.kind, raw, line, top);
+        if (t.kind === "ident" && steps.has(raw.toLowerCase())) cls = "ref";
+        else if (t.kind === "member" && afterStep) cls = TIME_MEMBERS.test(raw) ? "reftime" : "ref";
+        if (!(t.kind === "punct" && raw === ".")) afterStep = cls === "ref" && t.kind === "ident";
+        const text = esc(raw);
+        out += cls === "ident" || cls === "member" ? text : `<span class="ip-${cls}">${text}</span>`;
         at = t.to;
       }
       return out + esc(line.slice(at));

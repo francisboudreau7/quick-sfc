@@ -38,6 +38,14 @@
           <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="numbers" aria-checked="false"><span class="check" aria-hidden="true"></span><span>GRAFCET step numbers</span></button>
           <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="actions" aria-checked="true"><span class="check" aria-hidden="true"></span><span>Show actions</span></button>
           <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="overview" aria-checked="true" title="A small map of the whole chart in a corner of the diagram, when it doesn't fit"><span class="check" aria-hidden="true"></span><span>Overview map</span></button>
+          <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="structure-column" aria-checked="true" title="S on each step and T on each transition, left of the line numbers"><span class="check" aria-hidden="true"></span><span>Structure column (S / T)</span></button>
+          <div role="separator" class="menu-sep"></div>
+          <div class="menu-label" id="syntax-label">Colors</div>
+          <div role="group" aria-labelledby="syntax-label">
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="syntax" data-value="vivid" aria-checked="true" title="Each word colored by what it does: steps, transitions, branches, actions, time, values"><span class="radio" aria-hidden="true"></span><span>By role</span></button>
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="syntax" data-value="safe" aria-checked="false" title="The same roles in colors that stay distinct for color-blind readers"><span class="radio" aria-hidden="true"></span><span>By role, color-blind safe</span></button>
+            <button type="button" role="menuitemradio" tabindex="-1" data-cmd="syntax" data-value="classic" aria-checked="false" title="The colors of earlier versions"><span class="radio" aria-hidden="true"></span><span>Classic</span></button>
+          </div>
           <div role="separator" class="menu-sep"></div>
           <div class="menu-label" id="theme-label">Theme</div>
           <div role="group" aria-labelledby="theme-label">
@@ -58,7 +66,9 @@
       <div class="menu">
         <button type="button" class="btn menu-btn" id="help-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="help-menu">Help <span class="caret" aria-hidden="true"></span></button>
         <div class="dropdown" id="help-menu" role="menu" aria-labelledby="help-btn" hidden>
-          <button type="button" role="menuitem" tabindex="-1" data-cmd="cheatsheet"><span>qSFC cheat sheet</span><kbd>F1</kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="help-learning"><span>Learning qSFC</span><kbd></kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="help-reference"><span>Reference</span><kbd></kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="cheatsheet"><span>Cheat sheet</span><kbd>F1</kbd></button>
           <div role="separator" class="menu-sep"></div>
           <div class="menu-label" id="example-label">Examples</div>
           <div role="group" aria-labelledby="example-label" id="example-items"></div>
@@ -186,6 +196,8 @@
 <input type="file" id="tidy-input" accept=".L5X,.l5x" hidden>
 <input type="file" id="import-input" accept=".L5X,.l5x" hidden>
 <div class="drop-overlay" id="drop-overlay" hidden><div>Drop a <code>.qsfc</code> file to open it, or an <code>.L5X</code> file to import it</div></div>
+<section class="help" id="help" hidden aria-label="Help"></section>
+
 <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
   <form method="dialog">
     <h2 id="confirm-title">Unsaved changes</h2>

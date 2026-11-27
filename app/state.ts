@@ -4,6 +4,8 @@
  */
 
 export type Theme = "system" | "light" | "dark";
+/** Editor colors (View → Colors): by role, color-blind safe, or the colors before Phase 4d+. */
+export type Syntax = "vivid" | "safe" | "classic";
 
 export interface ViewOptions {
   /** GRAFCET step numbers (1, 2, 3) instead of names. */
@@ -14,6 +16,10 @@ export interface ViewOptions {
   problemsOpen: boolean;
   /** Overview map in a corner of the diagram when it doesn't fit (Phase 4c). */
   overview: boolean;
+  /** Editor colors. */
+  syntax: Syntax;
+  /** The S / T column left of the editor's line numbers. */
+  structureColumn: boolean;
 }
 
 export const DEFAULT_VIEW: Readonly<ViewOptions> = {
@@ -22,6 +28,8 @@ export const DEFAULT_VIEW: Readonly<ViewOptions> = {
   theme: "system",
   problemsOpen: true,
   overview: true,
+  syntax: "vivid",
+  structureColumn: true,
 };
 
 export const STORAGE_KEY = "qsfc.view.v1";
@@ -43,11 +51,21 @@ export function parseViewOptions(raw: string | null | undefined): ViewOptions {
   if (d["theme"] === "system" || d["theme"] === "light" || d["theme"] === "dark") out.theme = d["theme"];
   if (typeof d["problemsOpen"] === "boolean") out.problemsOpen = d["problemsOpen"];
   if (typeof d["overview"] === "boolean") out.overview = d["overview"];
+  if (d["syntax"] === "vivid" || d["syntax"] === "safe" || d["syntax"] === "classic") out.syntax = d["syntax"];
+  if (typeof d["structureColumn"] === "boolean") out.structureColumn = d["structureColumn"];
   return out;
 }
 
 export function serializeViewOptions(v: ViewOptions): string {
-  return JSON.stringify({ numbers: v.numbers, showActions: v.showActions, theme: v.theme, problemsOpen: v.problemsOpen, overview: v.overview });
+  return JSON.stringify({
+    numbers: v.numbers,
+    showActions: v.showActions,
+    theme: v.theme,
+    problemsOpen: v.problemsOpen,
+    overview: v.overview,
+    syntax: v.syntax,
+    structureColumn: v.structureColumn,
+  });
 }
 
 /** Minimal Storage shape, so tests can pass a Map-backed fake. */

@@ -35,11 +35,17 @@ describe("import dialog helpers (Phase 4d)", () => {
     expect(notesTitle([notes[0]!])).toMatch(/^Nothing lost/);
   });
 
-  it("highlights the preview with the editor's tokenizer, escaped", () => {
-    const html = previewHtml("// a <note>\nio\n  b  Local:1:I.Data.0\nend\ninit s0 3s\n-- x -> s0\n");
-    expect(html).toContain('<span class="ip-c">// a &lt;note&gt;</span>');
-    expect(html).toContain('<span class="ip-k">init</span> <span class="ip-d">s0</span> <span class="ip-n">3s</span>');
-    expect(html).toContain('<span class="ip-a">Local:1:I.Data.0</span>');
-    expect(html.split("\n")).toHaveLength(6);
+  it("highlights the preview like the editor (roles), escaped", () => {
+    const html = previewHtml("// a <note>\nio\n  b  Local:1:I.Data.0\nend\ninit s0 3s\n  on lamp\n-- s0.done -> s0\n");
+    expect(html).toContain('<span class="ip-comment">// a &lt;note&gt;</span>');
+    expect(html).toContain('<span class="ip-stepkw">init</span> <span class="ip-stepdef">s0</span> <span class="ip-time">3s</span>');
+    expect(html).toContain('<span class="ip-address">Local:1:I.Data.0</span>');
+    // the `end` of an io block is a declaration, not a branch
+    expect(html).toContain('<span class="ip-decl">end</span>');
+    expect(html).toContain('<span class="ip-action">on</span> lamp');
+    expect(html).toContain(
+      '<span class="ip-trans">--</span> <span class="ip-ref">s0</span><span class="ip-op">.</span><span class="ip-reftime">done</span> <span class="ip-trans">-&gt;</span> <span class="ip-target">s0</span>',
+    );
+    expect(html.split("\n")).toHaveLength(7);
   });
 });

@@ -30,12 +30,12 @@ function memoryStore(): KeyValueStore & { data: Map<string, string> } {
 
 describe("view options", () => {
   it("defaults: names, actions shown, system theme, problems open", () => {
-    expect(parseViewOptions(null)).toEqual({ numbers: false, showActions: true, theme: "system", problemsOpen: true, overview: true });
+    expect(parseViewOptions(null)).toEqual({ numbers: false, showActions: true, theme: "system", problemsOpen: true, overview: true, syntax: "vivid", structureColumn: true });
     expect(DEFAULT_VIEW.theme).toBe("system");
   });
 
   it("round-trips through JSON", () => {
-    const v = { numbers: true, showActions: false, theme: "dark" as const, problemsOpen: false, overview: false };
+    const v = { numbers: true, showActions: false, theme: "dark" as const, problemsOpen: false, overview: false, syntax: "safe" as const, structureColumn: false };
     expect(parseViewOptions(serializeViewOptions(v))).toEqual(v);
   });
 

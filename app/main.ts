@@ -7,7 +7,7 @@
  */
 import { compile, exportL5X, routineName, type CompiledRoutine, type CompileResult } from "../src/compile.js";
 import type { Layout } from "../src/layout/index.js";
-import { allSteps, key, sfcCharts } from "../src/model/ast.js";
+import { allSteps, key, programStepNames, sfcCharts } from "../src/model/ast.js";
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import type { Graph } from "../src/model/graph.js";
 import { renderStudioSketch } from "../src/render/sketch.js";
@@ -27,7 +27,7 @@ import {
   windowTitle,
   type FileState,
 } from "./dirty.js";
-import { createEditor } from "./editor.js";
+import { createEditor, setStructureColumnDefault } from "./editor.js";
 import { chartCounts, DEFAULT_TAG_SORT, nextTagSort, plural, sortTags, usesTitle, type TagSort, type TagSortKey } from "./format.js";
 import { definitionAt, elementAtLine, pickElement, sourceOfElement } from "./nav.js";
 import {
@@ -65,6 +65,7 @@ import {
   wheelZoom,
   zoomIn,
   zoomOut,
+  type Syntax,
   type Theme,
   type ViewOptions,
 } from "./state.js";
@@ -76,6 +77,7 @@ import { nextUse, routinesUsing, splitOnName, tagElements, useIndex } from "./ta
 import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusLine, tidiedText, tidyFileName, tidyProblem } from "./tidy.js";
 import { importFileName, importProblem, noteItems, notesTitle, previewHtml, routineStatus } from "./importl5x.js";
 import { EXAMPLES, findExample } from "./examples.js";
+import { createHelp } from "./help/view.js";
 import { importL5X, type ImportResult } from "../src/import/index.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
@@ -292,7 +294,11 @@ const editor = createEditor(ui.editorHost, {
 });
 
 function completionInfo(): CompletionInfo {
-  const r = result;
+  return completionFor(result);
+}
+
+/** Completion data of a compile result (the editor's, or a Help playground's). */
+function completionFor(r: CompileResult | undefined): CompletionInfo {
   if (!r) return { steps: [], tags: [] };
   // Step names are shared by the whole file (SPEC §4.5): offer the steps of every SFC routine.
   const steps = sfcCharts(r.program).flatMap(allSteps).map((s) => {
@@ -319,6 +325,7 @@ function runCompile(fit = false): void {
     return;
   }
   diagnostics = result.diagnostics;
+  editor.setStepNames(programStepNames(result.program));
   exportable = false;
   // Without errors every SFC routine has a graph (src/compile.ts).
   const valid = result.routines.length > 0 && countProblems(result.diagnostics).errors === 0;
@@ -397,6 +404,10 @@ function applyTheme(theme: Theme): void {
   const root = document.documentElement;
   root.classList.toggle("qsfc-dark", theme === "dark");
   root.classList.toggle("qsfc-light", theme === "light");
+  // editor colors (View → Colors) and the S / T column
+  root.dataset["syntax"] = view.syntax;
+  setStructureColumnDefault(view.structureColumn);
+  editor?.setStructureColumn(view.structureColumn);
 }
 
 function syncViewMenu(): void {
@@ -406,6 +417,8 @@ function syncViewMenu(): void {
     if (cmd === "numbers") on = view.numbers;
     else if (cmd === "actions") on = view.showActions;
     else if (cmd === "overview") on = view.overview;
+    else if (cmd === "structure-column") on = view.structureColumn;
+    else if (cmd === "syntax") on = item.dataset["value"] === view.syntax;
     else if (cmd === "theme") on = item.dataset["value"] === view.theme;
     item.setAttribute("aria-checked", String(on));
   }
@@ -2528,7 +2541,13 @@ function runCommand(item: HTMLElement): void {
       void importCmd();
       break;
     case "cheatsheet":
-      openCheatSheet();
+      help.open("cheatsheet");
+      break;
+    case "help-learning":
+      help.open("learning");
+      break;
+    case "help-reference":
+      help.open("reference");
       break;
     case "about":
       showAbout();
@@ -2541,6 +2560,12 @@ function runCommand(item: HTMLElement): void {
       break;
     case "overview":
       setView({ overview: !view.overview });
+      break;
+    case "structure-column":
+      setView({ structureColumn: !view.structureColumn });
+      break;
+    case "syntax":
+      setView({ syntax: (item.dataset["value"] as Syntax | undefined) ?? "vivid" });
       break;
     case "print":
       printCmd();
@@ -2575,16 +2600,57 @@ let cheatsheetUrl: string | undefined;
  */
 function openCheatSheet(): void {
   cheatsheetUrl ??= URL.createObjectURL(new Blob([QSFC_CHEATSHEET], { type: "text/html" }));
+  openUrl(cheatsheetUrl, CHEATSHEET_NAME, QSFC_CHEATSHEET);
+}
+
+/** Opens an HTML page in a new tab, or downloads it when the tab is blocked. */
+function openUrl(url: string, fileName: string, html: string): void {
   let tab: Window | null = null;
   try {
-    tab = window.open(cheatsheetUrl, "_blank");
+    tab = window.open(url, "_blank");
   } catch {
     tab = null;
   }
   if (!tab) {
-    download(CHEATSHEET_NAME, QSFC_CHEATSHEET, "text/html");
-    toast(`The new tab was blocked: downloaded ${CHEATSHEET_NAME} instead`);
+    download(fileName, html, "text/html");
+    toast(`The new tab was blocked: downloaded ${fileName} instead`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Help: Learning qSFC, Reference, cheat sheet (Phase 4d+, docs/mockups/help)
+// ---------------------------------------------------------------------------------------------
+
+const help = createHelp(el("help"), {
+  makeEditor: (parent, cb) => createEditor(parent, cb),
+  completionFor,
+  svg: (r, i) => {
+    const d = diagramOf(r.routines[i]!);
+    return d ? svgOf(d) : "";
+  },
+  openInEditor: (source, label) => void openHelpExample(source, label),
+  cheatsheetHtml: QSFC_CHEATSHEET,
+  openPage: (html, fileName) => {
+    if (fileName === CHEATSHEET_NAME) {
+      openCheatSheet();
+      return;
+    }
+    openUrl(URL.createObjectURL(new Blob([html], { type: "text/html" })), fileName, html);
+  },
+  onClose: () => {
+    if (doc) editor.focus();
+  },
+});
+
+/** A Help playground's code as a new, unsaved file. */
+async function openHelpExample(source: string, label: string): Promise<void> {
+  if (!(await confirmDiscard(`open the example ${label}`))) return;
+  help.close();
+  stopWatch(false);
+  const name = `example_${label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "help"}.qsfc`;
+  setDoc(newFileState(name), source, undefined, source);
+  editor.goTo(1, 1, true);
+  toast(`Opened ${label} in the editor`);
 }
 
 function showAbout(): void {
@@ -2601,7 +2667,8 @@ window.addEventListener(
       e.preventDefault();
       e.stopPropagation();
       hideMenu(false);
-      openCheatSheet();
+      if (help.isOpen) help.close();
+      else help.open("cheatsheet");
       return;
     }
     const mod = e.ctrlKey || e.metaKey;

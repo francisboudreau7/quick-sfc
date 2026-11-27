@@ -18,113 +18,76 @@ code, pre { font-family:ui-monospace,Consolas,monospace; font-size:12.5px; }
 code { background:var(--code); padding:1px 4px; border-radius:3px; }
 pre { background:var(--code); padding:8px 10px; border-radius:6px; margin:4px 0 0; overflow-x:auto; line-height:1.35; }
 .k { color:var(--kw); font-weight:600; } .c { color:var(--cm); } .s { color:var(--str); }
-.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:0 20px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:0 22px; }
+@media print { body { padding:0; font-size:12px; } pre { font-size:11px; } h2 { margin-top:10px; } }
 ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 </style>
 </head>
 <body>
 <h1>qSFC cheat sheet</h1>
-<p class="sub">One element per line. Keywords are case-insensitive. Indentation is cosmetic. Full rules: docs/SPEC.md.</p>
+<p class="sub">One element per line, in the order you write a chart. Keywords are case-insensitive; indentation is only for reading. More: Help → Learning qSFC and Reference.</p>
 
 <div class="grid">
 <section>
-<h2>Elements</h2>
+<h2>1 · A chart</h2>
 <table>
-<tr><td><code><span class="k">sfc</span> name</code></td><td>header: starts an SFC routine (optional for the first one)</td></tr>
-<tr><td><code><span class="k">init</span> name</code></td><td>initial step (exactly one)</td></tr>
-<tr><td><code><span class="k">step</span> name 5s <span class="s">"desc"</span></code></td><td>step; preset and description optional</td></tr>
-<tr><td><code>  valve [:=] 1;</code></td><td>action: ST lines under the step (N; qualifiers below)</td></tr>
-<tr><td><code><span class="k">--</span> start_btn</code></td><td>transition (auto-named T1, T2…)</td></tr>
+<tr><td><code><span class="k">init</span> idle</code></td><td>initial step (one per chart)</td></tr>
+<tr><td><code><span class="k">step</span> fill 5s <span class="s">"Fill"</span></code></td><td>step; preset and description optional</td></tr>
+<tr><td><code><span class="k">--</span> start_btn</code></td><td>transition and its condition</td></tr>
 <tr><td><code><span class="k">--</span> go: a AND b</code></td><td>named transition</td></tr>
 <tr><td><code><span class="k">--</span> done <span class="k">-&gt;</span> idle</code></td><td>jump to a step</td></tr>
-<tr><td><code><span class="k">--</span> <span class="k">after</span> 5s AND ok</code></td><td>the step above active 5 s (= <code>fill.T &gt;= 5000</code>)</td></tr>
-<tr><td><code><span class="k">tag</span> n : DINT <span class="s">"desc"</span></code></td><td>optional type/description override</td></tr>
-<tr><td><code><span class="k">tag</span> t1 : TIMER 3s</code> · <code><span class="k">tag</span> n : DINT = 5</code></td><td>timer preset, initial value (exported even if unused)</td></tr>
-<tr><td><code><span class="c">// comment</span></code></td><td>comment (kept in actions, dropped elsewhere)</td></tr>
+<tr><td><code><span class="c">// comment</span></code></td><td>comment (kept in actions)</td></tr>
 </table>
+<pre><span class="k">init</span> idle
+<span class="k">--</span> start_btn
+<span class="k">step</span> fill 5s
+  <span class="k">on</span> valve
+<span class="k">--</span> fill.done <span class="k">-&gt;</span> idle</pre>
 
-<h2>File header</h2>
+<h2>2 · Actions</h2>
 <table>
-<tr><td><code><span class="k">program</span> tank <span class="s">"Title"</span></code></td><td>Program name; title = its description and the print title</td></tr>
-<tr><td><code><span class="k">course</span> <span class="s">"GEI-243"</span></code></td><td>printed in the title block (not exported)</td></tr>
-<tr><td><code><span class="k">author</span> <span class="s">"Name"</span></code></td><td>printed in the title block (not exported)</td></tr>
+<tr><td><code>valve [:=] 1;</code></td><td>ST under the step; back to 0 when it ends</td></tr>
+<tr><td><code>count := 0;</code></td><td>keeps its value</td></tr>
+<tr><td><code><span class="k">on</span> pump, fan</code></td><td>on while the step is active</td></tr>
+<tr><td><code><span class="k">set</span> alarm · <span class="k">reset</span> alarm</code></td><td>latch on / off</td></tr>
 </table>
-
-<h2>I/O mapping</h2>
-<pre><span class="k">io</span>
-  start_btn  Local:1:I.Data.0  <span class="s">"Start"</span>
-  valve      Local:2:O.Data.3
-<span class="k">end</span></pre>
-<p class="sub">Each line becomes an alias tag. A bit address (<code>.0</code>) makes the tag BOOL. The module must exist in the Studio project.</p>
-<p class="sub">An alias of a tag member works too: <code>ejections  Step_017.Count</code>.</p>
-
-<h2>Controller tags and other routines</h2>
-<pre><span class="k">controller</span>
-  <span class="k">tag</span> stop : BOOL = 1
-  <span class="k">io</span>
-    e_stop  Local:1:I.Data.15
-  <span class="k">end</span>
-  <span class="k">sfc tags</span> fill, tr4
-<span class="k">end</span>
-<span class="k">uses</span> INIT, MainRoutine (main)</pre>
-<p class="sub"><code>controller</code>: tags exported at controller scope; <code>sfc tags</code>: steps and transitions whose tags are controller tags. <code>uses</code>: routines of the program not in this file (JSR, SFR, SFP may name them). <code>Step_017.DN</code> in code is a step of another routine. <code>SFR(seq, idle);</code> and <code>SFP(seq, Pause);</code> are accepted.</p>
-
-<h2>Durations</h2>
-<p><code>500ms</code> <code>5s</code> <code>2m</code> <code>1h</code> <code>1m30s</code> — a unit is required.</p>
-
-<h2>Step members</h2>
-<table>
-<tr><td><code>fill.X</code> = <code>fill.active</code></td><td>step active</td></tr>
-<tr><td><code>fill.FS</code> = <code>fill.first</code></td><td>first scan of the step</td></tr>
-<tr><td><code>fill.DN</code> = <code>fill.done</code></td><td>timer reached the preset</td></tr>
-<tr><td><code>fill.T</code> = <code>fill.time</code></td><td>time active (ms)</td></tr>
-</table>
-<p class="sub">Exported as <code>Step_001.DN</code> etc.</p>
-
-<h2>Assignments in actions</h2>
-<table>
-<tr><td><code>x [:=] 1;</code></td><td>non-retentive: back to 0 when the step ends</td></tr>
-<tr><td><code>x := 1;</code></td><td>retentive: stays until written again</td></tr>
-<tr><td><code><span class="k">on</span> a, b</code></td><td>sugar for <code>a [:=] 1; b [:=] 1;</code></td></tr>
-<tr><td><code><span class="k">set</span> a</code></td><td>sugar for <code>a := 1;</code></td></tr>
-<tr><td><code><span class="k">reset</span> a, b</code></td><td>sugar for <code>a := 0; b := 0;</code></td></tr>
-</table>
-<p class="sub">A sugar line is only the keyword and tag names (comma-separated), an optional <code>;</code> and comment. The tags are BOOL.</p>
-
-<h2>Actions and qualifiers</h2>
-<pre><span class="k">step</span> fill
-  <span class="k">on</span> valve          <span class="c">// N: lines before any qualifier</span>
-  <span class="k">S</span>
-    alarm := 1;
-  <span class="k">L</span> 10s
-    horn [:=] 1;</pre>
-<table>
-<tr><td><code><span class="k">N</span></code></td><td>non-stored: while the step is active</td></tr>
-<tr><td><code><span class="k">S</span></code></td><td>stored: keeps running after the step, until reset</td></tr>
-<tr><td><code><span class="k">R</span></code></td><td>resets a stored action</td></tr>
-<tr><td><code><span class="k">L</span> 10s</code></td><td>time limited: while active, at most 10 s</td></tr>
-<tr><td><code><span class="k">D</span> 2s</code></td><td>time delayed: starts after 2 s if still active</td></tr>
-<tr><td><code><span class="k">P</span></code></td><td>pulse: once, when the step becomes active</td></tr>
-</table>
-<p class="sub">A line holding only the qualifier (and its duration) starts an action; its ST goes on the lines below. L and D need a duration, the others take none.</p>
+<pre><span class="k">step</span> heat
+  <span class="k">on</span> heater        <span class="c">// N: lines before a qualifier</span>
+  <span class="k">S</span>                <span class="c">// stored until R</span>
+    door_lock := 1;
+  <span class="k">L</span> 5s             <span class="c">// limited</span>
+    buzzer [:=] 1;
+  <span class="k">D</span> 2s             <span class="c">// delayed</span>
+    light [:=] 1;
+  <span class="k">P</span>                <span class="c">// once</span>
+    cycles := cycles + 1;</pre>
 </section>
 
 <section>
-<h2>Selection (OR): one leg runs</h2>
+<h2>3 · Time and step members</h2>
+<table>
+<tr><td><code>fill.done · fill.DN</code></td><td>preset elapsed</td></tr>
+<tr><td><code>fill.active · fill.X</code></td><td>step active</td></tr>
+<tr><td><code>fill.time · fill.T</code></td><td>ms active</td></tr>
+<tr><td><code>fill.first · fill.FS</code></td><td>first scan</td></tr>
+<tr><td><code>fill.Count</code></td><td>times activated</td></tr>
+<tr><td><code><span class="k">--</span> <span class="k">after</span> 5s</code></td><td>the step above active 5 s</td></tr>
+</table>
+<p class="sub">Durations: <code>500ms</code> <code>5s</code> <code>2m</code> <code>1h</code> <code>1m30s</code> (a unit is required).</p>
+
+<h2>4 · Branches</h2>
+<div class="grid" style="grid-template-columns:1fr 1fr;gap:0 12px">
 <pre><span class="k">step</span> check
 <span class="k">select</span>
   <span class="k">--</span> ok
   <span class="k">step</span> pack
-  <span class="k">--</span> pack_done
+  <span class="k">--</span> packed
 <span class="k">|</span>
   <span class="k">--</span> NOT ok
   <span class="k">step</span> reject
-  <span class="k">--</span> rejected <span class="k">-&gt;</span> idle
+  <span class="k">--</span> out <span class="k">-&gt;</span> idle
 <span class="k">end</span>
 <span class="k">step</span> next</pre>
-<p class="sub">After a step. Legs start and end with a transition. Continuing legs merge into the step after <code>end</code>.</p>
-
-<h2>Parallel (AND): all legs run</h2>
 <pre><span class="k">--</span> go
 <span class="k">parallel</span>
   <span class="k">step</span> fill_a
@@ -132,60 +95,39 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
   <span class="k">step</span> fill_b
 <span class="k">end</span>
 <span class="k">--</span> level_a AND level_b</pre>
-<p class="sub">After a transition. Legs start and end with a step. A transition follows <code>end</code>.</p>
+</div>
+<p class="sub"><b>select</b>: after a step; one leg runs (first true). <b>parallel</b>: after a transition; all legs run, the transition after <code>end</code> waits for all.</p>
 </section>
 
 <section>
-<h2>Several routines</h2>
-<pre><span class="k">program</span> tank          <span class="c">// optional, before the routines</span>
-<span class="k">st</span> main               <span class="c">// first routine = main</span>
-  <span class="k">call</span> fill_seq;      <span class="c">// exported as JSR(fill_seq,0);</span>
-  <span class="k">call</span> alarms;
+<h2>5 · Tags and I/O</h2>
+<table>
+<tr><td><code><span class="k">tag</span> n : DINT = 5 <span class="s">"desc"</span></code></td><td>type, value, description</td></tr>
+<tr><td><code><span class="k">tag</span> t1 : TIMER 3s</code></td><td>timer and its preset</td></tr>
+<tr><td><code>(no line)</code></td><td>BOOL by default; DINT / REAL from use</td></tr>
+</table>
+<pre><span class="k">io</span>
+  start_btn  Local:1:I.Data.0  <span class="s">"Start"</span>
+  valve      Local:2:O.Data.3
+  fills      fill.Count
+<span class="k">end</span></pre>
+
+<h2>6 · Program</h2>
+<pre><span class="k">controller</span>              <span class="c">// shared tags</span>
+  <span class="k">tag</span> stop : BOOL = 1
+  <span class="k">sfc tags</span> fill
+<span class="k">end</span>
+<span class="k">program</span> tank <span class="s">"Title"</span>
+<span class="k">uses</span> INIT, Main (main)   <span class="c">// not in this file</span>
+
+<span class="k">st</span> main                 <span class="c">// first routine: runs every scan</span>
+  <span class="k">call</span> fill_seq;
 <span class="k">sfc</span> fill_seq
 <span class="k">init</span> idle
-<span class="k">--</span> start_btn
-<span class="k">step</span> fill 5s
-<span class="k">--</span> fill.DN <span class="k">-&gt;</span> idle
-<span class="k">st</span> alarms
-  alarm := level_high AND NOT valve;</pre>
-<ul>
-<li>A routine runs to the next <code>sfc</code>/<code>st</code> line. Tags and names are shared by the whole file.</li>
-<li><code>call</code> works in ST routines and in actions, not in conditions. <code>JSR(name, 0);</code> works too.</li>
-<li>Jumps stay inside their SFC routine; read another routine's step with <code>fill.X</code>.</li>
-</ul>
-
-<h2>In the app</h2>
-<table>
-<tr><td>Ctrl+Space</td><td>complete; at the start of a line where a step can start, also <b>snippets</b> (start / stop, timeout → fault, reset sequence, parallel join, counter loop; Insert menu too). Tab fills the names.</td></tr>
-<tr><td>Ctrl+F</td><td>in the diagram: find steps, conditions and actions (Enter: next); in the editor: search the text</td></tr>
-<tr><td>Ctrl+P</td><td>print or save as PDF: title block, diagram, tags with I/O addresses, code</td></tr>
-<tr><td>Tags sidebar</td><td>click a tag: its uses light up in the diagram; Enter: next use in the editor</td></tr>
-<tr><td>Help → Examples</td><td>ready charts (start/stop, selection, parallel, qualifiers, routines, controller tags) as new files</td></tr>
-<tr><td>File → Open an L5X…</td><td>a Studio program back to qSFC (or drop the .L5X); what can't be kept is listed at the top of the file</td></tr>
-</table>
-
-<h2>Rules to remember</h2>
-<ul>
-<li>Steps and transitions alternate. A <code>select</code> block counts as a transition, a <code>parallel</code> block as a step.</li>
-<li>Names: letter or <code>_</code> first, max 40 chars, no <code>__</code>, no trailing <code>_</code>. Steps, transitions and tags share one namespace.</li>
-<li>After a jump the flow stops: the next line starts a new chain (a step reached by a jump).</li>
-<li>Inside a branch, a jump can only end a <code>select</code> leg. Jumps can't enter or leave a <code>parallel</code>.</li>
-<li>Tags are created automatically: BOOL by default, DINT/REAL inferred from numbers.</li>
-<li>A chart may end on a step (warning W300).</li>
-<li>A step named <code>s3</code> is exported as <code>Step_003</code>, a transition <code>tr5:</code> as <code>Tran_005</code>; other names are numbered in order.</li>
-</ul>
-
-<h2>Complete example</h2>
-<pre><span class="k">sfc</span> tank
-<span class="k">init</span> idle
-  motor := 0;
-<span class="k">--</span> start: start_btn AND safety_ok
-<span class="k">step</span> fill 5s <span class="s">"Fill the tank"</span>
-  valve [:=] 1;
-<span class="k">--</span> fill.DN
-<span class="k">step</span> drain
-  pump [:=] 1;
-<span class="k">--</span> level_low <span class="k">-&gt;</span> idle</pre>
+  SFR(other, start);      <span class="c">// reset a chart</span>
+  SFP(other, Pause);      <span class="c">// pause / Execute</span>
+<span class="k">--</span> go <span class="k">-&gt;</span> idle</pre>
+<p class="sub">Names: letters, digits, <code>_</code>; at most 40; shared by steps, transitions, tags and routines. <code>s3</code> keeps number 3 on export, <code>tr5:</code> number 5.</p>
 </section>
 </div>
 </body>

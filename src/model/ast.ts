@@ -263,6 +263,11 @@ export interface ProgramNode {
   tagDecls: TagDecl[];
 }
 
+/** Every step name of the program (all SFC routines), as written. */
+export function programStepNames(program: ProgramNode): string[] {
+  return sfcCharts(program).flatMap((c) => allSteps(c).map((s) => s.name.text));
+}
+
 export function sfcCharts(program: ProgramNode): Chart[] {
   return program.routines.flatMap((r) => (r.kind === "sfc" ? [r.chart] : []));
 }

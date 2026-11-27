@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jumpArrow, lineKind, tokenBefore, tokenizeLine, TOKEN_STYLE, type TokKind } from "../../app/highlight.js";
+import { blocksAfter, jumpArrow, lineKind, structureMark, tokenBefore, tokenizeLine, tokenRole, TOKEN_STYLE, type TokKind } from "../../app/highlight.js";
 
 /** [text, kind] pairs of a line, for readable expectations. */
 function toks(line: string): Array<[string, TokKind]> {
@@ -328,5 +328,38 @@ describe("actions and qualifiers (SPEC §4.3)", () => {
     expect(indentAfter("  L 5s")).toBe(4);
     expect(indentAfter("    horn [:=] 1;")).toBe(4);
     expect(indentAfter("  on valve")).toBe(2);
+  });
+});
+
+describe("roles (editor colors by role)", () => {
+  const roles = (line: string, top?: "decl" | "branch") =>
+    tokenizeLine(line).map((t) => `${tokenRole(t.kind, line.slice(t.from, t.to), line, top)}:${line.slice(t.from, t.to)}`);
+
+  it("tells steps, transitions, branches, actions, time and values apart", () => {
+    expect(roles("step fill 5s")).toEqual(["stepkw:step", "stepdef:fill", "time:5s"]);
+    expect(roles("-- go: a AND b -> idle")).toEqual(["trans:--", "label:go", "op::", "ident:a", "logic:AND", "ident:b", "trans:->", "target:idle"]);
+    expect(roles("  on pump, fan")).toEqual(["action:on", "ident:pump", "op:,", "ident:fan"]);
+    expect(roles("  x := 1500;")).toEqual(["ident:x", "action::=", "value:1500", "op:;"]);
+    expect(roles("  L 5s")).toEqual(["action:L", "time:5s"]);
+    expect(roles("-- after 3s")).toEqual(["trans:--", "time:after", "time:3s"]);
+    expect(roles("  SFR(seq, idle);")[0]).toBe("action:SFR");
+    expect(roles("  IF a THEN")).toEqual(["stctl:IF", "ident:a", "stctl:THEN"]);
+    expect(roles("select")).toEqual(["branch:select"]);
+    expect(roles("tag n : DINT = 5")).toEqual(["decl:tag", "declname:n", "op::", "type:DINT", "value:5"]);
+  });
+
+  it("end closes the innermost block: a declaration after io / controller, a branch after select / parallel", () => {
+    let stack = blocksAfter("controller", []);
+    stack = blocksAfter("  io", stack);
+    expect(stack).toEqual(["decl", "decl"]);
+    expect(roles("  end", stack[stack.length - 1])).toEqual(["decl:end"]);
+    expect(blocksAfter("select", [])).toEqual(["branch"]);
+    expect(roles("end", "branch")).toEqual(["branch:end"]);
+    expect(blocksAfter("end", ["decl", "branch"])).toEqual(["decl"]);
+    expect(blocksAfter("sfc main", ["branch"])).toEqual([]);
+  });
+
+  it("S / T column marks", () => {
+    expect(["init idle", "step fill", "-- go", "select", "|", "end", "parallel", "  on x", "tag x"].map(structureMark)).toEqual(["S0", "S", "T", "|", "|", "|", "=", "", ""]);
   });
 });

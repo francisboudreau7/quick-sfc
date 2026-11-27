@@ -368,7 +368,7 @@ function planStep(s: GStep, M: Metrics, look: SvgLook, numbers: boolean, showAct
 }
 
 function studioCaption(s: GStep): string {
-  const op = operand("Step", s.index);
+  const op = operand("Step", s.operand);
   return s.presetMs > 0 ? `${op} · ${formatDuration(s.presetMs)}` : op;
 }
 
@@ -1019,7 +1019,7 @@ function drawPass(env: Env, xref: Set<string>): Pass {
     if (s.description) tipParts.push(s.description);
     if (s.presetMs > 0) tipParts.push(`preset ${formatDuration(s.presetMs)}`);
     if (s.initial) tipParts.push("initial step");
-    parts.push(`<title>${escapeXml(`${tipParts.join(" — ")} (${operand("Step", s.index)})`)}</title>`);
+    parts.push(`<title>${escapeXml(`${tipParts.join(" — ")} (${operand("Step", s.operand)})`)}</title>`);
     parts.push(`<rect class="qsfc-step-box" x="${n(x0)}" y="${n(y0)}" width="${n(plan.w)}" height="${n(plan.h)}"/>`);
     boxes.push({ x0, y0, x1: x0 + plan.w, y1: y0 + plan.h, owner: s.id });
     if (s.initial) {

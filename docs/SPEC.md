@@ -93,6 +93,8 @@ Steps, transitions and tags all follow **Studio 5000 tag naming rules**, so that
   - **Position keywords** (decided 2026-11-27): `after` (before a duration in a condition, §4.4), `on` / `set` / `reset` (sugar lines, §4.3) and the qualifiers `N S R L D P` (qualifier lines, §4.3) are keywords only in those positions. Elsewhere they are ordinary names, so a tag named `after` or `set` still works (`after := 1;`, `-- after AND x`). `after 5s` in a condition always means the time form.
 - not an ST keyword (`AND OR XOR NOT MOD TRUE FALSE IF THEN ELSIF ELSE END_IF CASE OF END_CASE FOR TO BY DO END_FOR WHILE END_WHILE REPEAT UNTIL END_REPEAT EXIT RETURN`)
 - not a generated operand name: `Step_` + digits, `Tran_` + digits, `Action_` + digits (§8.2)
+- **Routine and program names [Phase 4d]** may be a qSFC keyword (`sfc SFC`, `call SFC;`: Studio projects often name the chart routine `SFC`); ST keywords stay forbidden.
+- **Pinned operands [Phase 4d]:** a step named `s` + a number (`s3`) is exported as that operand (`Step_003`), and so is a named transition `t` + a number (`t5:` → `Tran_005`); see §8.2.
 
 **One namespace:** a name can't be used by two things. Two steps, a step and a transition, a step and a tag, or a routine and any of these can't share a name. The namespace covers the whole file (all routines), because Studio keeps step, transition and tag names at program scope.
 
@@ -250,7 +252,7 @@ st alarms
 - An **ST routine's body** is every line until the next header, except `tag` lines (§7.4), which can appear anywhere. The body is dedented like an action (§4.3): the common leading whitespace is removed, and blank lines at its start and end are dropped. `//` comment lines inside it are part of the ST and are exported, but comment lines after its last code line are not (they usually introduce the next routine).
 - Step, transition, branch lines (`init`, `step`, `--`, `select`, `parallel`, `|`, `end`) inside an ST routine are an error (E222).
 - Names are shared by the whole file (§3.4): a step `fill` in one SFC routine can be read from any routine as `fill.X`, `fill.DN`… and is exported as its operand.
-- Operands are numbered across the whole file (`Step_000`… continue from one SFC routine to the next), because Studio keeps them at program scope.
+- Operands are numbered across the whole file (`Step_000`… continue from one SFC routine to the next), because Studio keeps them at program scope. Names `s<N>` / `t<N>` pin their number (§8.2).
 - A jump (`-> target`) can't leave its SFC routine (E303 says where the step is).
 
 **Program header**
@@ -458,11 +460,12 @@ Rules:
 - An unknown member gives E401 (its suggestion includes the readable names). A step name used alone (`fill`) gives E400 with the hint "use `fill.X`".
 - `.DN` (or `.done`) on a step without a preset gives warning W302: the timer is done immediately.
 
-### 7.4 Tag overrides (optional) [P1]
+### 7.4 Tag overrides (optional) [P1; values: Phase 4d]
 ```
-tag name [: TYPE] ["description"]
+tag name [: TYPE [value]] ["description"]
 ```
-- These lines can go anywhere (the top of the file is recommended). They never make a tag exist by themselves: a declared tag that is never used gives W404.
+- These lines can go anywhere (the top of the file is recommended). Without a value they never make a tag exist by themselves: a declared tag that is never used gives W404.
+- **Value [Phase 4d].** After the type, the tag's initial value: `= 0`/`= 1`/`= TRUE`/`= FALSE` for BOOL, `= -5` for DINT, `= 1.5` for REAL, and the **preset** for a TIMER, written as a duration (`tag t2 : TIMER 3s`, `= 3s` also works). A value that doesn't fit the type, a value without a type, or a value on an `io` point is **E417**. A tag with a value is exported even when the code doesn't use it (no W404): a timer set up for later, or a Studio tag brought back by the import (§8.7). Exported as Studio writes it: the L5K and Decorated data (`[0,3000,0]` and `PRE` for a timer, as in a real Studio export; REAL **[Verify]**).
 - Phase 1 types: `BOOL`, `DINT`, `REAL`, `TIMER`. **[Later]** `SINT`, `INT`, `COUNTER`, arrays, UDTs.
 - A declared type takes priority over inference. A use that contradicts it (for example `count := 1.5` with `tag count : DINT`) is an error.
 - The description becomes the tag's description in Studio 5000.
@@ -471,6 +474,9 @@ tag name [: TYPE] ["description"]
 tag start_btn "Green push button"
 tag count : DINT
 tag tmr : TIMER
+tag t2 : TIMER 3s "Fill timer"
+tag parts : DINT = 10
+tag ok : BOOL = 1
 ```
 
 ### 7.5 Live tag list (editor, Phase 3)
@@ -510,10 +516,10 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 ### 8.2 Elements
 | qSFC | L5X |
 |---|---|
-| step | `<Step>`, operand `Step_000`, `Step_001`, … in file order, plus an `SFC_STEP` tag with `PRE` = preset in ms |
+| step | `<Step>`, operand `Step_000`, `Step_001`, … in file order, plus an `SFC_STEP` tag with `PRE` = preset in ms. **Pins [Phase 4d]:** a step named `s<N>` (`s3`; `s0`, no leading zero) is `Step_<N>` (`Step_003`), and the other steps take the free numbers in file order, skipping the pinned ones. That is how an imported Studio chart (§8.7) keeps its operands |
 | `init` | `InitialStep="true"` |
 | action | one `<Action>` per action in source order, `Qualifier` = `NonStored` (N; verified), `StoredUntilReset` (S), `Reset` (R), `TimeLimited` (L), `TimeDelayed` (D), `Pulse` (P) [Verify: tp12], `PresetUsesExpr="false"`; operands `Action_000`, … across the program, plus an `SFC_ACTION` tag whose `PRE` is the L/D duration in ms. Each source line becomes one `<Line>` (sugar lines expanded, §4.3) |
-| transition | `<Transition>`, operand `Tran_000`, …, plus a BOOL tag. The condition is one `<Line>` |
+| transition | `<Transition>`, operand `Tran_000`, …, plus a BOOL tag. The condition is one `<Line>`. A transition named `t<N>:` is `Tran_<N>` (pin, as for steps); auto names (`T1`) never pin |
 | select / parallel | `<Branch BranchType="Selection" / "Simultaneous">` diverge + converge, one `<Leg>` per leg; `Priority="Default"` on the selection diverge only |
 | automatic convergence (§6.4) | `<Branch BranchType="Selection" BranchFlow="Converge">` |
 | links | `<DirectedLink>` following the verified patterns (L5X_GUIDE §6.3). A jump wire that the app's diagram (default view) draws as a cross-reference is written `Show="false"`: Studio then hides the wire and shows connector labels at both ends (verified with the user's tp05 export, 2026-11-26). The app draws such a hidden wire as a dashed arrow under the transition (labelled with the target) and a dashed arrow into the target (labelled with the transition and its condition) |
@@ -566,6 +572,19 @@ Beyond the language rules, the exporter refuses to write a file when:
 - **Skip rule:** a routine is left untouched, with a one-sentence reason, when its shape is one qSFC can't draw (e.g. a jump into a parallel leg, a step with two incoming wires and no converge), when it has an element Tidy doesn't know, or when the rebuilt chart's links, mapped back to the original IDs, are not exactly the original `DirectedLink`s (same pairs, same branch types and flows, same legs). Other routines of the file are still tidied.
 - **Choosing the structure.** Several qSFC sources can give the same links. qSFC's own export numbers steps and transitions in file order, so Tidy first looks for a structure in that order (tidying a qSFC export changes nothing); otherwise (a chart drawn in Studio) any order. Among the structures that fit it prefers: no steps inside a jumping leg that could follow `end`, then the fewest jumps, then balanced legs, the least nesting, the fewest chains. One known ambiguity: `-- t -> s` right above `step s` (W301) comes back as `-- t` + `step s`.
 - **[Verify]** The Stop, SbrRet, TextBox and Attachment formats are assumed (no Studio export with them yet).
+
+### 8.7 Import (Phase 4d)
+`qsfc import in.L5X [-o out.qsfc] [--program NAME]` (default `in.qsfc`), and in the app File → **Open an L5X…** (or drop a `.L5X` on the window; the dialog can hand the file to Tidy instead), turns one Program of a Studio 5000 export back into qSFC. A file with several programs (a controller export) imports the exported one (`Use="Target"`), else the first; `--program` or the dialog's list picks another.
+
+- **Routines:** SFC and ST routines, the main routine first. Ladder (RLL), FBD and others are not imported (ladder: Phase 5); a `JSR` to one of them is commented out. When the main routine is not imported, the first imported routine becomes the main one on export (a note says so).
+- **Structure:** each chart is rebuilt as Tidy does (§8.6: same search, same check that the links come out exactly as in the file). A chart that can't be rebuilt is not imported, with Tidy's reason.
+- **Names:** the first line of the step's tag description (what the export writes, §8.3), else the step's `// name - description` comment, else a plain name from the operand: `Step_003` → `s3`, which pins `Step_003` again on export (§8.2). Stops become `stop<N>`. Transitions take the name in their tag description, except auto names (`T3`), which come back unnamed. An unnamed transition whose operand would change on export is named `t<N>:` to keep it, and so is one the code refers to (`Tran_005.…`). Operands that still change (a name already taken, a named step) are listed in a note. Action operands are renumbered.
+- **Text:** conditions and actions keep Studio's ST, with operands replaced by names (`Step_003.DN` → `s3.DN`); several condition lines are joined, a trailing `;` is dropped, a lone `1`/`0` condition is written `TRUE`/`FALSE`. Sugar (`on`, `set`, `reset`, `call`, `after`) comes back **only where it matches exactly** what the export writes (`a [:=] 1; b [:=] 1;` → `on a, b`; `x := 1;` with a BOOL `x` → `set x`; `JSR(name,0);` → `call name;`; `s1.T >= 3000` right after `s1` → `after 3s`): the import compiles both versions and keeps the plain text wherever the sugar would not export the same way. Studio spellings such as `F:=1;` stay as written.
+- **Qualifiers and times:** N S R L D P with the L/D time from the action tag; another qualifier is written as N with a `// Studio qualifier: …` comment.
+- **Tags:** `tag` lines for DINT, REAL, TIMER and described BOOL tags, with their values (§7.4); a BOOL used by the code with no description and no value is left to automatic creation. Alias tags of I/O addresses become an `io` block. Step and action tags not used by any chart are left out (info note).
+- **Program:** `program name "description"` when the name differs from the main routine's or the program has a description.
+- **What can't be kept** is listed in the report and as a comment block at the top of the file, never dropped silently: text boxes (written as `//` comments above the element they are attached to, or at the top of the routine), Stop elements (a step that ends the chain), step alarms and limits, preset expressions, Boolean actions, other tag types (INT, COUNTER, UDTs, arrays: their type is inferred again), aliases that are not I/O addresses, values that can't be written, other routine types.
+- **Round trip:** exporting a qSFC file, importing it and exporting again gives the same L5X byte for byte (every test pack file and fixture, `test/import/roundtrip.test.ts`); a chart drawn in Studio comes back with the same wires and step operands (`legacy/tests/MainProgram.L5X`).
 
 ---
 
@@ -661,6 +680,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E414 | `count` is mapped to the bit `Local:1:I.Data.0` but declared as DINT (line 2) |
 | E415 | `start_btn` is already mapped to `Local:1:I.Data.0` (line 3) |
 | E416 | `after` needs one step before the transition; this transition follows the `end` of a `parallel` block (§4.4) |
+| E417 | `1.5` is not a DINT value; a value needs the tag's type first; an I/O point can't have a value (§7.4) |
 | W400 | `strat_btn` is used only once; did you mean `start_btn`? |
 | W401 | `Valve` and `valve` are the same tag; the first spelling is used |
 | W402 | the action of `fill` doesn't end with `;` |
@@ -700,7 +720,8 @@ line        = blank | comment | program | meta | header | tag_decl | io_block | 
 program     = "program" NAME [ STRING ] ;           (* STRING: the title, §4.5 *)
 meta        = ( "course" | "author" ) STRING ;      (* before the first routine, once each *)
 header      = ( "sfc" | "st" ) NAME ;
-tag_decl    = "tag" NAME [ ":" TYPE ] [ STRING ] ;
+tag_decl    = "tag" NAME [ ":" TYPE [ value ] ] [ STRING ] ;
+value       = "=" VALUE | DURATION ;                  (* DURATION: TIMER preset, §7.4 *)
 io_block    = "io" { io_line | blank | comment } "end" ;
 io_line     = NAME ADDRESS [ STRING ] ;
 ADDRESS     = MODULE { ":" WORD } { "." WORD | "[" digits "]" } ;   (* at least one ":", §7.6 *)

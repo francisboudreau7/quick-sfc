@@ -4,21 +4,25 @@
  *   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
  *   qsfc show   <file.qsfc>
  *   qsfc tidy   <in.L5X> [-o out.L5X]      (Phase 4a, SPEC §8.6; default out: <in>_tidy.L5X)
+ *   qsfc import <in.L5X> [-o out.qsfc] [--program NAME]   (Phase 4d, SPEC §8.7; default out: <in>.qsfc)
  * Exit codes: 0 OK (warnings allowed; tidy: the file was written, even if some routines were
- * skipped), 1 errors in the chart (tidy: no SFC routine could be tidied, nothing written),
+ * skipped; import: the file was written, even with notes), 1 errors in the chart (tidy: no SFC
+ * routine could be tidied, nothing written; import: nothing could be imported),
  * 2 usage or file error.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { compile, exportL5X, showAscii } from "../compile.js";
 import { formatDiagnostic, hasErrors, type Diagnostic } from "../model/diagnostics.js";
+import { importL5X } from "../import/index.js";
 import { tidyL5X } from "../tidy/index.js";
 
 const USAGE = `usage:
   qsfc check  <file.qsfc>
   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
   qsfc show   <file.qsfc>
-  qsfc tidy   <in.L5X> [-o out.L5X]`;
+  qsfc tidy   <in.L5X> [-o out.L5X]
+  qsfc import <in.L5X> [-o out.qsfc] [--program NAME]`;
 
 interface Args {
   command: string;
@@ -30,7 +34,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args | string {
   const [command, ...rest] = argv;
-  if (!command || !["check", "export", "show", "tidy"].includes(command)) return USAGE;
+  if (!command || !["check", "export", "show", "tidy", "import"].includes(command)) return USAGE;
   const args: Partial<Args> = { command };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
@@ -63,6 +67,7 @@ export function main(argv: string[]): number {
     return 2;
   }
   if (args.command === "tidy") return tidy(args);
+  if (args.command === "import") return importCommand(args);
   let source: string;
   try {
     source = readFileSync(args.file, "utf8").replace(/^﻿/, "");
@@ -143,6 +148,42 @@ function tidy(args: Args): number {
     return 2;
   }
   console.error(`wrote ${out}`);
+  return 0;
+}
+
+/** `qsfc import`: the notes on stderr (warnings first), the .qsfc file written. */
+function importCommand(args: Args): number {
+  if (args.version !== undefined) {
+    console.error(`import takes only -o and --program
+${USAGE}`);
+    return 2;
+  }
+  let text: string;
+  try {
+    text = readFileSync(args.file, "utf8");
+  } catch (e) {
+    console.error(`cannot read ${args.file}: ${(e as Error).message}`);
+    return 2;
+  }
+  const result = importL5X(text, args.program !== undefined ? { program: args.program } : {});
+  if (result.error) {
+    console.error(`${basename(args.file)}: ${result.error}`);
+    if (result.programs.length > 1) console.error(`programs in the file: ${result.programs.join(", ")} (choose one with --program)`);
+    return 1;
+  }
+  if (result.programs.length > 1 && args.program === undefined) {
+    console.error(`the file has ${result.programs.length} programs (${result.programs.join(", ")}); importing ${result.program} (choose with --program)`);
+  }
+  const notes = [...result.notes].sort((a, b) => Number(a.level === "info") - Number(b.level === "info"));
+  for (const n of notes) console.error(`${n.level}: ${n.routine ? `${n.routine}: ` : ""}${n.text}`);
+  const out = args.out ?? args.file.replace(/\.l5x$/i, "") + ".qsfc";
+  try {
+    writeFileSync(out, result.source, "utf8");
+  } catch (e) {
+    console.error(`cannot write ${out}: ${(e as Error).message}`);
+    return 2;
+  }
+  console.error(`wrote ${out} (program ${result.program}, ${result.routines.filter((r) => r.imported).length} routine(s))`);
   return 0;
 }
 

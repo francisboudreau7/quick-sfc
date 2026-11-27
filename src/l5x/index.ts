@@ -144,24 +144,39 @@ function baseTag(name: string, type: string, body: string[], desc: string | unde
   };
 }
 
-const boolTag = (name: string, desc?: string) =>
-  baseTag(name, "BOOL", data("0", ['<DataValue DataType="BOOL" Radix="Decimal" Value="0"/>']), desc, "Decimal");
+/** Initial values (SPEC §7.4): the L5K / Decorated forms of Studio's own export (MainProgram.L5X). */
+const boolTag = (name: string, desc?: string, v = 0) =>
+  baseTag(name, "BOOL", data(`${v}`, [`<DataValue DataType="BOOL" Radix="Decimal" Value="${v}"/>`]), desc, "Decimal");
 
-const dintTag = (name: string, desc?: string) =>
-  baseTag(name, "DINT", data("0", ['<DataValue DataType="DINT" Radix="Decimal" Value="0"/>']), desc, "Decimal");
+const dintTag = (name: string, desc?: string, v = 0) =>
+  baseTag(name, "DINT", data(`${v}`, [`<DataValue DataType="DINT" Radix="Decimal" Value="${v}"/>`]), desc, "Decimal");
+
+/** L5K `1.50000000e+000` (a 3-digit exponent, as in L5X_GUIDE 6c). */
+function realL5K(v: number): string {
+  const [m, e] = v.toExponential(8).split("e");
+  const exp = Number(e);
+  return `${m}e${exp < 0 ? "-" : "+"}${String(Math.abs(exp)).padStart(3, "0")}`;
+}
 
 /** UNVERIFIED: notation from L5X_GUIDE 6c (L5K 0.00000000e+000, Decorated Radix Float Value 0.0). */
-const realTag = (name: string, desc?: string) =>
-  baseTag(name, "REAL", data("0.00000000e+000", ['<DataValue DataType="REAL" Radix="Float" Value="0.0"/>']), desc, "Float");
+const realTag = (name: string, desc?: string, v = 0) =>
+  baseTag(
+    name,
+    "REAL",
+    data(realL5K(v), [`<DataValue DataType="REAL" Radix="Float" Value="${Number.isInteger(v) ? v.toFixed(1) : String(v)}"/>`]),
+    desc,
+    "Float",
+  );
 
-const timerTag = (name: string, desc?: string) =>
+/** L5K `[control, PRE, ACC]` (verified in MainProgram.L5X: `[1803674,3000,0]`). */
+const timerTag = (name: string, desc?: string, pre = 0) =>
   baseTag(
     name,
     "TIMER",
     data(
-      "[0,0,0]",
+      `[0,${pre},0]`,
       structure("TIMER", [
-        ["PRE", "DINT", 0, "Decimal"],
+        ["PRE", "DINT", pre, "Decimal"],
         ["ACC", "DINT", 0, "Decimal"],
         ["EN", "BOOL", 0, null],
         ["TT", "BOOL", 0, null],
@@ -240,13 +255,13 @@ function userTag(t: TagInfo): TagLines {
   if (t.address !== undefined) return aliasTag(t.name, t.address, t.description);
   switch (t.type) {
     case "BOOL":
-      return boolTag(t.name, t.description);
+      return boolTag(t.name, t.description, t.initial ? 1 : 0);
     case "DINT":
-      return dintTag(t.name, t.description);
+      return dintTag(t.name, t.description, t.initial);
     case "REAL":
-      return realTag(t.name, t.description);
+      return realTag(t.name, t.description, t.initial);
     case "TIMER":
-      return timerTag(t.name, t.description);
+      return timerTag(t.name, t.description, t.initial);
     default:
       throw new Error(`L5X: unsupported tag type ${String(t.type)} for ${t.name}`);
   }
@@ -301,7 +316,7 @@ function sfcRoutine(
   };
 
   for (const s of graph.steps) {
-    const op = operand("Step", s.index);
+    const op = operand("Step", s.operand);
     const sid = allocate(s.id);
     const { x, y } = pos(s.id);
     // Studio draws a tag description as a box over the action box and ignores HideDesc
@@ -339,7 +354,7 @@ function sfcRoutine(
   }
 
   for (const t of graph.transitions) {
-    const op = operand("Tran", t.index);
+    const op = operand("Tran", t.operand);
     const tid = allocate(t.id);
     const { x, y } = pos(t.id);
     // No description box for transitions either: it covers the condition text (tp01 import).

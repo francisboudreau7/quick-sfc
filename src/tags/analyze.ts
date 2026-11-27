@@ -968,7 +968,9 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       seen.add(o.name);
       diags.push(warning("W401", o.span, `\`${canonical}\` and \`${o.name}\` are the same tag; the first spelling is used`, `write it as \`${canonical}\``));
     }
-    if (!r.uses.length && !r.io) {
+    // a `tag` line with a value makes the tag exist even when unused (SPEC §7.4: a timer set up
+    // for later, or a Studio tag brought back by the import)
+    if (!r.uses.length && !r.io && !r.decls.some((d) => d.initial !== undefined)) {
       if (r.decls.length && !flagged.has(r.key)) {
         diags.push(warning("W404", (firstDecl as TagDecl).name.span, `tag \`${canonical}\` is declared but never used`));
       }
@@ -984,6 +986,10 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     };
     if (description !== undefined) info.description = description;
     if (r.io) info.address = r.io.address.text;
+    const valued = r.decls.find((d) => d.valueSpan !== undefined);
+    if (valued && r.io) {
+      diags.push(error("E417", valued.valueSpan!, `\`${canonical}\` is an I/O point: its value comes from the module, it can't have one of its own`));
+    } else if (valued?.initial !== undefined) info.initial = valued.initial;
     infos.push(info);
   }
 

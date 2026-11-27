@@ -48,6 +48,40 @@ export interface OperandBase {
   transitions: number;
   /** Action operands (Action_000...): every step takes at least one (the name comment). Default 0. */
   actions?: number;
+  /** Operand numbers of this routine's steps / transitions in file order (assignOperands). */
+  stepOperands?: readonly number[];
+  transitionOperands?: readonly number[];
+}
+
+const STEP_PIN = /^s(0|[1-9]\d*)$/i;
+const TRANS_PIN = /^t(0|[1-9]\d*)$/i;
+
+/** The operand number a name pins (`s3` -> 3 for a step, `t3` -> 3 for a named transition), if any. */
+export function pinnedOperand(kind: "step" | "transition", name: string): number | undefined {
+  const m = (kind === "step" ? STEP_PIN : TRANS_PIN).exec(name);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
+ * Operand numbers across the program (SPEC §8.2): a step named `s<N>` is Step_<N> and a named
+ * transition `t<N>` is Tran_<N>; every other step / transition takes the next free number in file
+ * order, skipping the pinned ones. Auto-named transitions (`T1`) never pin.
+ */
+export function assignOperands(charts: readonly Chart[]): Array<{ steps: number[]; transitions: number[] }> {
+  const number = (lists: Array<Array<number | undefined>>): number[][] => {
+    const pinned = new Set(lists.flat().filter((n): n is number => n !== undefined));
+    let next = 0;
+    return lists.map((list) =>
+      list.map((pin) => {
+        if (pin !== undefined) return pin;
+        while (pinned.has(next)) next++;
+        return next++;
+      }),
+    );
+  };
+  const steps = number(charts.map((c) => allSteps(c).map((s) => pinnedOperand("step", s.name.text))));
+  const trans = number(charts.map((c) => allTransitions(c).map((t) => (t.auto ? undefined : pinnedOperand("transition", t.name.text)))));
+  return charts.map((_, i) => ({ steps: steps[i]!, transitions: trans[i]! }));
 }
 
 /** Action operands a lowered routine takes (with the L5X writer's default name comments). */
@@ -76,6 +110,7 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
     const g: GStep = {
       id,
       index: base.steps + index,
+      operand: base.stepOperands?.[index] ?? base.steps + index,
       name: s.name.text,
       initial: s.initial,
       presetMs: s.presetMs ?? 0,
@@ -89,7 +124,7 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
     const id = `t${index}`;
     transId.set(t, id);
     transIndex.set(t, index);
-    return { id, index: base.transitions + index, name: t.name.text, auto: t.auto, condition: t.condition.text, node: t };
+    return { id, index: base.transitions + index, operand: base.transitionOperands?.[index] ?? base.transitions + index, name: t.name.text, auto: t.auto, condition: t.condition.text, node: t };
   });
 
   const info = collectInfo(chart);

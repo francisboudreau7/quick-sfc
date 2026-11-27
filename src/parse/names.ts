@@ -22,6 +22,8 @@ export function isKeyword(name: string): boolean {
 export interface NameCheckOptions {
   /** Also reject generated operand names Step_nnn / Tran_nnn / Action_nnn (E405). */
   reserved?: boolean;
+  /** Routine and program names: a qSFC keyword is allowed (`sfc SFC`); ST keywords are not. */
+  keywordName?: boolean;
 }
 
 /** Check a name against SPEC §3.4. E101 / E102 / E103 / E108 / E405. */
@@ -41,7 +43,7 @@ export function checkName(text: string, span: Span, opts: NameCheckOptions = {})
   if (text.includes("__") || text.endsWith("_")) {
     out.push(error("E103", span, `name \`${text}\` can't contain \`__\` or end with \`_\` (Studio 5000 rule)`));
   }
-  if (isKeyword(text)) {
+  if (isKeyword(text) && !(opts.keywordName && !ST_KEYWORDS.some((k) => k.toLowerCase() === text.toLowerCase()))) {
     out.push(error("E108", span, `\`${text}\` is a keyword and can't be used as a name`));
   }
   if (opts.reserved && RESERVED_RE.test(text)) {

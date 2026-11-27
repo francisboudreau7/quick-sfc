@@ -74,6 +74,8 @@ import { cycleIndex, matchLabel, searchDiagram, type DiagramMatch } from "./sear
 import { findSnippet, SNIPPETS, snippetContext, snippetTemplate, usedNames } from "./snippets.js";
 import { nextUse, routinesUsing, splitOnName, tagElements, useIndex } from "./taguse.js";
 import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusLine, tidiedText, tidyFileName, tidyProblem } from "./tidy.js";
+import { importFileName, importProblem, noteItems, notesTitle, previewHtml, routineStatus } from "./importl5x.js";
+import { importL5X, type ImportResult } from "../src/import/index.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
 /** Inlined at build time (scripts/build-app.ts): docs/cheatsheet.html and the package version. */
@@ -148,6 +150,20 @@ const ui = {
   tidyAfterSub: el("tidy-after-sub"),
   tidyNote: el("tidy-note"),
   tidySave: el<HTMLButtonElement>("tidy-save"),
+  importInput: el<HTMLInputElement>("import-input"),
+  imp: el<HTMLDialogElement>("imp"),
+  impFile: el("imp-file"),
+  impProgramWrap: el("imp-program-wrap"),
+  impProgram: el<HTMLSelectElement>("imp-program"),
+  impBody: el("imp-body"),
+  impStudio: el("imp-studio"),
+  impStudioSub: el("imp-studio-sub"),
+  impCode: el("imp-code"),
+  impCodeSub: el("imp-code-sub"),
+  impNotesTitle: el("imp-notes-title"),
+  impNotes: el("imp-notes"),
+  impNote: el("imp-note"),
+  impOpen: el<HTMLButtonElement>("imp-open"),
   diagramArea: el("diagram-area"),
   canvasWrap: el("diagram-area").parentElement!,
   overview: el("overview"),
@@ -343,6 +359,15 @@ function runCompile(fit = false): void {
       return tidyState && { fileName: tidyState.fileName, routines: tidyState.routines, ticked: [...tidyState.ticked], shown: tidyState.shown };
     },
     output: () => tidyState && tidiedText(tidyState.original, [...tidyState.ticked]),
+  },
+  /** Phase 4d. Import dialog: open(file) as a drop would; accept() as "Open in the editor". */
+  importL5X: {
+    open: (file: File) => openImport(file),
+    get state() {
+      return impState && { fileName: impState.fileName, program: impState.result.program, programs: impState.result.programs, shown: impState.shown, source: impState.result.source, notes: impState.result.notes };
+    },
+    accept: () => acceptImport(),
+    program: (name: string) => chooseImportProgram(name),
   },
   /** Phase 4c. The tag picked in the Tags sidebar; selectTag(name) as a click on its row. */
   get selectedTag() {
@@ -594,9 +619,9 @@ window.addEventListener("drop", (e) => {
   const item = e.dataTransfer?.items?.[0] as (DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileHandle | null> }) | undefined;
   const file = e.dataTransfer?.files[0];
   if (!file) return;
-  // An L5X opens the Tidy dialog; the editor is not touched.
+  // An L5X opens the import dialog (Phase 4d), which can hand it to Tidy instead.
   if (looksLikeL5X(file.name)) {
-    void openTidy(file);
+    void openImport(file);
     return;
   }
   const handlePromise = item?.getAsFileSystemHandle?.().catch(() => null) ?? Promise.resolve(null);
@@ -928,6 +953,186 @@ async function saveTidy(): Promise<void> {
   ui.tidy.close();
   toast(`Downloaded ${name}`);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Open an L5X (Phase 4d): a Studio program export back to qSFC, opened as a new unsaved file.
+// ---------------------------------------------------------------------------------------------
+
+interface ImportState {
+  file: File;
+  fileName: string;
+  /** The file's text as read. */
+  original: string;
+  result: ImportResult;
+  /** Index of the routine shown in the Studio pane. */
+  shown: number;
+  returnFocus: HTMLElement | null;
+}
+
+let impState: ImportState | undefined;
+
+async function importCmd(): Promise<void> {
+  const back = el("file-btn");
+  if (canPickOpen) {
+    try {
+      const [handle] = await fsWindow.showOpenFilePicker!({ types: L5X_TYPES, excludeAcceptAllOption: false, multiple: false });
+      if (handle) await openImport(await handle.getFile(), back);
+      return;
+    } catch (e) {
+      if ((e as DOMException).name === "AbortError") return;
+      // SecurityError and friends: plain input
+    }
+  }
+  ui.importInput.value = "";
+  ui.importInput.click();
+}
+
+ui.importInput.addEventListener("change", () => {
+  const file = ui.importInput.files?.[0];
+  if (file) void openImport(file, el("file-btn"));
+});
+
+async function openImport(file: File, returnFocus: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
+  let original: string;
+  try {
+    original = decodeL5X(await file.arrayBuffer());
+  } catch (e) {
+    toast(`Could not read ${file.name}: ${(e as Error).message}`, "error");
+    return;
+  }
+  const result = importL5X(original);
+  const problem = importProblem(file.name, result);
+  if (problem) {
+    toast(problem, "error");
+    return;
+  }
+  impState = { file, fileName: file.name, original, result, shown: firstSfc(result), returnFocus: impState?.returnFocus ?? returnFocus };
+  ui.impFile.textContent = file.name;
+  ui.impProgram.replaceChildren(...result.programs.map((p) => new Option(p, p, false, p === result.program)));
+  ui.impProgramWrap.hidden = result.programs.length < 2;
+  renderImport();
+  if (!ui.imp.open) ui.imp.showModal();
+  ui.impOpen.focus();
+}
+
+function firstSfc(result: ImportResult): number {
+  const i = result.routines.findIndex((r) => r.imported && r.type === "SFC");
+  return i >= 0 ? i : 0;
+}
+
+function chooseImportProgram(name: string): void {
+  const s = impState;
+  if (!s) return;
+  const result = importL5X(s.original, { program: name });
+  if (result.error) {
+    toast(`${s.fileName}: ${result.error}`, "error");
+    return;
+  }
+  s.result = result;
+  s.shown = firstSfc(result);
+  renderImport();
+}
+
+ui.impProgram.addEventListener("change", () => chooseImportProgram(ui.impProgram.value));
+
+function renderImport(): void {
+  const s = impState;
+  if (!s) return;
+  const r = s.result;
+  ui.impBody.replaceChildren(
+    ...r.routines.map((x, i) => {
+      const tr = document.createElement("tr");
+      tr.dataset["i"] = String(i);
+      if (i === s.shown) {
+        tr.className = "sel";
+        tr.setAttribute("aria-current", "true");
+      }
+      const show = document.createElement("button");
+      show.type = "button";
+      show.className = "tidy-show";
+      show.title = "Show it as Studio draws it";
+      const kind = document.createElement("span");
+      kind.className = "tidy-kind";
+      kind.textContent = `(${x.type})`;
+      show.append(`${x.name} `, kind);
+      const tdName = cell("td", "");
+      tdName.append(show);
+      const st = routineStatus(x);
+      tr.append(tdName, cell("td", st.text, `st-${st.kind}`));
+      return tr;
+    }),
+  );
+  const shown = r.routines[s.shown];
+  if (shown?.type === "SFC") {
+    ui.impStudio.innerHTML = renderStudioSketch(s.original, shown.name);
+    ui.impStudioSub.textContent = `· ${shown.name}`;
+  } else {
+    const p = document.createElement("p");
+    p.className = "imp-sketch-none";
+    p.textContent = shown ? `${shown.name} is ${shown.type === "ST" ? "an ST routine" : `a ${shown.type} routine`}: no chart to draw.` : "";
+    ui.impStudio.replaceChildren(p);
+    ui.impStudioSub.textContent = shown ? `· ${shown.name}` : "";
+  }
+  const pre = document.createElement("pre");
+  pre.innerHTML = previewHtml(r.source);
+  ui.impCode.replaceChildren(pre);
+  ui.impCodeSub.textContent = r.errors ? `· ${plural(r.errors, "error")} to fix in the editor` : "· no errors";
+  ui.impNotesTitle.textContent = notesTitle(r.notes);
+  ui.impNotes.replaceChildren(
+    ...noteItems(r.notes).map((n) => {
+      const li = document.createElement("li");
+      li.className = n.level === "warning" ? "w" : "i";
+      li.textContent = n.text;
+      return li;
+    }),
+  );
+  ui.impNote.textContent = `Opens as a new file, ${importFileName(r.program)} (not saved yet). Export it again with File → Export L5X.`;
+  for (const pane of [ui.impStudio, ui.impCode]) pane.scrollTo(0, 0);
+}
+
+ui.impBody.addEventListener("click", (e) => {
+  const tr = (e.target as Element).closest<HTMLElement>("tr[data-i]");
+  if (!impState || !tr) return;
+  const i = Number(tr.dataset["i"]);
+  if (i === impState.shown) return;
+  impState.shown = i;
+  renderImport();
+  ui.impBody.querySelector<HTMLElement>(`tr[data-i="${i}"] .tidy-show`)?.focus();
+});
+
+/** "Open in the editor": the imported text as a new, unsaved file (asks first about unsaved changes). */
+async function acceptImport(): Promise<boolean> {
+  const s = impState;
+  if (!s) return false;
+  const { source, program } = s.result;
+  ui.imp.close();
+  if (!(await confirmDiscard(`open the program imported from ${s.fileName}`))) return false;
+  stopWatch(false);
+  setDoc(newFileState(importFileName(program)), source, undefined, "");
+  editor.goTo(1, 1, true);
+  toast(`Imported ${program} from ${s.fileName}`);
+  return true;
+}
+
+ui.impOpen.addEventListener("click", () => void acceptImport());
+
+el("imp-tidy").addEventListener("click", () => {
+  const s = impState;
+  if (!s) return;
+  const file = s.file;
+  const back = s.returnFocus;
+  ui.imp.close();
+  void openTidy(file, back);
+});
+
+ui.imp.addEventListener("close", () => {
+  if (ui.imp.open) return; // reopened (another file) meanwhile
+  const back = impState?.returnFocus;
+  impState = undefined;
+  ui.impStudio.replaceChildren();
+  ui.impCode.replaceChildren();
+  if (back?.isConnected && back.offsetParent !== null && !ui.tidy.open) back.focus();
+});
 
 function diagramOf(r: CompiledRoutine): Diagram | undefined {
   return r.graph && r.layout ? { graph: r.graph, layout: r.layout, name: r.name } : undefined;
@@ -2238,6 +2443,9 @@ function runCommand(item: HTMLElement): void {
       break;
     case "tidy":
       void tidyCmd();
+      break;
+    case "import-l5x":
+      void importCmd();
       break;
     case "cheatsheet":
       openCheatSheet();

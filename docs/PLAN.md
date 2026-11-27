@@ -478,6 +478,9 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - Names: from the step/transition tag descriptions (hidden boxes, decided 2026-11-26), else the step's `// name - description` comment; auto names (`T1`…) become unnamed transitions again. Elements with neither get a plain name (never `Step_000`, which is reserved).
 - Tests: export → import → export gives the same file; your real `MainProgram.L5X` imports.
 - ✅ Acceptance: as in your file.
+- **Decided 2026-11-27:** unnamed steps get `s<N>` from `Step_<N>`; **operand pins**: a step named `s<N>` exports as `Step_<N>`, a named transition `t<N>` as `Tran_<N>`, the rest are numbered in file order around them (the import keeps Studio's operands this way, no new syntax); sugar comes back only where it matches exactly; text boxes become comments, a Stop ends the chain, everything else lost is in the report and a comment at the top; **tag values** `tag t2 : TIMER 3s`, `tag x : DINT = 1` (E417), exported even when unused; routine names may be qSFC keywords (`sfc SFC`). Mockup approved: docs/mockups/import.
+- **Status: built (2026-11-27), not committed.** As in SPEC §8.7: `src/import` (`importL5X`), CLI `qsfc import`, the app's File → Open an L5X… dialog (Studio sketch, highlighted .qsfc preview, notes, "Tidy it instead…"; a dropped .L5X opens it), tag values (§7.4), pins (§8.2). Every test pack file and fixture round-trips byte for byte; MainProgram.L5X imports with 0 errors, same wires and step operands, timer presets and values kept.
+- **Unverified until a Studio import:** a re-exported Studio chart (MainProgram → import → export) and the tag values (TIMER and BOOL/DINT shapes copied from Studio's own export; REAL from L5X_GUIDE 6c).
 
 ### Phase 4e: Simulation (dry run), with SFC logic checks
 - Toggle inputs, step through scans, see active steps light up, timers count and tags change; no PLC needed.

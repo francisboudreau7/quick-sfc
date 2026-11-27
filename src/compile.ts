@@ -9,7 +9,7 @@ import { parse } from "./parse/index.js";
 import { validateProgram } from "./validate/index.js";
 import { routineLabel } from "./validate/program.js";
 import { analyzeTags, rewriteAfter, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
-import { actionOperands, lower } from "./lower/index.js";
+import { actionOperands, assignOperands, lower } from "./lower/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
 import { hiddenJumpLinks } from "./render/svg.js";
@@ -75,9 +75,12 @@ export function compile(source: string, options: CompileOptions = {}): CompileRe
   if (hasErrors(diagnostics)) return result;
 
   const base = { steps: 0, transitions: 0, actions: 0 };
+  const sfcs = routines.filter((r) => r.node.kind === "sfc");
+  const operands = assignOperands(sfcs.map((r) => (r.node as Extract<RoutineNode, { kind: "sfc" }>).chart));
   for (const r of routines) {
     if (r.node.kind !== "sfc") continue;
-    r.graph = lower(r.node.chart, base);
+    const ops = operands[sfcs.indexOf(r)]!;
+    r.graph = lower(r.node.chart, { ...base, stepOperands: ops.steps, transitionOperands: ops.transitions });
     r.layout = computeLayout(r.graph, r.node.chart);
     r.positions = l5xPositions(r.layout, actionLineCounts(r.graph));
     base.steps += r.graph.steps.length;
@@ -242,7 +245,7 @@ export function studioPositions(
 function operandMap(routines: CompiledRoutine[]): Map<string, string> {
   const operands = new Map<string, string>();
   for (const r of routines) {
-    for (const s of r.graph?.steps ?? []) operands.set(key(s.name), `Step_${String(s.index).padStart(3, "0")}`);
+    for (const s of r.graph?.steps ?? []) operands.set(key(s.name), `Step_${String(s.operand).padStart(3, "0")}`);
   }
   return operands;
 }
@@ -272,10 +275,23 @@ function rewriteGraph(graph: Graph, operands: Map<string, string>): Graph {
   };
 }
 
+/**
+ * The texts as the L5X export writes them (operands, JSR, 1/0, `after` expanded), without the
+ * name comments: SFC routines as rewritten graphs, ST routines as lines. Needs an error-free result.
+ */
+export function exportedTexts(result: CompileResult): Array<{ name: string; graph?: Graph; lines?: string[] }> {
+  const operands = operandMap(result.routines);
+  return result.routines.map((r) =>
+    r.node.kind === "st"
+      ? { name: r.name, lines: rewriteLines(r.node.body.map((l) => l.text), operands) }
+      : { name: r.name, graph: rewriteGraph(r.graph!, operands) },
+  );
+}
+
 /** Copy of the graph where `step.member` references use operands (SPEC §8.4) and `call` is JSR. */
 export function withRewrittenRefs(graph: Graph): Graph {
   const operands = new Map<string, string>();
-  for (const s of graph.steps) operands.set(key(s.name), `Step_${String(s.index).padStart(3, "0")}`);
+  for (const s of graph.steps) operands.set(key(s.name), `Step_${String(s.operand).padStart(3, "0")}`);
   return rewriteGraph(graph, operands);
 }
 

@@ -141,6 +141,10 @@ export interface TagDecl {
   /** Absent when only a description is given. Unknown types are reported (E409) and left absent. */
   type?: TagType;
   description?: string;
+  /** Initial value (SPEC §7.4): BOOL 0/1, DINT, REAL, TIMER preset in ms. Set only when valid. */
+  initial?: number;
+  /** Where the value is written (`= 5`, `3s`), for messages. */
+  valueSpan?: Span;
   span: Span;
 }
 

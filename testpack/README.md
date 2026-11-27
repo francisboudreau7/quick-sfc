@@ -235,3 +235,22 @@ Check:
 4. **Verify** the program: 0 errors when the modules exist at those slots.
 5. **Conditions** read as listed above; `count` is DINT.
 6. Optional run test: set `start_btn`; `valve` turns on in `fill`; with `level_ok` set the chart goes to `check` after 3 s, then to `done` after 2 more seconds and back to `idle` 2 s later. With `level_ok` off it waits 10 s in `fill` (`.DN`), then goes from `check` to `retry` after 5 s and back to `fill`.
+
+## tp14_import: a chart drawn in Studio, imported and exported again (Phase 4d, added 2026-11-27)
+
+`tp14_import.qsfc` is what **File → Open an L5X…** (or `qsfc import`) makes of `legacy/tests/MainProgram.L5X`, the chart you drew by hand in Studio (program `MainProgram`, routine `SFC`, 20 steps, two selections, 21 I/O aliases on `Local:1`, 9 timers). `tp14_import.L5X` is its export. Nothing was edited by hand except the two header comment lines.
+
+What to look at in the `.qsfc`:
+- the steps had no names in Studio, so they are `s0` … `s19`, named from their operands: **`s3` is exported as `Step_003` again** (operand pins, SPEC §8.2), so Step operands are the same as in your original;
+- `sfc SFC`: the routine keeps its name (a routine may now be named like a qSFC keyword);
+- the 21 aliases came back as an `io` block, the timers as `tag T2 : TIMER 3s` (presets kept, new `tag` values, SPEC §7.4), `Bonsens : BOOL = 1` and `X : DINT = 1` as initial values;
+- the comment block at the top lists what changed: four transition operands get new numbers (`t4`, `t7`, `t9`, `t10` are timer names here, so they can't pin `Tran_004` …).
+
+**Before importing:** the program is named `MainProgram`, like the one already in your project. Import it into a **new project** with the same I/O modules, or let the Import dialog rename it (e.g. `MainProgram_qsfc`).
+
+Check:
+1. **Import** without errors (the alias tags need the module at `Local:1`, as in your original project).
+2. **Same chart:** the selections, the jumps back to `s0` and the 20 steps are where they were (the layout is qSFC's, not yours: that's expected); every Step keeps its operand (`Step_003` is still the step with `Bonsens:=1;`).
+3. **Timers:** `T2` has PRE 3000, `T7` PRE 1250 and so on; `Bonsens` starts at 1, `X` at 1 (tag values, **new L5X shape for qSFC**, copied from your own export's format).
+4. **Verify** the program: 0 errors.
+5. Optional: run it as you ran the original; it should behave the same.

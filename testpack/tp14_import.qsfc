@@ -1,0 +1,115 @@
+// Test pack 14: legacy/tests/MainProgram.L5X (drawn by hand in Studio), imported by QuickSFC
+// (Phase 4d) and exported again. Checks: same wires and Step operands, timer presets, sfc SFC.
+// Imported from a Studio 5000 L5X by QuickSFC.
+// Not kept or changed:
+//  - operands renumbered on export: Tran_010 (a transition) → Tran_004, Tran_004 (a transition) → Tran_007, Tran_007 (a transition) → Tran_009, Tran_009 (a transition) → Tran_010 (a step named s<N> or a transition t<N> keeps its operand; t10, t4, t7, t9 are already used by other names here)
+
+program MainProgram
+
+tag Bonsens : BOOL = 1
+tag T1 : TIMER 1s500ms
+tag T10 : TIMER 1s500ms
+tag T13 : TIMER 500ms
+tag T17 : TIMER 500ms
+tag T2 : TIMER 3s
+tag T3 : TIMER 1s500ms
+tag T4 : TIMER 500ms
+tag T7 : TIMER 1s250ms
+tag T9 : TIMER 1s500ms
+tag X : DINT = 1
+tag Y : DINT
+tag Y5a : BOOL
+tag Y5b : BOOL
+
+io
+  a0       Local:1:I.Data.4
+  a1       Local:1:I.Data.5
+  A_moins  Local:1:O.Data.2
+  A_plus   Local:1:O.Data.1
+  B        Local:1:O.Data.3
+  b0       Local:1:I.Data.6
+  b1       Local:1:I.Data.7
+  C        Local:1:O.Data.5
+  D        Local:1:O.Data.6
+  d1       Local:1:I.Data.9
+  E        Local:1:O.Data.7
+  e1       Local:1:I.Data.10
+  F        Local:1:O.Data.8
+  f0       Local:1:I.Data.11
+  f1       Local:1:I.Data.12
+  L        Local:1:O.Data.9
+  pp       Local:1:I.Data.13
+  reset    Local:1:I.Data.3
+  start    Local:1:I.Data.0
+  stop     Local:1:I.Data.1
+  V        Local:1:O.Data.4
+end
+
+sfc SFC
+init s0
+  L[:=]1;
+-- pp and f0 and NOT(d1) and NOT(e1) and start
+step s1
+  F:=1;
+-- f1
+step s2 3s
+  D:=1;
+select
+  -- s2.DN and d1
+  step s3 1s500ms
+    Bonsens:=1;
+  -- s3.DN
+|
+  -- s2.DN and not d1
+  step s9 1s500ms
+    Bonsens:=0;
+  -- t20: s9.DN
+end
+step s4 500ms
+  D:=0;
+-- s4.DN
+step s5
+  F:=0;
+-- t5: f0
+step s6
+  E:=1;
+-- t6: e1
+step s7 1s250ms
+-- s7.DN
+step s8
+  E:=0;
+select
+  -- Bonsens
+  step s11
+    A_moins[:=]1;
+  -- t12: a0
+  step s12
+    B:=1;
+  -- b1
+  step s13 500ms
+    V:=1;
+  -- t14: s13.DN
+  step s14
+    B:=0;
+  -- t15: b0
+  step s15
+    A_plus[:=]1;
+  -- t16: a1
+  step s16
+    B:=1;
+  -- b1
+  step s17 500ms
+    V:=0;
+  -- t18: s17.DN
+  step s18
+    B:=0;
+  -- t19: b0
+  step s19
+    A_moins[:=]1;
+  -- t21: a0 -> s0
+|
+  -- t8: not Bonsens
+  step s10 1s500ms
+    C[:=]1;
+  -- t11: s10.DN -> s0
+end

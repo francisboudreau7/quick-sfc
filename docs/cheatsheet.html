@@ -39,6 +39,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <tr><td><code><span class="k">--</span> done <span class="k">-&gt;</span> idle</code></td><td>jump to a step</td></tr>
 <tr><td><code><span class="k">--</span> <span class="k">after</span> 5s AND ok</code></td><td>the step above active 5 s (= <code>fill.T &gt;= 5000</code>)</td></tr>
 <tr><td><code><span class="k">tag</span> n : DINT <span class="s">"desc"</span></code></td><td>optional type/description override</td></tr>
+<tr><td><code><span class="k">tag</span> t1 : TIMER 3s</code> · <code><span class="k">tag</span> n : DINT = 5</code></td><td>timer preset, initial value (exported even if unused)</td></tr>
 <tr><td><code><span class="c">// comment</span></code></td><td>comment (kept in actions, dropped elsewhere)</td></tr>
 </table>
 
@@ -147,6 +148,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <tr><td>Ctrl+F</td><td>in the diagram: find steps, conditions and actions (Enter: next); in the editor: search the text</td></tr>
 <tr><td>Ctrl+P</td><td>print or save as PDF: title block, diagram, tags with I/O addresses, code</td></tr>
 <tr><td>Tags sidebar</td><td>click a tag: its uses light up in the diagram; Enter: next use in the editor</td></tr>
+<tr><td>File → Open an L5X…</td><td>a Studio program back to qSFC (or drop the .L5X); what can't be kept is listed at the top of the file</td></tr>
 </table>
 
 <h2>Rules to remember</h2>
@@ -157,6 +159,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <li>Inside a branch, a jump can only end a <code>select</code> leg. Jumps can't enter or leave a <code>parallel</code>.</li>
 <li>Tags are created automatically: BOOL by default, DINT/REAL inferred from numbers.</li>
 <li>A chart may end on a step (warning W300).</li>
+<li>A step named <code>s3</code> is exported as <code>Step_003</code>, a transition <code>t5:</code> as <code>Tran_005</code>; other names are numbered in order.</li>
 </ul>
 
 <h2>Complete example</h2>

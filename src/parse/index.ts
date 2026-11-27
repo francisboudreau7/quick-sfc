@@ -368,7 +368,8 @@ class Parser {
       return undefined;
     }
     const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
-    this.diags.push(...checkName(name.text, name.span, { reserved: true }));
+    // a routine (or program) may be named like a qSFC keyword (`sfc SFC`, common in Studio)
+    this.diags.push(...checkName(name.text, name.span, { reserved: true, keywordName: true }));
     this.used.add(key(name.text));
     if (title) {
       const j = skipWs(raw, i, end);
@@ -563,9 +564,9 @@ class Parser {
     const span = lineSpan(n, indent, end);
     let i = skipWs(raw, indent + 3, end);
     const start = i;
-    while (i < end && !isWs(raw[i]) && raw[i] !== ":" && raw[i] !== '"') i++;
+    while (i < end && !isWs(raw[i]) && raw[i] !== ":" && raw[i] !== '"' && raw[i] !== "=") i++;
     if (start === i) {
-      this.diags.push(error("E101", span, "a `tag` line needs a tag name: `tag name [: TYPE] [\"description\"]`"));
+      this.diags.push(error("E101", span, "a `tag` line needs a tag name: `tag name [: TYPE [value]] [\"description\"]`"));
       return;
     }
     const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
@@ -590,6 +591,15 @@ class Parser {
       }
       i = skipWs(raw, i, end);
     }
+    // initial value (SPEC §7.4): `= 5` after the type, or a duration after TIMER
+    if (raw[i] === "=" || (decl.type === "TIMER" && /\d/.test(raw[i] ?? ""))) {
+      const eq = i;
+      if (raw[i] === "=") i = skipWs(raw, i + 1, end);
+      const vs = i;
+      while (i < end && !isWs(raw[i]) && raw[i] !== '"') i++;
+      this.tagValue(decl, raw.slice(vs, i), lineSpan(n, vs, Math.max(i, vs + 1)), lineSpan(n, eq, Math.max(i, eq + 1)));
+      i = skipWs(raw, i, end);
+    }
     if (raw[i] === '"') {
       const d = this.description(n, raw, i, end);
       decl.description = d.value;
@@ -597,6 +607,46 @@ class Parser {
     }
     this.extraText(n, raw, i, end, `the declaration of tag \`${name.text}\``);
     this.program.tagDecls.push(decl);
+  }
+
+  /** Checks an initial value against the declared type (E417); sets decl.initial when valid. */
+  private tagValue(decl: TagDecl, text: string, span: Span, whole: Span): void {
+    decl.valueSpan = whole;
+    const bad = (msg: string) => this.diags.push(error("E417", span, msg));
+    if (decl.type === undefined) {
+      bad(`a value needs the tag's type first: \`tag ${decl.name.text} : DINT = ${text || "5"}\``);
+      return;
+    }
+    if (text === "") {
+      bad("the value is missing after `=`");
+      return;
+    }
+    switch (decl.type) {
+      case "TIMER": {
+        const ms = parseDuration(text, span, this.diags);
+        if (ms !== undefined) decl.initial = ms;
+        return;
+      }
+      case "BOOL": {
+        const v = ({ "0": 0, "1": 1, false: 0, true: 1 } as Record<string, number>)[text.toLowerCase()];
+        if (v === undefined) bad(`\`${text}\` is not a BOOL value: write 0, 1, TRUE or FALSE`);
+        else decl.initial = v;
+        return;
+      }
+      case "DINT": {
+        const v = /^[+-]?\d+$/.test(text) ? Number(text) : NaN;
+        if (!Number.isInteger(v) || v < -2147483648 || v > 2147483647) {
+          bad(`\`${text}\` is not a DINT value: a whole number from -2147483648 to 2147483647`);
+        } else decl.initial = v;
+        return;
+      }
+      case "REAL": {
+        const v = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(text) ? Number(text) : NaN;
+        if (!Number.isFinite(v)) bad(`\`${text}\` is not a REAL value, e.g. 1.5 or -2.0e3`);
+        else decl.initial = v;
+        return;
+      }
+    }
   }
 
   private description(n: number, raw: string, i: number, end: number): { value: string; next: number } {

@@ -46,6 +46,7 @@ export function build(
     return {
       id: s.id,
       index: s.index,
+      operand: s.index,
       name: s.name ?? `step${s.index}`,
       initial: s.initial ?? false,
       presetMs: s.preset ?? 0,
@@ -58,7 +59,7 @@ export function build(
   });
   const gtrans: GTransition[] = trans.map((t) => {
     positions.nodes.set(t.id, { x: t.x, y: t.y });
-    return { id: t.id, index: t.index, name: t.name ?? `T${t.index}`, auto: false, condition: t.condition, node: {} as never };
+    return { id: t.id, index: t.index, operand: t.index, name: t.name ?? `T${t.index}`, auto: false, condition: t.condition, node: {} as never };
   });
   const gbranches: GBranch[] = branches.map((b) => {
     positions.branches.set(b.id, { y: b.y });

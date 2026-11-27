@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open an L5X mockup</title>
+<style>
+body { margin:0; padding:16px; font:14px/1.45 system-ui,sans-serif; background:#e9ecf0; color:#1d2228; }
+h1 { font-size:18px; margin:0 0 4px; } .lead { color:#59626e; margin:0 0 12px; max-width:960px; }
+.dialog { background:#fff; border:1px solid #b9c0c8; border-radius:10px; box-shadow:0 8px 24px rgba(16,24,40,.18); max-width:1180px; }
+.head { padding:12px 16px; border-bottom:1px solid #d5dae0; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+.head h2 { margin:0; font-size:16px; } .head .file { color:#59626e; font-family:ui-monospace,Consolas,monospace; font-size:13px; }
+.head select { margin-left:auto; font:inherit; padding:3px 6px; }
+.routines { padding:8px 16px; border-bottom:1px solid #d5dae0; font-size:13px; }
+.routines td { padding:3px 8px 3px 0; } .ok { color:#1a7f37; } .skip { color:#8a5c00; }
+.panes { display:grid; grid-template-columns:1fr 1fr; }
+.pane { padding:10px 16px; overflow:auto; max-height:520px; } .pane + .pane { border-left:1px solid #d5dae0; }
+.pane h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#59626e; margin:0 0 6px; }
+.pane svg { background-color:#fff; background-image:radial-gradient(#d9dde3 1px, transparent 1px); background-size:12px 12px; max-width:100%; height:auto; }
+pre { margin:0; font:12.5px/1.5 ui-monospace,Consolas,monospace; white-space:pre; }
+.k { color:#8250df; font-weight:600; } .c { color:#6e7781; }
+.notes { padding:10px 16px; border-top:1px solid #d5dae0; font-size:13px; }
+.notes ul { margin:4px 0 0; padding-left:0; list-style:none; } .notes li { padding:2px 0 2px 22px; position:relative; }
+.notes li::before { position:absolute; left:0; top:2px; } .notes li.w::before { content:"⚠"; color:#9a6700; } .notes li.i::before { content:"ℹ"; color:#1a5fb4; }
+.foot { padding:10px 16px; border-top:1px solid #d5dae0; display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+.foot .note { margin-right:auto; color:#59626e; font-size:12.5px; }
+button { font:inherit; border-radius:6px; padding:6px 12px; border:1px solid #b9c0c8; background:#fff; }
+button.primary { background:#1a5fb4; color:#fff; border-color:#1a5fb4; }
+ul.after { margin:10px 0 0; padding-left:18px; max-width:1100px; }
+@media (max-width: 760px) { .panes { grid-template-columns:1fr; } .pane + .pane { border-left:0; border-top:1px solid #d5dae0; } }
+</style></head><body>
+<h1>Open an L5X (Phase 4d)</h1>
+<p class="lead">File → <b>Open an L5X…</b> (or drop a .L5X on the window) reads a Studio export and turns one Program into qSFC. Real data: <code>legacy/tests/MainProgram.L5X</code>, drawn by hand in Studio. Left: the chart as Studio places it. Right: the .qsfc text the editor will get.</p>
+<div class="dialog">
+  <div class="head"><h2>Open an L5X</h2><span class="file">MainProgram.L5X</span>
+    <select aria-label="Program"><option>Program: MainProgram</option></select></div>
+  <div class="routines"><table>
+    <tr><td>SFC (SFC)</td><td class="ok">imported</td></tr>
+    <tr><td>Fault_Seq (RLL, example)</td><td class="skip">not imported: ladder routines come with Phase 5</td></tr>
+  </table></div>
+  <div class="panes">
+    <div class="pane"><h3>In Studio</h3><svg xmlns="http://www.w3.org/2000/svg" class="studio-sketch" viewBox="0 0 440 2070" width="440" height="2070" font-family="system-ui,sans-serif" role="img" aria-label="SFC, drawn from its Studio coordinates"><style>.sk-wire{fill:none;stroke:color-mix(in srgb,var(--text,#1d2228) 50%,var(--surface,#fff));stroke-width:1}.sk-wire.sk-hidden{stroke:color-mix(in srgb,var(--text,#1d2228) 28%,var(--surface,#fff))}.sk-branch{fill:none;stroke:var(--text,#1d2228)}.sk-step,.sk-stop{fill:var(--surface,#fff);stroke:var(--text,#1d2228)}.sk-trans{fill:var(--text,#1d2228)}.sk-label{fill:var(--text,#1d2228);font-size:7px}.sk-cond{fill:var(--syn-def,#953800);font-size:6.5px}.sk-msg{fill:var(--muted,#59626e);font-size:12px}</style><path class="sk-wire" d="M110.0 30.0 V60.0 H250.0 V90.0"/><path class="sk-wire" d="M180.0 220.0 V250.0 H110.0 V280.0"/><path class="sk-wire" d="M110.0 340.0 V368.0 H110.0 V396.0"/><path class="sk-wire" d="M110.0 460.0 V495.0 H110.0 V530.0"/><path class="sk-wire" d="M110.0 590.0 V610.0 H110.0 V630.0"/><path class="sk-wire" d="M190.0 680.0 V700.0 H110.0 V720.0"/><path class="sk-wire" d="M110.0 760.0 V780.0 H110.0 V800.0"/><path class="sk-wire" d="M110.0 840.0 V860.0 H110.0 V880.0"/><path class="sk-wire" d="M110.0 920.0 V945.0 H70.0 V970.0"/><path class="sk-wire" d="M250.0 480.0 V505.0 H270.0 V530.0"/><path class="sk-wire" d="M210.0 1100.0 V1120.0 H210.0 V1140.0"/><path class="sk-wire" d="M60.0 1030.0 V1065.0 H60.0 V1100.0"/><path class="sk-wire" d="M40.0 1200.0 V1230.0 H80.0 V1260.0"/><path class="sk-wire" d="M90.0 1310.0 V1330.0 H90.0 V1350.0"/><path class="sk-wire" d="M100.0 1400.0 V1445.0 H110.0 V1490.0"/><path class="sk-wire" d="M120.0 1550.0 V1585.0 H170.0 V1620.0"/><path class="sk-wire" d="M180.0 1670.0 V1690.0 H180.0 V1710.0"/><path class="sk-wire" d="M210.0 1770.0 V1790.0 H220.0 V1810.0"/><path class="sk-wire" d="M250.0 1880.0 V1905.0 H260.0 V1930.0"/><path class="sk-wire" d="M310.0 1990.0 V2010.0 H310.0 V2030.0"/><path class="sk-wire" d="M250.0 90.0 V155.0 H180.0 V220.0"/><path class="sk-wire" d="M110.0 280.0 V310.0 H110.0 V340.0"/><path class="sk-wire" d="M110.0 420.0 V440.0 H110.0 V460.0"/><path class="sk-wire" d="M110.0 530.0 V549.5 H110.0 V569.0"/><path class="sk-wire" d="M110.0 630.0 V655.0 H190.0 V680.0"/><path class="sk-wire" d="M110.0 720.0 V740.0 H110.0 V760.0"/><path class="sk-wire" d="M110.0 800.0 V820.0 H110.0 V840.0"/><path class="sk-wire" d="M110.0 880.0 V900.0 H110.0 V920.0"/><path class="sk-wire" d="M170.0 990.0 V1045.0 H210.0 V1100.0"/><path class="sk-wire" d="M70.0 990.0 V1010.0 H60.0 V1030.0"/><path class="sk-wire" d="M230.0 430.0 V455.0 H250.0 V480.0"/><path class="sk-wire" d="M210.0 1140.0 V1155.0 H210.0 V1170.0"/><path class="sk-wire" d="M60.0 1100.0 V1150.0 H40.0 V1200.0"/><path class="sk-wire" d="M80.0 1260.0 V1285.0 H90.0 V1310.0"/><path class="sk-wire" d="M90.0 1350.0 V1375.0 H100.0 V1400.0"/><path class="sk-wire" d="M110.0 1490.0 V1520.0 H120.0 V1550.0"/><path class="sk-wire" d="M170.0 1620.0 V1645.0 H180.0 V1670.0"/><path class="sk-wire" d="M180.0 1710.0 V1740.0 H210.0 V1770.0"/><path class="sk-wire" d="M220.0 1810.0 V1845.0 H250.0 V1880.0"/><path class="sk-wire" d="M260.0 1930.0 V1960.0 H310.0 V1990.0"/><path class="sk-wire" d="M270.0 530.0 V549.5 H270.0 V569.0"/><path class="sk-wire" d="M310.0 2030.0 V2045.0 H15.0 V1155.0 H310.0 V1170.0"/><path class="sk-wire" d="M110.0 396.0 V408.0 H110.0 V420.0"/><path class="sk-wire" d="M230.0 396.0 V413.0 H230.0 V430.0"/><path class="sk-wire" d="M110.0 569.0 V579.5 H110.0 V590.0"/><path class="sk-wire" d="M70.0 970.0 V980.0 H70.0 V990.0"/><path class="sk-wire" d="M170.0 970.0 V980.0 H170.0 V990.0"/><path class="sk-wire" d="M210.0 1170.0 V1185.0 H15.0 V15.0 H110.0 V30.0"/><path class="sk-branch" d="M105.0 396.0 H235.0" stroke-width="1.5"/><path class="sk-branch" d="M105.0 569.0 H275.0" stroke-width="1.5"/><path class="sk-branch" d="M65.0 970.0 H175.0" stroke-width="1.5"/><path class="sk-branch" d="M205.0 1170.0 H315.0" stroke-width="1.5"/><g><rect class="sk-step" x="95.0" y="20.0" width="30" height="20"/><text class="sk-label" x="110.0" y="32.0" text-anchor="middle">S000</text><title>Step_000</title></g><g><rect class="sk-step" x="165.0" y="210.0" width="30" height="20"/><text class="sk-label" x="180.0" y="222.0" text-anchor="middle">S001</text><title>Step_001</title></g><g><rect class="sk-step" x="95.0" y="330.0" width="30" height="20"/><text class="sk-label" x="110.0" y="342.0" text-anchor="middle">S002</text><title>Step_002</title></g><g><rect class="sk-step" x="95.0" y="450.0" width="30" height="20"/><text class="sk-label" x="110.0" y="462.0" text-anchor="middle">S003</text><title>Step_003</title></g><g><rect class="sk-step" x="95.0" y="580.0" width="30" height="20"/><text class="sk-label" x="110.0" y="592.0" text-anchor="middle">S004</text><title>Step_004</title></g><g><rect class="sk-step" x="175.0" y="670.0" width="30" height="20"/><text class="sk-label" x="190.0" y="682.0" text-anchor="middle">S005</text><title>Step_005</title></g><g><rect class="sk-step" x="95.0" y="750.0" width="30" height="20"/><text class="sk-label" x="110.0" y="762.0" text-anchor="middle">S006</text><title>Step_006</title></g><g><rect class="sk-step" x="95.0" y="830.0" width="30" height="20"/><text class="sk-label" x="110.0" y="842.0" text-anchor="middle">S007</text><title>Step_007</title></g><g><rect class="sk-step" x="95.0" y="910.0" width="30" height="20"/><text class="sk-label" x="110.0" y="922.0" text-anchor="middle">S008</text><title>Step_008</title></g><g><rect class="sk-step" x="235.0" y="470.0" width="30" height="20"/><text class="sk-label" x="250.0" y="482.0" text-anchor="middle">S009</text><title>Step_009</title></g><g><rect class="sk-step" x="195.0" y="1090.0" width="30" height="20"/><text class="sk-label" x="210.0" y="1102.0" text-anchor="middle">S010</text><title>Step_010</title></g><g><rect class="sk-step" x="45.0" y="1020.0" width="30" height="20"/><text class="sk-label" x="60.0" y="1032.0" text-anchor="middle">S011</text><title>Step_011</title></g><g><rect class="sk-step" x="25.0" y="1190.0" width="30" height="20"/><text class="sk-label" x="40.0" y="1202.0" text-anchor="middle">S012</text><title>Step_012</title></g><g><rect class="sk-step" x="75.0" y="1300.0" width="30" height="20"/><text class="sk-label" x="90.0" y="1312.0" text-anchor="middle">S013</text><title>Step_013</title></g><g><rect class="sk-step" x="85.0" y="1390.0" width="30" height="20"/><text class="sk-label" x="100.0" y="1402.0" text-anchor="middle">S014</text><title>Step_014</title></g><g><rect class="sk-step" x="105.0" y="1540.0" width="30" height="20"/><text class="sk-label" x="120.0" y="1552.0" text-anchor="middle">S015</text><title>Step_015</title></g><g><rect class="sk-step" x="165.0" y="1660.0" width="30" height="20"/><text class="sk-label" x="180.0" y="1672.0" text-anchor="middle">S016</text><title>Step_016</title></g><g><rect class="sk-step" x="195.0" y="1760.0" width="30" height="20"/><text class="sk-label" x="210.0" y="1772.0" text-anchor="middle">S017</text><title>Step_017</title></g><g><rect class="sk-step" x="235.0" y="1870.0" width="30" height="20"/><text class="sk-label" x="250.0" y="1882.0" text-anchor="middle">S018</text><title>Step_018</title></g><g><rect class="sk-step" x="295.0" y="1980.0" width="30" height="20"/><text class="sk-label" x="310.0" y="1992.0" text-anchor="middle">S019</text><title>Step_019</title></g><g><rect class="sk-trans" x="244.0" y="89.0" width="12" height="2"/><text class="sk-cond" x="259.0" y="93.0">pp and f0 and NOT(d1) </text><title>Tran_000 pp and f0 and NOT(d1) and NOT(e1) and start;</title></g><g><rect class="sk-trans" x="104.0" y="279.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="283.0">f1;</text><title>Tran_001 f1;</title></g><g><rect class="sk-trans" x="104.0" y="419.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="423.0">Step_002.DN and d1</text><title>Tran_002 Step_002.DN and d1</title></g><g><rect class="sk-trans" x="104.0" y="529.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="533.0">Step_003.DN</text><title>Tran_003 Step_003.DN</title></g><g><rect class="sk-trans" x="104.0" y="629.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="633.0">Step_004.DN;</text><title>Tran_004 Step_004.DN;</title></g><g><rect class="sk-trans" x="104.0" y="719.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="723.0">f0;</text><title>Tran_005 f0;</title></g><g><rect class="sk-trans" x="104.0" y="799.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="803.0">e1;</text><title>Tran_006 e1;</title></g><g><rect class="sk-trans" x="104.0" y="879.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="883.0">Step_007.DN</text><title>Tran_007 Step_007.DN</title></g><g><rect class="sk-trans" x="164.0" y="989.0" width="12" height="2"/><text class="sk-cond" x="179.0" y="993.0">not Bonsens</text><title>Tran_008 not Bonsens</title></g><g><rect class="sk-trans" x="64.0" y="989.0" width="12" height="2"/><text class="sk-cond" x="79.0" y="993.0">Bonsens</text><title>Tran_009 Bonsens</title></g><g><rect class="sk-trans" x="224.0" y="429.0" width="12" height="2"/><text class="sk-cond" x="239.0" y="433.0">Step_002.DN and not d1</text><title>Tran_010 Step_002.DN and not d1</title></g><g><rect class="sk-trans" x="204.0" y="1139.0" width="12" height="2"/><text class="sk-cond" x="219.0" y="1143.0">Step_010.DN</text><title>Tran_011 Step_010.DN</title></g><g><rect class="sk-trans" x="54.0" y="1099.0" width="12" height="2"/><text class="sk-cond" x="69.0" y="1103.0">a0;</text><title>Tran_012 a0;</title></g><g><rect class="sk-trans" x="74.0" y="1259.0" width="12" height="2"/><text class="sk-cond" x="89.0" y="1263.0">b1</text><title>Tran_013 b1</title></g><g><rect class="sk-trans" x="84.0" y="1349.0" width="12" height="2"/><text class="sk-cond" x="99.0" y="1353.0">Step_013.DN</text><title>Tran_014 Step_013.DN</title></g><g><rect class="sk-trans" x="104.0" y="1489.0" width="12" height="2"/><text class="sk-cond" x="119.0" y="1493.0">b0</text><title>Tran_015 b0</title></g><g><rect class="sk-trans" x="164.0" y="1619.0" width="12" height="2"/><text class="sk-cond" x="179.0" y="1623.0">a1</text><title>Tran_016 a1</title></g><g><rect class="sk-trans" x="174.0" y="1709.0" width="12" height="2"/><text class="sk-cond" x="189.0" y="1713.0">b1</text><title>Tran_017 b1</title></g><g><rect class="sk-trans" x="214.0" y="1809.0" width="12" height="2"/><text class="sk-cond" x="229.0" y="1813.0">Step_017.DN</text><title>Tran_018 Step_017.DN</title></g><g><rect class="sk-trans" x="254.0" y="1929.0" width="12" height="2"/><text class="sk-cond" x="269.0" y="1933.0">b0</text><title>Tran_019 b0</title></g><g><rect class="sk-trans" x="264.0" y="529.0" width="12" height="2"/><text class="sk-cond" x="279.0" y="533.0">Step_009.DN</text><title>Tran_020 Step_009.DN</title></g><g><rect class="sk-trans" x="304.0" y="2029.0" width="12" height="2"/><text class="sk-cond" x="319.0" y="2033.0">a0</text><title>Tran_021 a0</title></g></svg></div>
+    <div class="pane"><h3>qSFC (no errors)</h3><pre><span class="c">// Imported from a Studio 5000 L5X by QuickSFC.</span>
+<span class="c">// Not kept or changed:</span>
+<span class="c">//  - operands renumbered on export: Tran_010 (a transition) → Tran_004, Tran_004 (a transition) → Tran_007, Tran_007 (a transition) → Tran_009, Tran_009 (a transition) → Tran_010 (a step named s&lt;N&gt; or a transition t&lt;N&gt; keeps its operand; t10, t4, t7, t9 are already used by other names here)</span>
+<span class="c">//  - timer presets not kept (set them in Studio): T1 1s500ms, T10 1s500ms, T13 500ms, T17 500ms, T2 3s, T3 1s500ms, T4 500ms, T7 1s250ms, T9 1s500ms</span>
+<span class="c">//  - initial values not kept: Bonsens = 1, X = 1</span>
+
+<span class="k">program</span> MainProgram
+
+<span class="k">tag</span> T1 : TIMER
+<span class="k">tag</span> T10 : TIMER
+<span class="k">tag</span> T13 : TIMER
+<span class="k">tag</span> T17 : TIMER
+<span class="k">tag</span> T2 : TIMER
+<span class="k">tag</span> T3 : TIMER
+<span class="k">tag</span> T4 : TIMER
+<span class="k">tag</span> T7 : TIMER
+<span class="k">tag</span> T9 : TIMER
+<span class="k">tag</span> X : DINT
+<span class="k">tag</span> Y : DINT
+<span class="k">tag</span> Y5a : BOOL
+<span class="k">tag</span> Y5b : BOOL
+
+<span class="k">io</span>
+  a0       Local:1:I.Data.4
+  a1       Local:1:I.Data.5
+  A_moins  Local:1:O.Data.2
+  A_plus   Local:1:O.Data.1
+  B        Local:1:O.Data.3
+  b0       Local:1:I.Data.6
+  b1       Local:1:I.Data.7
+  C        Local:1:O.Data.5
+  D        Local:1:O.Data.6
+  d1       Local:1:I.Data.9
+  E        Local:1:O.Data.7
+  e1       Local:1:I.Data.10
+  F        Local:1:O.Data.8
+  f0       Local:1:I.Data.11
+  f1       Local:1:I.Data.12
+  L        Local:1:O.Data.9
+  pp       Local:1:I.Data.13
+  reset    Local:1:I.Data.3
+  start    Local:1:I.Data.0
+  stop     Local:1:I.Data.1
+  V        Local:1:O.Data.4
+<span class="k">end</span>
+
+<span class="k">sfc</span> SFC
+<span class="k">init</span> s0
+  L[:=]1;
+<span class="k">--</span> pp and f0 and NOT(d1) and NOT(e1) and start
+<span class="k">step</span> s1
+  F:=1;
+<span class="k">--</span> f1
+<span class="k">step</span> s2 3s
+  D:=1;
+<span class="k">select</span>
+  <span class="k">--</span> s2.DN and d1
+  <span class="k">step</span> s3 1s500ms
+    Bonsens:=1;
+  <span class="k">--</span> s3.DN
+|
+  <span class="k">--</span> s2.DN and not d1
+  <span class="k">step</span> s9 1s500ms
+    Bonsens:=0;
+  <span class="k">--</span> t20: s9.DN
+<span class="k">end</span>
+<span class="k">step</span> s4 500ms
+  D:=0;
+<span class="k">--</span> s4.DN
+<span class="k">step</span> s5
+  F:=0;
+<span class="k">--</span> t5: f0
+<span class="k">step</span> s6
+  E:=1;
+<span class="k">--</span> t6: e1
+<span class="k">step</span> s7 1s250ms
+<span class="k">--</span> s7.DN
+<span class="k">step</span> s8
+  E:=0;
+<span class="k">select</span>
+  <span class="k">--</span> Bonsens
+  <span class="k">step</span> s11
+    A_moins[:=]1;
+  <span class="k">--</span> t12: a0
+  <span class="k">step</span> s12
+    B:=1;
+  <span class="k">--</span> b1
+  <span class="k">step</span> s13 500ms
+    V:=1;
+  <span class="k">--</span> t14: s13.DN
+  <span class="k">step</span> s14
+    B:=0;
+  <span class="k">--</span> t15: b0
+  <span class="k">step</span> s15
+    A_plus[:=]1;
+  <span class="k">--</span> t16: a1
+  <span class="k">step</span> s16
+    B:=1;
+  <span class="k">--</span> b1
+  <span class="k">step</span> s17 500ms
+    V:=0;
+  <span class="k">--</span> t18: s17.DN
+  <span class="k">step</span> s18
+    B:=0;
+  <span class="k">--</span> t19: b0
+  <span class="k">step</span> s19
+    A_moins[:=]1;
+  <span class="k">--</span> t21: a0 <span class="k">-&gt;</span> s0
+|
+  <span class="k">--</span> t8: not Bonsens
+  <span class="k">step</span> s10 1s500ms
+    C[:=]1;
+  <span class="k">--</span> t11: s10.DN <span class="k">-&gt;</span> s0
+<span class="k">end</span>
+</pre></div>
+  </div>
+  <div class="notes"><b>Not kept or changed (3)</b>, also written at the top of the file:
+    <ul><li class="w">operands renumbered on export: Tran_010 (a transition) → Tran_004, Tran_004 (a transition) → Tran_007, Tran_007 (a transition) → Tran_009, Tran_009 (a transition) → Tran_010 (a step named s&lt;N&gt; or a transition t&lt;N&gt; keeps its operand; t10, t4, t7, t9 are already used by other names here)</li><li class="w">timer presets not kept (set them in Studio): T1 1s500ms, T10 1s500ms, T13 500ms, T17 500ms, T2 3s, T3 1s500ms, T4 500ms, T7 1s250ms, T9 1s500ms</li><li class="w">initial values not kept: Bonsens = 1, X = 1</li><li class="i">20 steps have no name in Studio: named from the operand (Step_003 → s3), which keeps the operand on export</li></ul></div>
+  <div class="foot"><span class="note">Opens as a new file, <b>MainProgram.qsfc</b> (nothing is saved yet). Export it again with File → Export L5X.</span><button>Cancel</button><button class="primary">Open in the editor</button></div>
+</div>
+<ul class="after">
+  <li>Several programs in the file (a whole-controller export): the Program list at the top picks one.</li>
+  <li>If the editor has unsaved changes, the usual "Discard changes?" question comes first.</li>
+  <li>The CLI does the same: <code>qsfc import MainProgram.L5X -o MainProgram.qsfc [--program NAME]</code>.</li>
+</ul>
+</body></html>

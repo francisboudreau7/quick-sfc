@@ -18,6 +18,7 @@
         <div class="dropdown" id="file-menu" role="menu" aria-labelledby="file-btn" hidden>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="new"><span>New chart</span><kbd>Ctrl+Alt+N</kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="open"><span>Open .qsfc…</span><kbd>Ctrl+O</kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="import-l5x" title="Turn a Studio 5000 program export back into qSFC"><span>Open an L5X…</span><kbd></kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="save"><span>Save</span><kbd>Ctrl+S</kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="save-as"><span>Save As…</span><kbd>Ctrl+Shift+S</kbd></button>
           <div role="separator" class="menu-sep"></div>
@@ -178,7 +179,8 @@
 
 <input type="file" id="file-input" accept=".qsfc,.txt,text/plain" hidden>
 <input type="file" id="tidy-input" accept=".L5X,.l5x" hidden>
-<div class="drop-overlay" id="drop-overlay" hidden><div>Drop a <code>.qsfc</code> file to open it, or an <code>.L5X</code> file to tidy it</div></div>
+<input type="file" id="import-input" accept=".L5X,.l5x" hidden>
+<div class="drop-overlay" id="drop-overlay" hidden><div>Drop a <code>.qsfc</code> file to open it, or an <code>.L5X</code> file to import it</div></div>
 <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
   <form method="dialog">
     <h2 id="confirm-title">Unsaved changes</h2>
@@ -222,6 +224,36 @@
       <p class="tidy-note" id="tidy-note"></p>
       <button type="submit" class="btn" value="cancel" id="tidy-cancel">Cancel</button>
       <button type="button" class="btn primary" id="tidy-save">Save tidied L5X…</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="tidy imp" id="imp" aria-labelledby="imp-title" aria-describedby="imp-note">
+  <form method="dialog" class="tidy-form">
+    <div class="tidy-head"><h2 id="imp-title">Open an L5X</h2><span class="tidy-file" id="imp-file"></span>
+      <label class="imp-program" id="imp-program-wrap" hidden>Program <select id="imp-program"></select></label></div>
+    <div class="tidy-routines">
+      <table class="tidy-table">
+        <caption class="sr-only">Routines of the program; choose an SFC routine to see it as Studio draws it</caption>
+        <thead class="sr-only"><tr><th scope="col">Routine</th><th scope="col">Result</th></tr></thead>
+        <tbody id="imp-body"></tbody>
+      </table>
+    </div>
+    <div class="tidy-panes">
+      <section class="tidy-pane" aria-labelledby="imp-studio-title">
+        <h3 id="imp-studio-title">In Studio <span class="tidy-pane-sub" id="imp-studio-sub"></span></h3>
+        <div class="tidy-sketch" id="imp-studio" tabindex="0" role="group" aria-labelledby="imp-studio-title"></div>
+      </section>
+      <section class="tidy-pane" aria-labelledby="imp-code-title">
+        <h3 id="imp-code-title">qSFC <span class="tidy-pane-sub" id="imp-code-sub"></span></h3>
+        <div class="tidy-sketch imp-code" id="imp-code" tabindex="0" role="group" aria-labelledby="imp-code-title"></div>
+      </section>
+    </div>
+    <div class="imp-notes"><b id="imp-notes-title"></b><ul id="imp-notes"></ul></div>
+    <div class="tidy-foot">
+      <p class="tidy-note" id="imp-note"></p>
+      <button type="button" class="btn" id="imp-tidy" title="Clean up the file's SFC layout instead (only positions change)">Tidy it instead…</button>
+      <button type="submit" class="btn" value="cancel" id="imp-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="imp-open">Open in the editor</button>
     </div>
   </form>
 </dialog>

@@ -168,7 +168,7 @@ interface RoutineResult {
   hidden?: number;
 }
 
-interface Built {
+export interface Built {
   graph: Graph;
   layout: Layout;
   /** Lowered step / transition id -> original ID. */
@@ -182,10 +182,21 @@ interface Built {
 function tidyRoutine(text: string, content: ScanElement, hints: TagHints): RoutineResult {
   const chart = readSfc(content);
   if (typeof chart === "string") return { reason: chart };
-  const shape = checkShape(chart);
-  if (shape) return { reason: shape };
+  const r = rebuild(chart);
+  if (typeof r === "string") return { reason: r };
+  return routineEdits(text, chart, r.built, hints);
+}
 
+/**
+ * The qSFC structure of a Studio chart (synthetic names `s<ID>` / `t<ID>`, conditions TRUE),
+ * checked to give exactly the chart's wires; or a plain sentence saying why it can't be rebuilt.
+ * Shared by Tidy and the L5X import (src/import).
+ */
+export function rebuild(chart: SfcChart): { source: string; built: Built } | string {
+  const shape = checkShape(chart);
+  if (shape) return shape;
   let built: Built | undefined;
+  let source = "";
   let reason: string | undefined;
   for (const mode of ["strict", "free"] as const) {
     const rec = recover(chart, mode);
@@ -195,13 +206,14 @@ function tidyRoutine(text: string, content: ScanElement, hints: TagHints): Routi
       if (typeof b === "string") reason ??= b;
       else {
         built = b;
+        source = c.source;
         break;
       }
     }
     if (built) break;
   }
-  if (!built) return { reason: reason ?? "the chart's structure can't be rebuilt" };
-  return routineEdits(text, chart, built, hints);
+  if (!built) return reason ?? "the chart's structure can't be rebuilt";
+  return { source, built };
 }
 
 function routineEdits(text: string, chart: SfcChart, built: Built, hints: TagHints): RoutineResult {

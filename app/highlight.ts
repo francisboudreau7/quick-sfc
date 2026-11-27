@@ -414,7 +414,7 @@ export function tokenizeLine(line: string, ctx: LineContext = {}): Token[] {
       i = e;
       continue;
     }
-    if (kind === "step" && named) {
+    if ((kind === "step" && named) || (kind === "tag" && typed)) {
       const d = at(DURATION, line, i);
       if (d) {
         out.push({ from: i, to: i + d.length, kind: "duration" });

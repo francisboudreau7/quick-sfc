@@ -44,6 +44,17 @@ export function rewriteBoolLiterals(text: string): string {
   });
 }
 
+/**
+ * Replaces whole identifiers found in `names` (keys: key(identifier)), e.g. Studio operands by
+ * qSFC names on import (`Step_003.DN` → `s3.DN`). Skips strings, comments and members (`x.Step_1`).
+ */
+export function renameIdentifiers(text: string, names: ReadonlyMap<string, string>): string {
+  return mapIdentifiers(text, (word, i, j) => {
+    const to = names.get(key(word));
+    return to === undefined || precededByDot(text, i) ? undefined : { text: to, next: j };
+  });
+}
+
 type Replace = (word: string, start: number, end: number) => { text: string; next: number } | undefined;
 
 /** Walks the ST, calling `replace` on every identifier outside strings, comments and literals. */

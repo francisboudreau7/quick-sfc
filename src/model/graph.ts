@@ -18,8 +18,10 @@ export type GraphId = string;
 
 export interface GStep {
   id: GraphId;
-  /** 0-based index in file order -> operand Step_000 (SPEC §13.7). */
+  /** 0-based index in file order across the program. */
   index: number;
+  /** Operand number: Step_000... (SPEC §8.2), `index` unless the name pins it (`s3` -> Step_003). */
+  operand: number;
   name: string;
   initial: boolean;
   presetMs: number;
@@ -46,8 +48,10 @@ export interface GAction {
 
 export interface GTransition {
   id: GraphId;
-  /** 0-based index in file order -> operand Tran_000. */
+  /** 0-based index in file order across the program. */
   index: number;
+  /** Operand number: Tran_000... (SPEC §8.2), `index` unless the name pins it (`t3` -> Tran_003). */
+  operand: number;
   name: string;
   auto: boolean;
   /** Raw condition (not rewritten; `after 5s` kept as written). */
@@ -106,6 +110,8 @@ export interface TagInfo {
   description?: string;
   /** `io` block (SPEC §7.6): the I/O address; the tag is exported as an alias tag. */
   address?: string;
+  /** Initial value from the `tag` line (SPEC §7.4): BOOL 0/1, DINT, REAL, TIMER preset in ms. */
+  initial?: number;
   /** Every place the tag is used in ST (not the declaration). */
   uses: Span[];
 }

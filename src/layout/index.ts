@@ -485,6 +485,17 @@ export const L5X_ACTION_EXTRA = 50;
  * action box as exported) makes the row after a step taller when its action is long, so Studio's
  * action box doesn't run into the next element (tp01 import, 2026-11-26).
  */
+/**
+ * Condition text in Studio (STATION2 import, 2026-11-27): each ST line is drawn on one row,
+ * starting about 12 units right of the transition, about 7 units per character. A column is
+ * widened to hold its longest condition line, and each line after the first makes the row under
+ * the transition taller. UNVERIFIED: the line height.
+ */
+export const L5X_COND_X = 12;
+export const L5X_COND_CHAR = 7;
+export const L5X_COND_MARGIN = 16;
+export const L5X_COND_LINE = 20;
+
 /** Extra room under a transition whose wire is hidden: Studio writes the target's name there. */
 export const L5X_HIDDEN_GAP = 40;
 /** A hidden wire's transition starting a leg moves right, clear of a return wire on its left. */
@@ -499,18 +510,30 @@ export interface L5XPositionOptions {
   hiddenTo?: ReadonlySet<GraphId>;
   /** Of those, the ones that start a branch leg (moved right by L5X_HIDDEN_SHIFT). */
   legStart?: ReadonlySet<GraphId>;
+  /** Transition id -> its condition as Studio lines (src/l5x/wrap.ts): column width, row height. */
+  conditions?: ReadonlyMap<GraphId, readonly string[]>;
 }
 
 export function l5xPositions(lay: Layout, opts: L5XPositionOptions | ReadonlyMap<GraphId, number> = {}): L5XPositions {
   const o: L5XPositionOptions = opts instanceof Map ? { actionLines: opts } : (opts as L5XPositionOptions);
   const actionLines = o.actionLines;
   const hiddenFrom = o.hiddenFrom ?? new Set<GraphId>();
+  // a column as wide as its longest condition line, at least L5X_COL_WIDTH
+  const colNeed = new Array<number>(lay.columns.length).fill(0);
+  const condLines = new Array<number>(lay.rows).fill(0);
+  for (const [id, lines] of o.conditions ?? []) {
+    const n = lay.nodes.get(id);
+    if (!n) continue;
+    const longest = Math.max(0, ...lines.map((l) => l.length));
+    colNeed[n.col] = Math.max(colNeed[n.col]!, L5X_COND_X + longest * L5X_COND_CHAR + L5X_COND_MARGIN);
+    condLines[n.row] = Math.max(condLines[n.row]!, lines.length);
+  }
   const colX: number[] = [];
   let x = L5X_ORIGIN_X;
-  for (const c of lay.columns) {
+  lay.columns.forEach((c, i) => {
     colX.push(x);
-    x += c.kind === "element" ? L5X_COL_WIDTH : L5X_CHANNEL_WIDTH;
-  }
+    x += c.kind === "element" ? Math.max(L5X_COL_WIDTH, colNeed[i]!) : L5X_CHANNEL_WIDTH;
+  });
   const hasStep = new Array<boolean>(lay.rows).fill(false);
   const hasNode = new Array<boolean>(lay.rows).fill(false);
   const maxLines = new Array<number>(lay.rows).fill(0);
@@ -539,6 +562,7 @@ export function l5xPositions(lay: Layout, opts: L5XPositionOptions | ReadonlyMap
       y += lines > 0 ? Math.max(base, lines * L5X_ACTION_LINE + L5X_ACTION_EXTRA) : base;
       // the user's fix of the tp05 import (2026-11-26): room for Studio's connector label
       if (hiddenRow[r - 1]) y += L5X_HIDDEN_GAP;
+      if (condLines[r - 1]! > 1) y += (condLines[r - 1]! - 1) * L5X_COND_LINE;
       if (hiddenInRow[r]) y += L5X_HIDDEN_GAP;
     }
     rowY.push(y);

@@ -24,6 +24,7 @@ import { layout as computeLayout, l5xPositions, type Layout } from "./layout/ind
 import { renderAscii } from "./render/ascii.js";
 import { hiddenJumpLinks } from "./render/svg.js";
 import { writeProgramL5X, type L5XProgramOptions, type L5XRoutine } from "./l5x/index.js";
+import { wrapCondition } from "./l5x/wrap.js";
 
 /** One routine of the compiled file, in file order (SPEC §4.5). */
 export interface CompiledRoutine {
@@ -233,8 +234,11 @@ function sfcForL5X(
   positions: L5XPositions,
   operands: Map<string, string>,
 ): L5XRoutine {
-  const placed = studioPositions(graph, layout, actionLineCounts(graph), positions);
-  return { kind: "sfc", name, graph: rewriteGraph(graph, operands), positions: placed.positions, hiddenLinks: placed.hiddenLinks };
+  // the conditions as exported (operands, `after` expanded), broken into Studio lines
+  const rewritten = rewriteGraph(graph, operands);
+  const conditions = new Map(rewritten.transitions.map((t) => [t.id, wrapCondition(t.condition)] as const));
+  const placed = studioPositions(graph, layout, actionLineCounts(graph), positions, conditions);
+  return { kind: "sfc", name, graph: rewritten, positions: placed.positions, hiddenLinks: placed.hiddenLinks };
 }
 
 /**
@@ -260,6 +264,7 @@ export function studioPositions(
   layout: Layout,
   actionLines: ReadonlyMap<string, number>,
   positions?: L5XPositions,
+  conditions?: ReadonlyMap<string, readonly string[]>,
 ): { positions: L5XPositions; hiddenLinks: Set<string> } {
   // Wires the app draws as cross-references are hidden in Studio too (SPEC §8.2). Studio writes
   // the target's name under such a transition: the row below gets more room, and the
@@ -269,9 +274,10 @@ export function studioPositions(
   // the target is a step, or a convergence leg "b3.1" whose bar is "b3"
   const hiddenTo = new Set([...hiddenLinks].map((id) => id.slice(id.indexOf("-") + 1).replace(/\.\d+$/, "")));
   const legStart = new Set(graph.links.filter((l) => l.from.includes(".")).map((l) => l.to));
-  const final = hiddenFrom.size
-    ? l5xPositions(layout, { actionLines, hiddenFrom, hiddenTo, legStart })
-    : (positions ?? l5xPositions(layout, actionLines));
+  const final =
+    hiddenFrom.size || conditions
+      ? l5xPositions(layout, conditions ? { actionLines, hiddenFrom, hiddenTo, legStart, conditions } : { actionLines, hiddenFrom, hiddenTo, legStart })
+      : (positions ?? l5xPositions(layout, actionLines));
   return { positions: final, hiddenLinks };
 }
 

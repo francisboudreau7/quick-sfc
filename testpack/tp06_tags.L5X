@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp06_tags" TargetType="Program" ContainsContext="true" ExportDate="Thu Nov 26 15:14:54 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp06_tags" TargetType="Program" ContainsContext="true" ExportDate="Fri Nov 27 13:17:43 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
 <Controller Use="Context" Name="QuickSFC">
 <DataTypes Use="Context">
 </DataTypes>
@@ -264,7 +264,7 @@ Ramp up]]>
 </Body>
 </Action>
 </Step>
-<Step ID="4" X="200" Y="625" Operand="Step_002" HideDesc="true" DescX="240" DescY="605" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="4" X="200" Y="645" Operand="Step_002" HideDesc="true" DescX="240" DescY="625" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="5" Operand="Action_002" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -291,7 +291,10 @@ Ramp up]]>
 <Condition>
 <STContent>
 <Line Number="0">
-<![CDATA[Step_001.DN AND speed >= 10.0 OR tmr.DN]]>
+<![CDATA[Step_001.DN AND speed >= 10.0]]>
+</Line>
+<Line Number="1">
+<![CDATA[OR tmr.DN]]>
 </Line>
 </STContent>
 </Condition>

@@ -46,8 +46,11 @@ describe("a chart drawn in Studio (legacy/tests/MainProgram.L5X)", () => {
 
   it("keeps every Tran operand too, with tr<N> names where file order would renumber", () => {
     const ops = (x: string) =>
-      [...x.matchAll(/<Transition ID="\d+"[^>]*Operand="(Tran_\d+)"[\s\S]*?<!\[CDATA\[([^\]]*)\]\]>/g)]
-        .map((m) => `${m[1]}=${m[2]!.replace(/;\s*$/, "").trim()}`)
+      [...x.matchAll(/<Transition ID="\d+"[^>]*Operand="(Tran_\d+)"[\s\S]*?<Condition>([\s\S]*?)<\/Condition>/g)]
+        .map((m) => {
+          const lines = [...m[2]!.matchAll(/<!\[CDATA\[([^\]]*)\]\]>/g)].map((l) => l[1]!.trim()).filter(Boolean);
+          return `${m[1]}=${lines.join(" ").replace(/;\s*$/, "").trim()}`;
+        })
         .sort();
     const out = exportL5X(r.source, { fileName: "MainProgram.qsfc" }).text!;
     expect(ops(out)).toEqual(ops(xml));

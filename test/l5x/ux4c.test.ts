@@ -17,7 +17,8 @@ const exp = (s: string): string => {
 };
 const lines = (xml: string): string[] => xml.replace(/^﻿/, "").split("\r\n");
 const conditions = (xml: string): string[] =>
-  descendants(parseXml(xml), "Condition").map((c) => blockText(descendants(c, "Line")[0]!));
+  // a long condition is exported on several lines (src/l5x/wrap.ts): joined back with a space
+  descendants(parseXml(xml), "Condition").map((c) => descendants(c, "Line").map(blockText).join(" "));
 const actionLines = (xml: string): string[] => descendants(parseXml(xml), "Action").flatMap((a) => descendants(a, "Line").map(blockText));
 const chart = "init a\n-- go -> a";
 

@@ -22,6 +22,8 @@ export interface SfcNode {
   actionLines: number;
   /** Steps: every action line (for the diagram text widths). Transitions: the condition. */
   text: string[];
+  /** Transitions: the condition's lines as Studio draws them (column width, row height). */
+  lines?: string[];
 }
 
 export interface SfcBranch {
@@ -115,6 +117,7 @@ export function readSfc(content: ScanElement): SfcChart | string {
         initial: false,
         actionLines: 0,
         text: [cond.join(" ")],
+        lines: cond,
       });
       chart.transOrder.push(id!);
     } else if (el.name === "Branch") {

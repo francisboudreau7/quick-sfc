@@ -5,6 +5,7 @@
 import type { Qualifier } from "../model/ast.js";
 import type { Graph, GStep, TagInfo } from "../model/graph.js";
 import type { L5XPositions } from "../model/positions.js";
+import { wrapCondition } from "./wrap.js";
 import { descendants, parseXml, textOf, XmlError, type XmlElement } from "./xml.js";
 
 export { parseXml, XmlError } from "./xml.js";
@@ -386,7 +387,7 @@ function sfcRoutine(
     routine.push(
       `<Transition ID="${tid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 60}" DescY="${y - 20}" DescWidth="0">`,
       "<Condition>",
-      ...stLines([t.condition]),
+      ...stLines(wrapCondition(t.condition)),
       "</Condition>",
       "</Transition>",
     );

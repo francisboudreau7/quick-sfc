@@ -717,6 +717,14 @@ function drawPass(env: Env, xref: Set<string>): Pass {
     }
     lanesInGap[g] = orderLanes(inGap);
   }
+  // Several jumps into one step from the top: the first one's stub carries the arrow into the
+  // step and the others end on that stub with their own arrowhead. The gap keeps room under its
+  // lowest lane so those side arrows stay clear of the arrow into the step (user's mockup of the
+  // "Selection" example, 2026-11-27).
+  const topIn = new Map<GraphId, number>();
+  for (const j of jumps) if (j.top) topIn.set(j.target, (topIn.get(j.target) ?? 0) + 1);
+  const joinInGap = new Array<boolean>(rows + 1).fill(false);
+  for (const j of jumps) if (j.top && topIn.get(j.target)! > 1) joinInGap[j.entryGap] = true;
   const labelInGap = new Array<boolean>(rows + 1).fill(false);
   const xrefInGap = new Array<boolean>(rows + 1).fill(false);
   for (const j of xrefs) xrefInGap[j.exitGap] = true;
@@ -756,7 +764,8 @@ function drawPass(env: Env, xref: Set<string>): Pass {
     const lanes = lanesInGap[g]!;
     const outer = g === 0 || g === rows;
     const empty = g < rows && !filled[g] && lanes === 0 && !labelInGap[g] && !xrefInGap[g];
-    const laneNeed = lanes > 0 ? 2 * M.lanePad + (lanes - 1) * M.laneSp : 0;
+    const padBelow = joinInGap[g] ? Math.max(M.lanePad, M.arrowL + 2 * M.arrowW + 4) : M.lanePad;
+    const laneNeed = lanes > 0 ? M.lanePad + (lanes - 1) * M.laneSp + padBelow : 0;
     let h = empty ? 0 : Math.max(outer ? 0 : M.gapBase, laneNeed);
     if (labelInGap[g]) h = Math.max(h + M.labelH, lanesBottom(g) + 4 + M.labelH);
     if (xrefInGap[g]) h = Math.max(h + M.labelH, xrefTip(g) + 10);
@@ -892,21 +901,6 @@ function drawPass(env: Env, xref: Set<string>): Pass {
     ];
     if (stubOwner.get(j.target) === j) pts.push([tx, rowY[j.tgtRow]! - M.stepH / 2]);
     const clean = pts.filter((p, k) => k === 0 || p[0] !== pts[k - 1]![0] || p[1] !== pts[k - 1]![1]);
-    // Another jump into the same step: the owner of the stub draws the one arrow into the step;
-    // this wire ends on the stub (a T junction) without an arrowhead, so two arrows don't
-    // crowd the top of the step (example "Selection", 2026-11-27).
-    const owner = stubOwner.get(j.target);
-    if (j.top && owner && owner !== j) {
-      for (const p of clean) extend(p[0], p[1], p[0], p[1]);
-      const own: Seg[] = [];
-      addPolyline(clean, j.id, own);
-      jumpSegs.set(j.id, own);
-      lines.push(
-        `<g class="qsfc-wire qsfc-jump" data-id="${escapeXml(j.id)}"><title>${escapeXml(`jump to ${target.name}`)}</title>` +
-          `<path class="qsfc-wire-line" d="${pathD(clean)}"/></g>`,
-      );
-      continue;
-    }
     const tip = clean[clean.length - 1]!;
     const prev = clean[clean.length - 2]!;
     const len = Math.hypot(tip[0] - prev[0], tip[1] - prev[1]) || 1;

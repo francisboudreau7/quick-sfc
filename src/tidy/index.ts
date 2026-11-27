@@ -219,7 +219,11 @@ export function rebuild(chart: SfcChart): { source: string; built: Built } | str
 function routineEdits(text: string, chart: SfcChart, built: Built, hints: TagHints): RoutineResult {
   const { graph, layout, toOrig, branchOrig, linkOrig } = built;
   const actionLines = new Map(graph.steps.map((s) => [s.id, chart.nodes.get(toOrig.get(s.id)!)!.actionLines] as const));
-  const { positions, hiddenLinks } = studioPositions(withTexts(graph, chart, toOrig, hints), layout, actionLines);
+  // the conditions' own Studio lines: a column as wide as its longest line (SPEC §8.2)
+  const conditions = new Map(
+    graph.transitions.map((t) => [t.id, (chart.nodes.get(toOrig.get(t.id)!)!.lines ?? []).filter((l) => l.trim() !== "")] as const),
+  );
+  const { positions, hiddenLinks } = studioPositions(withTexts(graph, chart, toOrig, hints), layout, actionLines, undefined, conditions);
 
   const edits: Edit[] = [];
   let moved = 0;

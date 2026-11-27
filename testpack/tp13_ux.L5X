@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp13_ux" TargetType="Program" ContainsContext="true" ExportDate="Fri Nov 27 00:46:03 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp13_ux" TargetType="Program" ContainsContext="true" ExportDate="Fri Nov 27 13:17:45 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
 <Controller Use="Context" Name="QuickSFC">
 <DataTypes Use="Context">
 </DataTypes>
@@ -367,7 +367,7 @@ Fill the tank]]>
 </Body>
 </Action>
 </Step>
-<Step ID="4" X="200" Y="580" Operand="Step_002" HideDesc="true" DescX="240" DescY="560" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="4" X="200" Y="600" Operand="Step_002" HideDesc="true" DescX="240" DescY="580" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="5" Operand="Action_002" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -387,7 +387,7 @@ Fill the tank]]>
 </Body>
 </Action>
 </Step>
-<Step ID="6" X="200" Y="902" Operand="Step_003" HideDesc="true" DescX="240" DescY="882" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="6" X="200" Y="922" Operand="Step_003" HideDesc="true" DescX="240" DescY="902" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="7" Operand="Action_003" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -398,7 +398,7 @@ Fill the tank]]>
 </Body>
 </Action>
 </Step>
-<Step ID="8" X="500" Y="902" Operand="Step_004" HideDesc="true" DescX="540" DescY="882" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
+<Step ID="8" X="500" Y="922" Operand="Step_004" HideDesc="true" DescX="540" DescY="902" DescWidth="0" InitialStep="false" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true">
 <Action ID="9" Operand="Action_004" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">
 <Body>
 <STContent>
@@ -422,12 +422,15 @@ Fill the tank]]>
 <Condition>
 <STContent>
 <Line Number="0">
-<![CDATA[Step_001.DN OR (Step_001.T >= 3000 AND level_ok)]]>
+<![CDATA[Step_001.DN OR (Step_001.T >= 3000]]>
+</Line>
+<Line Number="1">
+<![CDATA[AND level_ok)]]>
 </Line>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="12" X="200" Y="782" Operand="Tran_002" HideDesc="true" DescX="260" DescY="762" DescWidth="0">
+<Transition ID="12" X="200" Y="802" Operand="Tran_002" HideDesc="true" DescX="260" DescY="782" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -436,7 +439,7 @@ Fill the tank]]>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="13" X="200" Y="1022" Operand="Tran_003" HideDesc="true" DescX="260" DescY="1002" DescWidth="0">
+<Transition ID="13" X="200" Y="1042" Operand="Tran_003" HideDesc="true" DescX="260" DescY="1022" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -445,7 +448,7 @@ Fill the tank]]>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="14" X="500" Y="782" Operand="Tran_004" HideDesc="true" DescX="560" DescY="762" DescWidth="0">
+<Transition ID="14" X="500" Y="802" Operand="Tran_004" HideDesc="true" DescX="560" DescY="782" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -454,7 +457,7 @@ Fill the tank]]>
 </STContent>
 </Condition>
 </Transition>
-<Transition ID="15" X="500" Y="1022" Operand="Tran_005" HideDesc="true" DescX="560" DescY="1002" DescWidth="0">
+<Transition ID="15" X="500" Y="1042" Operand="Tran_005" HideDesc="true" DescX="560" DescY="1022" DescWidth="0">
 <Condition>
 <STContent>
 <Line Number="0">
@@ -467,7 +470,7 @@ Fill the tank]]>
 <Leg ID="17"/>
 <Leg ID="18"/>
 </Branch>
-<Branch ID="19" Y="722" BranchType="Selection" BranchFlow="Diverge" Priority="Default">
+<Branch ID="19" Y="742" BranchType="Selection" BranchFlow="Diverge" Priority="Default">
 <Leg ID="20"/>
 <Leg ID="21"/>
 </Branch>

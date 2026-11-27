@@ -27,10 +27,10 @@ describe("routines outside the file: the uses line (SPEC §4.5)", () => {
     expect(diags("uses main\nst main\n  x := 1;\n")).toContain("1:E309");
   });
 
-  it("an outside main routine: no W600 or W602 for the routines of the file, exported as MainRoutineName", () => {
+  it("an outside main routine: no W600 or W602 for the routines of the file, no MainRoutineName in the L5X", () => {
     const src = "uses MainRoutine (main)\n\nst flash\n  x := 1;\n\nst other\n  JSR(flash);\n";
     expect(diags(src)).toEqual([]);
-    expect(l5x(src)).toContain('MainRoutineName="MainRoutine"');
+    expect(l5x(src)).not.toContain("MainRoutineName");
     expect(diags("uses MainRoutine (main)\nst a\n  JSR(MainRoutine);\n")).toContain("3:W602");
   });
 

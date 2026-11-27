@@ -90,7 +90,7 @@ describe("STATION2: a program with controller tags, ladder routines and SFR/SFP 
     expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     expect(r.source).toMatch(/^uses MainRoutine \(main\), analog, ARRET_URGENCE, AUTO_MAN, front_montant_boutons, InTouch$/m);
     expect(r.source).toContain("SFR(PRODUCTION_NORMALE,s0);");
-    expect(out.text).toContain('MainRoutineName="MainRoutine"');
+    expect(out.text).not.toContain("MainRoutineName");
   });
 
   it("reads the controller tags: values, presets, aliases (also of a step member)", () => {

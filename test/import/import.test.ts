@@ -99,7 +99,8 @@ describe("importL5X", () => {
     expect(r.source).toMatch(/^uses main \(main\)$/m);
     expect(warnings(r).join("\n")).not.toContain("becomes the main routine");
     const again = exportL5X(r.source, { fileName: "x.qsfc" });
-    expect(again.text).toContain('MainRoutineName="main"');
+    // Studio refuses a MainRoutineName that is not in the file: left out
+    expect(again.text).not.toContain("MainRoutineName");
   });
 
   it("a routine export (GEMMA.L5X shape): referenced routines on uses, outside steps kept as written", () => {

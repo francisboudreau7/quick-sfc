@@ -268,9 +268,9 @@ uses INIT, PRODUCTION_NORMALE, MainRoutine (main)
 ```
 - Names the routines of the Program that this file doesn't hold: a ladder routine (until Phase 5), an FBD routine, or a routine left out of a Studio routine export. Before the first routine (E210); several `uses` lines add up; a name can't also be a routine of the file (E309).
 - `JSR`, `call`, `SFR` and `SFP` may name them; any other unknown routine is still E600.
-- `(main)` after one name: that routine is the Program's main routine (`MainRoutineName` in the L5X), so the first routine of the file is not. One `(main)` at most (E210).
+- `(main)` after one name: that routine is the Program's main routine, so the first routine of the file is not. One `(main)` at most (E210). Studio refuses a `MainRoutineName` that is not a routine of the file (verified, STATION2 import 2026-11-27: "Failed to set the 'MainRoutineName' property"), so the export leaves the attribute out: the program comes in without a main routine; set it in Studio (Program Properties → Configuration) once the routine is there.
 - While the file has a `uses` line, W600 (routine never called) and W404 (tag declared but unused) are off, and an unused `tag` line is still exported: the routines outside may call the file's routines and use its tags.
-- **[Verify]** importing in Studio a program L5X whose main routine or called routines are not in it (the routines must already be in the project).
+- **[Verify]** importing in Studio a program L5X without a main routine, and with `JSR`s to routines that are not in it (the routines must already be in the project).
 
 **Calls**
 - `call name;` runs routine `name` once each time it is executed. It is a statement, so it belongs in an action or an ST routine, not in a condition (E602). It is exported as Studio's `JSR(name,0);`.
@@ -537,7 +537,7 @@ end
 - A tag lives at one scope: a name declared both here and as a program tag is E418. A controller alias can't point to a program tag (E418): Studio doesn't allow it.
 - A tag line here is exported even when the code doesn't use it (another program may).
 - `sfc tags` lists steps and named transitions whose operand tags are controller tags (a step's action tags go with it); other element tags are program tags, as Studio creates them today. A name that is not a step or transition of the file is E419. The import writes this line so that a project whose SFC tags are controller tags keeps them there; it can also move them to the program (CLI `--sfc-tags-at-program`, the import dialog's check box).
-- **Export:** controller tags are written in the controller's context `<Tags Use="Context">` with the same shapes as program tags. **[Verify]** that Studio creates them (or uses the existing ones) when it imports the program.
+- **Export:** controller tags are written in the controller's context `<Tags Use="Context">` with the same shapes as program tags. Studio creates them at controller scope when it imports the program (verified with tp15, 2026-11-27: the tags, the I/O aliases and the alias of a step member `fills` → `Step_001.Count`).
 
 ## 8. Export to L5X (Studio 5000) [P1]
 

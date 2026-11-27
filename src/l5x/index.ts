@@ -475,7 +475,10 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
     ...tagLines.filter((t) => t.controller).flatMap((t) => t.lines),
     "</Tags>",
     '<Programs Use="Context">',
-    `<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="${main}" Disabled="false" UseAsFolder="false">`,
+    // Studio refuses a MainRoutineName that is not a routine of the file ("Failed to set the
+    // 'MainRoutineName' property", STATION2 import 2026-11-27): an outside main (`uses X (main)`)
+    // is left out, and the program is imported without a main routine
+    `<Program Use="Target" Name="${programName}" TestEdits="false"${routineKeys.has(main.toLowerCase()) ? ` MainRoutineName="${main}"` : ""} Disabled="false" UseAsFolder="false">`,
     ...description(options.programDescription),
     "<Tags>",
     ...tagLines.filter((t) => !t.controller).flatMap((t) => t.lines),

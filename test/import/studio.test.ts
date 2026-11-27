@@ -112,14 +112,18 @@ describe("STATION2: a program with controller tags, ladder routines and SFR/SFP 
     expect(original.filter((n) => !now.includes(n))).toEqual([]);
     const elements = (list: string[]) => list.filter((n) => /^(step|tran)_/.test(n));
     const charted = new Set([...out.text!.matchAll(/Operand="((?:Step|Tran)_\d+)"/g)].map((m) => m[1]!.toLowerCase()));
-    expect(elements(now)).toEqual(elements(controllerTags(xml)).filter((n) => charted.has(n)));
+    // the chart elements, and Step_016: a step tag the code names (`Step_016.Count:=0;`) that no
+    // chart has, declared `tag Step_016 : SFC_STEP` by the import
+    expect(elements(now)).toEqual(elements(controllerTags(xml)).filter((n) => charted.has(n) || n === "step_016"));
+    expect(r.source).toMatch(/^ {2}tag Step_016 : SFC_STEP 500ms$/m);
   });
 
   it("sfcTagsAtProgram moves the element tags to the program", () => {
     const moved = importL5X(xml, { sfcTagsAtProgram: true });
     expect(moved.source).not.toContain("sfc tags");
     const t = exportL5X(moved.source, { fileName: "MainProgram.qsfc" }).text!;
-    expect(controllerTags(t).filter((n) => /^(step|tran|action)_/.test(n))).toEqual([]);
+    // Step_016 is not an element of the charts: it stays where it was
+    expect(controllerTags(t).filter((n) => /^(step|tran|action)_/.test(n))).toEqual(["step_016"]);
   });
 });
 

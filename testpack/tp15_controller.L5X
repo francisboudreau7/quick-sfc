@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp15_controller" TargetType="Program" ContainsContext="true" ExportDate="Fri Nov 27 12:03:30 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
+<RSLogix5000Content SchemaRevision="1.0" SoftwareRevision="32.01" TargetName="tp15_controller" TargetType="Program" ContainsContext="true" ExportDate="Fri Nov 27 12:41:54 2026" ExportOptions="References NoRawData L5KData DecoratedData Context Dependencies ForceProtectedEncoding AllProjDocTrans LogicalHierarchy">
 <Controller Use="Context" Name="QuickSFC">
 <DataTypes Use="Context">
 </DataTypes>
@@ -48,7 +48,7 @@
 <DataValue DataType="DINT" Radix="Decimal" Value="3"/>
 </Data>
 </Tag>
-<Tag Name="fills" TagType="Alias" AliasFor="Step_001.Count" ExternalAccess="Read/Write"/>
+<Tag Name="fills" TagType="Alias" Radix="Decimal" AliasFor="Step_001.Count" ExternalAccess="Read/Write"/>
 <Tag Name="lamp" TagType="Alias" Radix="Decimal" AliasFor="Local:1:O.Data.0" ExternalAccess="Read/Write"/>
 <Tag Name="start_btn" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.0" ExternalAccess="Read/Write">
 <Description>

@@ -479,6 +479,8 @@ Rules:
 
 **Elements of other routines [Phase 4d+].** An operand name in the code, `Step_<N>`, `Tran_<N>` or `Action_<N>`, that is not an element of the file is a step, transition or action of a routine that isn't in the file (`Step_017.DN`, `Step_016.Count := 0;`). It is not a tag of the file and is not exported as one; it must exist in the destination project. A step's members are checked as above (E401; alone: E400), an action's are `Status A Q PauseTimer PRE T Count`, a transition is a BOOL without members. Its number is **reserved**: no element of the file gets it (§8.2). Naming an element of the file this way (`Step_003` when the file has a step `s3`) is E405: write its name.
 
+**Declaring such a tag.** When the tag doesn't exist in the destination project, declare it so the export creates it: `tag Step_016 : SFC_STEP [preset]` (its PRE, like a TIMER), `tag Action_005 : SFC_ACTION`, `tag Tran_007 : BOOL`, in the `controller` block for a controller tag (§7.7). Only an operand name takes these types (E409 otherwise), and only its own type (E405); it reserves the number too. The import writes such a line for every one the code names and the file defines (STATION2: `Step_016.Count := 0;` with a `Step_016` no chart has: without it Studio reported "Referenced tag is undefined").
+
 ### 7.4 Tag overrides (optional) [P1; values: Phase 4d]
 ```
 tag name [: TYPE [value]] ["description"]
@@ -516,6 +518,7 @@ end
 - **Type.** An address ending in `.digits` is a bit: the tag is BOOL (strong evidence, §7.2; a numeric use is E404). Any other address gives no type clue: the tag keeps its inferred or declared type, shown in the tag table, but the alias in the L5X has no data type (it takes the target's).
 - **With a `tag` line.** A name can also have a `tag` line (for a description, or a type for the tag table). For a bit address the type must be BOOL, otherwise **E414**; for a word address any type is accepted. The `io` description wins over the `tag` line's.
 - The same name twice in `io` lines (in one block or two) is **E415**. The name follows §3.4 and shares the one namespace (a step and an I/O point can't have the same name: E410).
+- **Radix.** Every alias is written with `Radix="Decimal"`, as Studio writes its own (bit, word and tag-member aliases alike; `Float` for a word alias declared REAL). Without it Studio reported the word alias `Local:2:I.Ch0Data` as "doesn't reference valid object" (STATION2, 2026-11-27).
 - **Alias of a tag member [Phase 4d+].** The address may also be a tag member (`ejections  Step_017.Count`, `bit3  status.3`): it starts with a tag, a step of the file (exported as its operand: `s17.Count` → `Step_017.Count`) or an operand of another routine (§7.3); anything else is E413. Such an alias names no module.
 - **In Studio,** the module at the address must exist in the project (an alias to a missing module is an unresolved reference at import). Adjust the addresses to your rack.
 

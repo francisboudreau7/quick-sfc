@@ -75,6 +75,7 @@ import { findSnippet, SNIPPETS, snippetContext, snippetTemplate, usedNames } fro
 import { nextUse, routinesUsing, splitOnName, tagElements, useIndex } from "./taguse.js";
 import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusLine, tidiedText, tidyFileName, tidyProblem } from "./tidy.js";
 import { importFileName, importProblem, noteItems, notesTitle, previewHtml, routineStatus } from "./importl5x.js";
+import { EXAMPLES, findExample } from "./examples.js";
 import { importL5X, type ImportResult } from "../src/import/index.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
@@ -461,6 +462,33 @@ function setDoc(file: FileState, text: string, handle: FileHandle | undefined, i
   editor.setText(text, true);
   updateDirty();
   runCompile(true);
+}
+
+/** Help → Examples: an example chart as a new, unsaved file (asks first about unsaved changes). */
+async function openExample(id: string): Promise<void> {
+  const ex = findExample(id);
+  if (!ex) return;
+  if (!(await confirmDiscard(`open the example ${ex.label}`))) return;
+  stopWatch(false);
+  setDoc(newFileState(ex.fileName), ex.source, undefined, ex.source);
+  editor.goTo(1, 1, true);
+  toast(`Example: ${ex.label}`);
+}
+
+function fillExampleMenu(): void {
+  el("example-items").replaceChildren(
+    ...EXAMPLES.map((ex) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.tabIndex = -1;
+      b.dataset["cmd"] = "example";
+      b.dataset["value"] = ex.id;
+      b.title = ex.detail;
+      b.append(cell("span", ex.label), cell("kbd", ""));
+      return b;
+    }),
+  );
 }
 
 async function newChart(text: string): Promise<void> {
@@ -2361,6 +2389,7 @@ interface Menu {
 }
 
 fillSnippetMenu();
+fillExampleMenu();
 const menus: Menu[] = [
   { button: el<HTMLButtonElement>("file-btn"), list: el("file-menu") },
   { button: el<HTMLButtonElement>("view-btn"), list: el("view-menu") },
@@ -2518,6 +2547,9 @@ function runCommand(item: HTMLElement): void {
       break;
     case "snippet":
       void insertSnippetCmd(item.dataset["value"] ?? "");
+      break;
+    case "example":
+      void openExample(item.dataset["value"] ?? "");
       break;
     case "theme":
       setView({ theme: (item.dataset["value"] as Theme | undefined) ?? "system" });

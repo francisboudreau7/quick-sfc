@@ -249,6 +249,31 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     }
   }
 
+  // ---- tags of elements of other routines (`tag Step_016 : SFC_STEP`, SPEC §7.3) ------------
+  /** Keys of declared operand names: kept and exported even when the code names them only as elements. */
+  const operandDecls = new Set<string>();
+  const OPERAND_TYPE: Record<OperandKind, TagType> = { step: "SFC_STEP", transition: "BOOL", action: "SFC_ACTION" };
+  for (const d of program.tagDecls) {
+    const op = operandName(d.name.text);
+    if (!op) {
+      if (d.type === "SFC_STEP" || d.type === "SFC_ACTION") {
+        diags.push(error("E409", d.name.span, `${d.type} is only for the tag of an element of another routine (\`tag Step_016 : ${d.type}\`)`));
+      }
+      continue;
+    }
+    const mine = op.kind === "action" ? undefined : pinnedBy[op.kind].get(op.number);
+    if (mine !== undefined) {
+      diags.push(error("E405", d.name.span, `\`${d.name.text}\` is the ${op.kind} \`${mine}\` of this file: its tag is written by the export`));
+    } else if (d.type !== OPERAND_TYPE[op.kind]) {
+      diags.push(
+        error("E405", d.name.span, `\`${d.name.text}\` is the tag of a ${op.kind} of another routine: declare it as \`tag ${d.name.text} : ${OPERAND_TYPE[op.kind]}\``),
+      );
+    } else {
+      operandDecls.add(key(d.name.text));
+      outside.push({ kind: op.kind, number: op.number, name: d.name.text, span: d.name.span });
+    }
+  }
+
   // ---- io block (SPEC §7.6) ---------------------------------------------------------------
   // An I/O point makes its tag exist (an alias tag). A bit address is BOOL evidence.
   const ioByKey = new Map<string, IoEntry>();
@@ -1023,7 +1048,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     if (D?.type) {
       T = D.type;
       const conflicts = (e: Ev): boolean => {
-        if (T === "TIMER") return true;
+        if (T === "TIMER" || T === "SFC_STEP" || T === "SFC_ACTION") return true;
         if (T === "BOOL") return e.type !== "BOOL";
         if (T === "DINT") return (e.type === "BOOL" && !e.weak) || e.type === "REAL";
         return e.type === "BOOL" && !e.weak;
@@ -1079,7 +1104,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     const canonical = firstDecl ? firstDecl.name.text : (r.io?.name.text ?? r.uses[0]?.name ?? r.key);
     const firstOcc = firstDecl ? { span: firstDecl.name.span } : r.io ? { span: r.io.name.span } : occ[0];
 
-    if (firstOcc && (RESERVED_RE.test(canonical) || QSFC_KEYWORDS.has(r.key))) {
+    if (firstOcc && ((RESERVED_RE.test(canonical) && !operandDecls.has(r.key) && !r.decls.length) || QSFC_KEYWORDS.has(r.key))) {
       flagged.add(r.key);
       diags.push(error("E405", firstOcc.span, `\`${canonical}\` is a reserved name (${RESERVED_RE.test(canonical) ? "used for generated operands" : "qSFC keyword"})`));
     }
@@ -1118,7 +1143,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     // for later, or a Studio tag brought back by the import)
     // a declared tag is exported even when unused here if routines outside the file (`uses`) may
     // use it, or if it is a controller tag (SPEC §7.7)
-    const kept = r.decls.length > 0 && (!!program.uses?.length || r.decls.some((d) => d.scope === "controller"));
+    const kept = r.decls.length > 0 && (!!program.uses?.length || r.decls.some((d) => d.scope === "controller") || operandDecls.has(r.key));
     if (!r.uses.length && !r.io && !r.decls.some((d) => d.initial !== undefined) && !kept) {
       if (r.decls.length && !flagged.has(r.key)) {
         diags.push(warning("W404", (firstDecl as TagDecl).name.span, `tag \`${canonical}\` is declared but never used`));

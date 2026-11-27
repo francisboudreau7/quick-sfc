@@ -154,7 +154,11 @@ export interface BranchNode {
 export type Element = StepNode | TransitionNode | BranchNode;
 export type Sequence = Element[];
 
-export type TagType = "BOOL" | "DINT" | "REAL" | "TIMER";
+/**
+ * `SFC_STEP` / `SFC_ACTION` only declare the tag of an element of another routine
+ * (`tag Step_016 : SFC_STEP`, SPEC §7.3): an operand name, never a tag of the code.
+ */
+export type TagType = "BOOL" | "DINT" | "REAL" | "TIMER" | "SFC_STEP" | "SFC_ACTION";
 
 export interface TagDecl {
   name: Name;

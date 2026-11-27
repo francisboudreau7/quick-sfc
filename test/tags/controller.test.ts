@@ -40,7 +40,7 @@ describe("controller block (SPEC §7.7)", () => {
       program: ["local_x", "Tran_001", "x"],
     });
     // the alias of a step member points to the step's operand; no module for it
-    expect(out).toContain('<Tag Name="ejections" TagType="Alias" AliasFor="Step_001.Count"');
+    expect(out).toContain('<Tag Name="ejections" TagType="Alias" Radix="Decimal" AliasFor="Step_001.Count"');
     expect(out).not.toContain('<Module Use="Reference" Name="Step_001');
   });
 

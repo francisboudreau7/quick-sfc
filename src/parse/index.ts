@@ -54,7 +54,7 @@ export function parse(source: string): ParseResult {
   return { program: p.program, chart, diagnostics: sortDiagnostics(p.diags) };
 }
 
-const TAG_TYPES: readonly TagType[] = ["BOOL", "DINT", "REAL", "TIMER"];
+const TAG_TYPES: readonly TagType[] = ["BOOL", "DINT", "REAL", "TIMER", "SFC_STEP", "SFC_ACTION"];
 const QUALIFIERS = new Set(["n", "s", "r", "l", "d", "p", "p0", "p1", "sd", "ds", "sl"]);
 /** Supported today (SPEC §4.3); the others give E110. */
 const SUPPORTED: ReadonlySet<string> = new Set(["N", "S", "R", "L", "D", "P"]);
@@ -729,7 +729,7 @@ class Parser {
       i = skipWs(raw, i, end);
     }
     // initial value (SPEC §7.4): `= 5` after the type, or a duration after TIMER
-    if (raw[i] === "=" || (decl.type === "TIMER" && /\d/.test(raw[i] ?? ""))) {
+    if (raw[i] === "=" || ((decl.type === "TIMER" || decl.type === "SFC_STEP") && /\d/.test(raw[i] ?? ""))) {
       const eq = i;
       if (raw[i] === "=") i = skipWs(raw, i + 1, end);
       const vs = i;
@@ -759,6 +759,10 @@ class Parser {
       return;
     }
     switch (decl.type) {
+      case "SFC_ACTION":
+        bad("an SFC_ACTION tag takes no value");
+        return;
+      case "SFC_STEP":
       case "TIMER": {
         const ms = parseDuration(text, span, this.diags);
         if (ms !== undefined) decl.initial = ms;

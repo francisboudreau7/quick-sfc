@@ -236,12 +236,14 @@ const operand = (prefix: string, n: number) => `${prefix}_${pad(n, 3)}`;
 /**
  * An I/O point of the `io` block (SPEC §7.6): an alias tag, no DataType and no Data. The shape
  * `TagType="Alias" Radix="Decimal" AliasFor=... ExternalAccess="Read/Write"` is VERIFIED for bit
- * aliases (L5X_GUIDE §4, reference export). UNVERIFIED: the `<Description>` inside an alias tag,
- * and leaving out `Radix` for a word address (the alias takes the target's type).
+ * aliases (L5X_GUIDE §4, reference export). Studio writes `Radix="Decimal"` on word aliases and
+ * aliases of tag members too (STATION2 export: `Local:2:I.Ch0Data`, `Step_017.Count`); without it
+ * Studio reported the word alias as "doesn't reference valid object" (2026-11-27). A declared REAL
+ * takes `Float`. UNVERIFIED: the `<Description>` inside an alias tag.
  */
-function aliasTag(name: string, address: string, desc: string | undefined): TagLines {
+function aliasTag(name: string, address: string, desc: string | undefined, real = false): TagLines {
   if (!/^[A-Za-z_][\w:.\[\]]*$/.test(address)) throw new Error(`L5X: invalid I/O address ${JSON.stringify(address)}`);
-  const radix = /\.\d+$/.test(address) ? ' Radix="Decimal"' : "";
+  const radix = real && !/\.\d+$/.test(address) ? ' Radix="Float"' : ' Radix="Decimal"';
   const head = `<Tag Name="${name}" TagType="Alias"${radix} AliasFor="${address}" ExternalAccess="Read/Write"`;
   return { name, lines: desc ? [`${head}>`, ...description(desc), "</Tag>"] : [`${head}/>`] };
 }
@@ -266,7 +268,7 @@ function moduleLines(tags: TagInfo[]): string[] {
 
 function userTag(t: TagInfo): TagLines {
   assertName(t.name, "tag");
-  if (t.address !== undefined) return aliasTag(t.name, t.address, t.description);
+  if (t.address !== undefined) return aliasTag(t.name, t.address, t.description, t.declared && t.type === "REAL");
   switch (t.type) {
     case "BOOL":
       return boolTag(t.name, t.description, t.initial ? 1 : 0);
@@ -274,6 +276,10 @@ function userTag(t: TagInfo): TagLines {
       return dintTag(t.name, t.description, t.initial);
     case "REAL":
       return realTag(t.name, t.description, t.initial);
+    case "SFC_STEP":
+      return sfcStepTag(t.name, t.initial ?? 0, t.description);
+    case "SFC_ACTION":
+      return sfcActionTag(t.name, 0);
     case "TIMER":
       return timerTag(t.name, t.description, t.initial);
     default:

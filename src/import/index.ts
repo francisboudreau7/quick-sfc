@@ -459,7 +459,18 @@ function importProgram(
   const renamedCode = renameIdentifiers(code, rename);
   const aliasBases = new Set(tags.flatMap((t) => (t.alias !== undefined ? [key(/^\w+/.exec(t.alias)?.[0] ?? "")] : [])));
   let unusedController = 0;
+  const strayKeys = new Set([...strays].map(key));
   for (const t of tags) {
+    // the tag of an element of another routine, named by the code (`Step_016.Count`): declared,
+    // so the export creates it (SPEC §7.3)
+    const op = strayKeys.has(key(t.name)) ? operandName(t.name) : undefined;
+    if (op) {
+      const type = op.kind === "step" ? "SFC_STEP" : op.kind === "action" ? "SFC_ACTION" : "BOOL";
+      const pre = op.kind === "step" ? Number(t.members.get("pre") ?? 0) : 0;
+      const value = pre > 0 && Number.isInteger(pre) ? ` ${formatDuration(pre)}` : "";
+      (t.controller ? scoped.controller : scoped.program).tagLines.push(`tag ${t.name} : ${type}${value}${t.description ? ` ${quote(t.description)}` : ""}`);
+      continue;
+    }
     if (isSfcTag(t)) {
       if (!sfcOperands.has(key(t.name)) && !t.controller) unusedSfc.push(t.name);
       continue;

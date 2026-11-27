@@ -53,7 +53,7 @@ describe("L5X: io block as alias tags", () => {
     "-- start_btn AND level > 10 -> a",
   );
 
-  it("writes an alias tag per I/O point: bit with Radix, word without, description inside", () => {
+  it("writes an alias tag per I/O point: Radix Decimal as Studio writes it, description inside", () => {
     const l = lines(exp(s));
     const tag = (name: string): string[] => {
       const i = l.findIndex((x) => x.startsWith(`<Tag Name="${name}"`));
@@ -67,7 +67,7 @@ describe("L5X: io block as alias tags", () => {
       "</Tag>",
     ]);
     expect(tag("valve")).toEqual(['<Tag Name="valve" TagType="Alias" Radix="Decimal" AliasFor="Local:2:O.Data.3" ExternalAccess="Read/Write"/>']);
-    expect(tag("level")).toEqual(['<Tag Name="level" TagType="Alias" AliasFor="Local:3:I.Ch0Data" ExternalAccess="Read/Write"/>']);
+    expect(tag("level")).toEqual(['<Tag Name="level" TagType="Alias" Radix="Decimal" AliasFor="Local:3:I.Ch0Data" ExternalAccess="Read/Write"/>']);
     // an unused point is exported too
     expect(tag("spare")).toEqual(['<Tag Name="spare" TagType="Alias" Radix="Decimal" AliasFor="Rack1:I.Data[2].5" ExternalAccess="Read/Write"/>']);
   });

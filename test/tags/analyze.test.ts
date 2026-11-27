@@ -292,9 +292,15 @@ describe("E404 type conflicts", () => {
 });
 
 describe("E405 / E410 reserved names and namespace", () => {
-  it("E405 for generated operand names in declarations", () => {
-    const r = act(["x := 1;"], { tagDecls: [{ name: "Tran_001", type: "BOOL" }] });
-    expect(byCode(r, "E405").map((x) => x.message)).toEqual(["`Tran_001` is a reserved name (used for generated operands)"]);
+  it("an operand name declares the tag of an element of another routine, with its own type only", () => {
+    const ok = act(["x := Step_016.Count;"], { tagDecls: [{ name: "Step_016", type: "SFC_STEP" }, { name: "Tran_001", type: "BOOL" }] });
+    expect(codes(ok)).toEqual([]);
+    expect(ok.tags.map((t) => `${t.name}:${t.type}`)).toEqual(["Step_016:SFC_STEP", "Tran_001:BOOL", "x:BOOL"]);
+    const bad = act(["x := 1;"], { tagDecls: [{ name: "Tran_001", type: "DINT" }] });
+    expect(byCode(bad, "E405").map((x) => x.message)).toEqual([
+      "`Tran_001` is the tag of a transition of another routine: declare it as `tag Tran_001 : BOOL`",
+    ]);
+    expect(codes(act(["x := 1;"], { tagDecls: [{ name: "count", type: "SFC_STEP" }] }))).toContain("E409");
   });
   it("operand names in code are elements of other routines (SPEC §7.3): not tags, members checked", () => {
     const r = act(["Step_003 := 1;", "action_12 := 1;", "x := Step_017.DN AND Action_002.Q AND Tran_004;", "Step_016.Count := 0;", "y := Step_001.Foo;"]);

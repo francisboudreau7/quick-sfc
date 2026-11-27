@@ -273,9 +273,20 @@ class Validator {
   }
 
   private conditions(): void {
+    // `-- else` only opens the last leg of a select (SPEC §5.1)
+    const elseOk = new Set<TransitionNode>();
+    for (const el of walk(this.chart.body)) {
+      if (el.kind !== "select" || el.legs.length < 2) continue;
+      const first = el.legs[el.legs.length - 1]![0];
+      if (first?.kind === "transition") elseOk.add(first);
+    }
     for (const t of allTransitions(this.chart)) {
       if (t.condition.text === "") {
         this.err("E307", t.span, "transition has no condition; write `TRUE` for \"always\"");
+      }
+      if (t.else && !elseOk.has(t)) {
+        this.err("E224", t.condition.span, "`else` only opens the last leg of a `select`",
+          "it is true when every other leg is false; elsewhere, write the condition");
       }
     }
   }

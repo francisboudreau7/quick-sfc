@@ -138,6 +138,8 @@ export interface TransitionNode {
   jump?: Name;
   /** `after 5s` terms of the condition, in text order (absent when there are none). */
   after?: AfterTerm[];
+  /** `-- else` (SPEC §5.1, Phase 4e): true when every other leg of its `select` is false. */
+  else?: true;
   span: Span;
 }
 

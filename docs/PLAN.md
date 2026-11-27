@@ -520,6 +520,7 @@ Proposed before 4e. Each task says what goes wrong today (reproduced with `qsfc 
 - Logic checks: selection legs whose conditions can be true together, a tag written in two parallel legs, an S action never reset, a step that can never be left.
 - Sugar (decided 2026-11-26): **`else` leg** in a `select`: `-- else` exports `NOT (cond1 OR cond2 …)`, so the legs can never be true together.
 - All sugar exports to plain Studio ST/SFC; the round trip turns it back into the short form where it can. Considered and set aside: step timeout (`timeout -> fault`), edge detection (`rising x`, needs a hidden memory tag), C-style operators (`!`, `&&`, `||`).
+- **Built 2026-11-27 (mockups docs/mockups/sim, diagram variant C "Buttons and values" approved):** Simulate (F5) runs the chart like the PLC (SPEC §9.3): Play / Step / Reset, ×1 / ×10, 50 / 100 / 200 ms scans. The diagram draws active steps (with their timer), each transition bar and condition part green or red, inputs as buttons (click: toggle, Shift+click: one scan), comparisons with their tag's value; clicking a transition whose steps are active fires it. Live tags replace the tag table (inputs, outputs, steps), the trace replaces the problems, the editor lights the active steps and actions. Minimal ST (assignments, IF, sugar, step members, `call` / `JSR`); other statements are skipped with a note. Logic checks W700–W704 (SPEC §9.2) and `-- else` (E224) are done. Open: a Run button in the Help playgrounds.
 
 ### Phase 5: Ladder routines (planned, not started)
 - **Syntax: Studio's neutral text**, one rung per `rung` line, an optional `"comment"`, the instructions on the same line or indented below it:
@@ -537,7 +538,7 @@ Proposed before 4e. Each task says what goes wrong today (reproduced with `qsfc 
 - Open questions to ask before starting: rung syntax details (one line vs. indented), whether to draw the ladder in the first step, the instruction set for the first version.
 
 ### Later (not planned in detail)
-Several actions per step with all IEC qualifiers (Q10) · PLCopen XML **import and export** (platform-agnostic: Beremiz, OpenPLC, CODESYS) · GRAFCET-only features (§3.4) · editing the diagram graphically · simulation (step through the chart, toggle inputs).
+Several actions per step with all IEC qualifiers (Q10) · PLCopen XML **import and export** (platform-agnostic: Beremiz, OpenPLC, CODESYS) · GRAFCET-only features (§3.4) · editing the diagram graphically.
 
 ---
 

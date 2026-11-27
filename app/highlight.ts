@@ -673,6 +673,8 @@ export function tokenRole(kind: TokKind, text: string, line: string, top?: "decl
     case "string":
       return "value";
     case "stkw":
+      // `-- else` (the last leg of a select) belongs to the branch
+      if (/^else$/i.test(text) && lineKind(line).kind === "transition") return "branch";
       return LOGIC_WORDS.test(text) ? "logic" : "stctl";
     case "func":
       return /^(sfr|sfp|jsr)$/i.test(text) ? "action" : "func";

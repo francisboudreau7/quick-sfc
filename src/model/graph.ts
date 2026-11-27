@@ -58,6 +58,8 @@ export interface GTransition {
   condition: string;
   /** The step an `after` term of the condition refers to (SPEC §4.4); set when the condition has one. */
   afterStep?: string;
+  /** `-- else`: `condition` is NOT (the other legs' conditions), written out by lowering. */
+  else?: boolean;
   node: TransitionNode;
 }
 

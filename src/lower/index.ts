@@ -18,6 +18,7 @@ import { actionLineText, allSteps, allTransitions, key, pinnedOperand, walk } fr
 export { pinnedOperand } from "../model/ast.js";
 import type { GAction, GBranch, GLink, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
 import { collectInfo, continuingLegs, stepBefore, stepsByKey } from "../validate/flow.js";
+import { rewriteAfter } from "../tags/rewrite.js";
 
 type Source =
   | { kind: "transition"; node: TransitionNode }
@@ -133,6 +134,22 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
     if (!g.node.after?.length) continue;
     const s = stepBefore(g.node, info);
     if (s && s !== "parallel") g.afterStep = s.name.text;
+  }
+  // `-- else` (SPEC §5.1): NOT (the other legs' conditions), `after` written out
+  const gOf = new Map(transitions.map((g) => [g.node, g] as const));
+  for (const el of walk(chart.body)) {
+    if (el.kind !== "select") continue;
+    const firsts = el.legs.map((leg) => leg[0]).filter((x): x is TransitionNode => x?.kind === "transition");
+    const elseNode = firsts.find((t) => t.else);
+    const g = elseNode && gOf.get(elseNode);
+    if (!g) continue;
+    const others = firsts.filter((t) => !t.else).map((t) => {
+      const o = gOf.get(t)!;
+      const text = rewriteAfter(o.condition, o.node.after, o.afterStep);
+      return /^[A-Za-z_][\w.]*$/.test(text) ? text : `(${text})`;
+    });
+    g.condition = `NOT (${others.join(" OR ")})`.replace(/^NOT \(\(([^()]*)\)\)$/, "NOT ($1)");
+    g.else = true;
   }
 
   // ---- incoming paths per step ---------------------------------------------------

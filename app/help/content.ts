@@ -97,6 +97,7 @@ export const LESSONS: readonly Lesson[] = [
     ],
     tries: [
       { prompt: "Add a third leg: parts that are `bad` go to `reject`.", solution: L("|", "  -- measure.done AND bad", "  step reject", "    on reject_gate", "  -- reject_out -> wait") },
+      { prompt: "Write the second leg's condition as `-- else`: it runs whenever the first one is false.", solution: L("|", "  -- else", "  step push_small") },
       { prompt: "Instead of jumping back, let both legs meet on a step `count` after `end`.", solution: L("  -- big_out", "|", "  ...", "  -- small_out", "end", "step count", "-- TRUE -> wait") },
     ],
   },
@@ -118,14 +119,14 @@ export const LESSONS: readonly Lesson[] = [
     id: "jumps",
     title: "Jumps and loops",
     lead: "`->` sends the flow to any step of the chart. A step reached by several paths merges them.",
-    example: L("init idle", "-- start_btn", "step try 10s", "  on motor", "select", "  -- part_ok", "  step done", "  -- ack_btn -> idle", "|", "  -- try.done AND try.Count < 3", "  step pause 2s", "  -- pause.done -> try", "|", "  -- try.done AND try.Count >= 3", "  step fault", "    on alarm", "  -- reset_btn -> idle", "end"),
+    example: L("init idle", "-- start_btn", "step try 10s", "  on motor", "select", "  -- part_ok", "  step done", "  -- ack_btn -> idle", "|", "  -- try.done AND NOT part_ok AND try.Count < 3", "  step pause 2s", "  -- pause.done -> try", "|", "  -- try.done AND NOT part_ok AND try.Count >= 3", "  step fault", "    on alarm", "  -- reset_btn -> idle", "end"),
     summary: [
       ["-- pause.done -> try", "loop back to retry"],
       ["try.Count", "how many times `try` became active"],
       ["-- reset_btn -> idle", "several jumps may reach one step"],
     ],
     tries: [
-      { prompt: "Allow 5 tries instead of 3.", solution: L("  -- try.done AND try.Count < 5", "  -- try.done AND try.Count >= 5") },
+      { prompt: "Allow 5 tries instead of 3.", solution: L("  -- try.done AND NOT part_ok AND try.Count < 5", "  -- try.done AND NOT part_ok AND try.Count >= 5") },
     ],
   },
   {
@@ -277,7 +278,7 @@ export const REFERENCE: readonly RefEntry[] = [
     group: "Chart",
     title: "Jumps",
     syntax: L("-- condition -> step"),
-    example: L("init idle", "-- start_btn", "step run", "select", "  -- fault -> alarm", "|", "  -- stop_btn", "  step stopping 2s", "  -- stopping.done", "end", "step park", "-- TRUE -> idle", "", "step alarm", "  on horn", "-- reset_btn -> idle"),
+    example: L("init idle", "-- start_btn", "step run", "select", "  -- fault -> alarm", "|", "  -- stop_btn AND NOT fault", "  step stopping 2s", "  -- stopping.done", "end", "step park", "-- TRUE -> idle", "", "step alarm", "  on horn", "-- reset_btn -> idle"),
     rules: ["To any step of the same routine.", "Several jumps to one step merge there.", "Inside a branch, a jump ends a `select` leg; never into or out of a `parallel`."],
     problems: ["E303", "E304", "E305", "E220", "W301"],
     see: ["chains", "merge"],
@@ -287,7 +288,7 @@ export const REFERENCE: readonly RefEntry[] = [
     group: "Chart",
     title: "Chains",
     syntax: L("-- x -> a", "step b      // a new chain, reached by a jump"),
-    example: L("init idle", "-- start_btn", "step run", "select", "  -- fault -> alarm", "|", "  -- stop_btn", "  step stopping 2s", "  -- stopping.done", "end", "step park", "-- TRUE -> idle", "", "step alarm", "  on horn", "-- reset_btn -> idle"),
+    example: L("init idle", "-- start_btn", "step run", "select", "  -- fault -> alarm", "|", "  -- stop_btn AND NOT fault", "  step stopping 2s", "  -- stopping.done", "end", "step park", "-- TRUE -> idle", "", "step alarm", "  on horn", "-- reset_btn -> idle"),
     rules: ["After a jump, the next step starts a new chain.", "A chain must be reached by a jump."],
     problems: ["E306", "E201"],
     see: ["jumps"],
@@ -309,8 +310,8 @@ export const REFERENCE: readonly RefEntry[] = [
     title: "select",
     syntax: L("select", "  -- condition", "  …", "|", "  -- condition", "  …", "end"),
     example: L("init wait", "-- part_present", "step measure 1s", "select", "  -- measure.done AND big", "  step push_big", "    on pusher_big", "  -- big_out -> wait", "|", "  -- measure.done AND NOT big", "  step push_small", "    on pusher_small", "  -- small_out -> wait", "end"),
-    rules: ["Follows a step; each leg starts with a transition.", "Legs are tested left to right: the first true condition wins.", "A leg ends with a transition: a jump, or one that merges on the step after `end`.", "At least two legs, separated by `|`."],
-    problems: ["E211", "E212", "E213", "E214", "E207", "E208"],
+    rules: ["Follows a step; each leg starts with a transition.", "Legs are tested left to right: the first true condition wins.", "A leg ends with a transition: a jump, or one that merges on the step after `end`.", "At least two legs, separated by `|`.", "`-- else` opens the last leg: true when every other leg is false."],
+    problems: ["E211", "E212", "E213", "E214", "E207", "E208", "E224", "W700", "W704"],
     see: ["parallel", "jumps", "merge"],
   },
   {

@@ -320,6 +320,18 @@ step next
   ```
 - After `end`, the legs that don't jump **merge into the next step** (the convergence step). If at least one leg doesn't end with a jump, a step must follow `end` (E214).
 - If **every** leg ends with a jump, nothing merges, and the line after `end` starts a new chain (§6.3).
+- **`-- else`** [Phase 4e] opens the **last** leg: it is true when every other leg's first transition is false. The export and the diagram write it out, `NOT (c1 OR c2 …)` (with `after` written as the step timer). `else` anywhere else: E224.
+  ```
+  select
+    -- level_ok AND count < 10
+    step mix 2s
+    -- mix.done -> idle
+  |
+    -- else
+    step alarm
+    -- ack_btn -> idle
+  end
+  ```
 
 ### 5.2 Parallel (AND divergence) [P1]
 **All** legs start together. The branch finishes when every leg has reached its last step **and** the transition after `end` is TRUE.
@@ -688,6 +700,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E221 | at least one leg of this `select` must continue (it is inside another branch, so the flow can't stop here) |
 | E222 | `step` lines belong to an `sfc` routine; `main` is an `st` routine |
 | E223 | only `tag` lines, an `io` block and `sfc tags` go in the `controller` block (§7.7) |
+| E224 | `else` only opens the last leg of a `select` (§5.1) |
 
 **Chart rules (E3xx / W3xx)**
 | Code | Message (example) |
@@ -746,6 +759,16 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | W602 | `main` is the main routine: Studio already runs it every scan |
 | W603 | ST routine `alarms` is empty |
 
+**Chart logic (W7xx)** [Phase 4e]. Run when there are no errors. They read conditions made of Boolean tags, step members, `after` and comparisons of a tag with a number; a condition with anything else (a function call, a tag compared with a tag…) is left alone.
+
+| Code | Message (example) |
+|---|---|
+| W700 | legs 1 and 2 of this select can both be true (when ok AND big): the first one wins |
+| W701 | `valve` is written in two parallel legs (lines 5 and 8): each scan, the last one written wins |
+| W702 | the S action of `a` (on `lock`) is never reset: it keeps running after the step |
+| W703 | step `a` can never be left: its transition can't ever be true |
+| W704 | the `else` leg can never run: the other legs cover every case |
+
 **Export (E5xx)**
 | Code | Message (example) |
 |---|---|
@@ -753,6 +776,16 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E502 | program name `my-prog` is not a valid Studio 5000 name |
 
 There are no deep ST checks in Phase 1. Studio 5000 still verifies the ST on import; qSFC only catches the common slips above.
+
+---
+
+### 9.3 Simulation [Phase 4e]
+The app runs a chart like the PLC does (**Simulate**, F5). Each **scan** (50, 100 or 200 ms):
+1. Step timers: a step that just started gets `FS` = 1 and `T` = 0; the others add the scan time.
+2. Actions of the active steps, by qualifier: N and R every scan, P on the first scan, L while `T` < its time, D once `T` ≥ its time, S from its step until an R action writes the same tag (it keeps running after its step).
+3. Transitions: each one whose steps before it are all active and whose condition is true fires; a step moves at most one transition per scan. The steps it leaves run one last scan with `[:=]` targets back to 0 (likewise an L action whose time ran out).
+
+The main routine runs each scan and its `call` / `JSR` lines run the other routines; with the main routine outside the file (`uses x (main)`), every SFC routine runs each scan. **Inputs** are the tags nothing writes: click one to toggle it (Shift+click: true for one scan), on the diagram or in the live tag list. Click a transition whose steps are active to fire it on the next scan. ST in actions: assignments, `IF … ELSIF … ELSE … END_IF`, `on` / `set` / `reset`, `call` / `JSR`; other statements (timers, `SFR`, `SFP`, function blocks…) are skipped with a note in the trace.
 
 ---
 

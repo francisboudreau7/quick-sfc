@@ -68,6 +68,7 @@ export const PROBLEM_GROUPS: readonly ProblemGroup[] = [
       { code: "E221", what: "Every leg of an inner `select` jumps away.", fix: "Let one leg continue.", example: L("init idle", "-- go", "parallel", "  step p", "  select", "    -- a -> idle", "  |", "    -- b -> idle", "  end", "|", "  step q", "end", "-- z -> idle") },
       { code: "E222", what: "Chart lines in an `st` routine.", fix: "Start an `sfc` routine first.", example: L("st main", "  x := 1;", "step fill") },
       { code: "E223", what: "Another line in the `controller` block.", fix: "Only `tag`, `io … end` and `sfc tags`.", example: L("controller", "  x := 1;", "end", "init idle", "-- go -> idle") },
+      { code: "E224", what: "`else` that doesn't open the last leg of a `select`.", fix: "Move that leg last, or write its condition.", example: L("init idle", "-- else", "step run", "-- stop -> idle") },
     ],
   },
   {
@@ -128,6 +129,16 @@ export const PROBLEM_GROUPS: readonly ProblemGroup[] = [
       { code: "W601", what: "A routine calling itself.", fix: "Remove the call.", example: L("st main", "  call main;") },
       { code: "W602", what: "A call to the main routine.", fix: "The main routine already runs every scan.", example: L("st main", "  call seq;", "", "sfc seq", "init idle", "  call main;", "-- go -> idle") },
       { code: "W603", what: "An empty ST routine.", fix: "Write its lines, or remove it.", example: L("st main", "  call calc;", "", "st calc") },
+    ],
+  },
+  {
+    title: "Chart logic",
+    items: [
+      { code: "W700", what: "Two legs of a `select` true at the same time.", fix: "Make them exclusive, e.g. write the last one `-- else`.", example: L("init idle", "select", "  -- ok", "  step run", "  -- stop -> idle", "|", "  -- big", "  step slow", "  -- stop -> idle", "end") },
+      { code: "W701", what: "A tag written in two parallel legs.", fix: "Write it in one leg only.", example: L("init idle", "-- go", "parallel", "  step fill", "    on valve", "|", "  step heat", "    valve [:=] 0;", "end", "-- done -> idle") },
+      { code: "W702", what: "An S action nothing resets.", fix: "Add an R action writing the same tag in a later step.", example: L("init idle", "  S", "    lock := 1;", "-- go", "step run", "-- stop -> idle") },
+      { code: "W703", what: "A step that can never be left.", fix: "Check its conditions.", example: L("init idle", "-- go AND NOT go", "step run", "-- stop -> idle") },
+      { code: "W704", what: "An `else` leg that can never run.", fix: "Remove one of the legs.", example: L("init idle", "select", "  -- go", "  step run", "  -- stop -> idle", "|", "  -- NOT go", "  step wait", "  -- stop -> idle", "|", "  -- else", "  step never", "  -- stop -> idle", "end") },
     ],
   },
   {

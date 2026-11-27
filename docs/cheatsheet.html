@@ -83,7 +83,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
   <span class="k">step</span> pack
   <span class="k">--</span> packed
 <span class="k">|</span>
-  <span class="k">--</span> NOT ok
+  <span class="k">--</span> <span class="k">else</span>     <span class="c">// = NOT ok</span>
   <span class="k">step</span> reject
   <span class="k">--</span> out <span class="k">-&gt;</span> idle
 <span class="k">end</span>
@@ -96,7 +96,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <span class="k">end</span>
 <span class="k">--</span> level_a AND level_b</pre>
 </div>
-<p class="sub"><b>select</b>: after a step; one leg runs (first true). <b>parallel</b>: after a transition; all legs run, the transition after <code>end</code> waits for all.</p>
+<p class="sub"><b>select</b>: after a step; one leg runs (first true); <code>-- else</code> opens the last leg. <b>parallel</b>: after a transition; all legs run, the transition after <code>end</code> waits for all.</p>
 </section>
 
 <section>

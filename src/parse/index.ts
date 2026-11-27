@@ -1000,7 +1000,9 @@ class Parser {
       condition,
       span,
     };
-    const after = this.afterTerms(condition);
+    // `-- else` (SPEC §5.1): the last leg of a select, true when the other legs are all false
+    if (/^else$/i.test(condText)) node.else = true;
+    const after = node.else ? [] : this.afterTerms(condition);
     if (after.length) node.after = after;
 
     if (arrow >= 0) {

@@ -20,6 +20,7 @@ import {
   type OutsideRef,
 } from "./tags/index.js";
 import { actionOperands, assignOperands, lower } from "./lower/index.js";
+import { checkLogic } from "./logic/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
 import { hiddenJumpLinks } from "./render/svg.js";
@@ -74,6 +75,8 @@ export function compile(source: string, options: CompileOptions = {}): CompileRe
   const diagnostics = [...parsed.diagnostics];
   const tagResult = analyzeTags(program);
   diagnostics.push(...validateProgram(program, tagResult.calls));
+  // SFC logic checks (Phase 4e, W700-W704): warnings, only once the file has no errors
+  if (!hasErrors(diagnostics) && !hasErrors(tagResult.diagnostics)) diagnostics.push(...checkLogic(program));
   diagnostics.push(...tagResult.diagnostics);
 
   const routines = describeRoutines(program, tagResult.calls, source, options.fileName ?? "sfc");

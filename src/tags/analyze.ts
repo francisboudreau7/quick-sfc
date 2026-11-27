@@ -990,7 +990,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       if (el.kind === "step") {
         for (const a of el.actions) processAction(el, a);
       } else if (el.kind === "transition") {
-        if (el.condition.text.length) processUnit([toLines(el.condition)], true, undefined, undefined, el.after);
+        if (el.condition.text.length && !el.else) processUnit([toLines(el.condition)], true, undefined, undefined, el.after);
       }
     }
   }

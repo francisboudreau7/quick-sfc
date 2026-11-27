@@ -5,9 +5,12 @@
  */
 import type { CompileResult } from "../../src/compile.js";
 import { programStepNames } from "../../src/model/ast.js";
-import type { Diagnostic } from "../../src/model/diagnostics.js";
+import { hasErrors, type Diagnostic } from "../../src/model/diagnostics.js";
+import type { SimDraw } from "../../src/render/svg.js";
+import { Simulator } from "../../src/sim/index.js";
 import type { CompletionInfo } from "../complete.js";
 import type { Editor, EditorCallbacks } from "../editor.js";
+import { activeLines, clockText, simDraw } from "../sim.js";
 import { LESSONS, REFERENCE, REFERENCE_GROUPS, findEntry, findLesson, searchReference } from "./content.js";
 import { codeHtml, compileExample, diagramsHtml, escapeHtml, inline, learningPage, referencePage } from "./page.js";
 import { PROBLEM_GROUPS, findProblem } from "./problems.js";
@@ -17,8 +20,8 @@ export type HelpTab = "learning" | "reference" | "cheatsheet";
 export interface HelpDeps {
   makeEditor(parent: HTMLElement, cb: EditorCallbacks): Editor;
   completionFor(r: CompileResult | undefined): CompletionInfo;
-  /** Routine `i` of `r` as the app draws it (look, numbers, actions from View). */
-  svg(r: CompileResult, i: number): string;
+  /** Routine `i` of `r` as the app draws it (look, numbers, actions from View), live when simulating. */
+  svg(r: CompileResult, i: number, sim?: SimDraw): string;
   openInEditor(source: string, label: string): void;
   /** The cheat sheet page (docs/cheatsheet.html). */
   cheatsheetHtml: string;
@@ -48,7 +51,7 @@ const button = (label: string, cls = "btn"): HTMLButtonElement => {
   return b;
 };
 
-/** A live example: editable code, the diagram and the problems follow as you type. */
+/** A live example: editable code, the diagram and the problems follow as you type. Run simulates it. */
 class Playground {
   readonly root = h("div", "help-pg");
   private editor: Editor;
@@ -57,6 +60,10 @@ class Playground {
   private readonly dia = h("div", "help-pg-dia");
   private readonly problems = h("ul", "help-pg-problems");
   private readonly codeHost = h("div", "help-pg-code");
+  private readonly runBtn = button("▶ Run");
+  private readonly strip = h("div", "help-pg-sim");
+  private sim: Simulator | undefined;
+  private simTimer: number | undefined;
 
   constructor(
     private source: string,
@@ -70,10 +77,14 @@ class Playground {
     const open = button("Open in the editor", "btn primary");
     open.title = "Copy this example to a new, unsaved file";
     open.addEventListener("click", () => deps.openInEditor(this.editor.getText(), label));
-    bar.append(reset, open);
+    this.runBtn.title = "Simulate this example: toggle the inputs, watch the steps";
+    this.runBtn.addEventListener("click", () => (this.sim ? this.stop() : this.run()));
+    bar.append(reset, this.runBtn, open);
     const body = h("div", "help-pg-body");
     body.append(this.codeHost, this.dia);
-    this.root.append(bar, body, this.problems);
+    this.strip.hidden = true;
+    this.root.append(bar, body, this.strip, this.problems);
+    this.dia.addEventListener("click", (e) => this.diagramClick(e));
     this.editor = deps.makeEditor(this.codeHost, {
       onChange: () => this.schedule(),
       onCursor: () => undefined,
@@ -84,6 +95,7 @@ class Playground {
 
   /** Replaces the code (Reset, or a problem's example). */
   load(source: string, keep = false): void {
+    this.stop();
     if (!keep) this.source = source;
     this.editor.setText(source, true);
     this.sizeEditor();
@@ -113,12 +125,130 @@ class Playground {
     this.result = r;
     this.editor.setDiagnostics(r.diagnostics);
     this.editor.setStepNames(programStepNames(r.program));
-    const html = diagramsHtml(r, (res, i) => this.deps.svg(res, i));
+    this.drawDiagram();
+    this.renderProblems(r.diagnostics);
+  }
+
+  private drawDiagram(): void {
+    const r = this.result;
+    if (!r) return;
+    const sim = this.sim;
+    const html = diagramsHtml(r, (res, i) => {
+      const routine = res.routines[i]!;
+      const live = sim ? simDraw(sim, routine) : undefined;
+      return `<div data-routine="${escapeHtml(routine.name)}">${this.deps.svg(res, i, live)}</div>`;
+    });
     if (html) {
       this.dia.innerHTML = html;
       this.dia.classList.remove("stale");
     } else this.dia.classList.add("stale");
-    this.renderProblems(r.diagnostics);
+  }
+
+  /** Run: the same simulation as the app's (SPEC §9.3), inputs as toggles under the code. */
+  private run(): void {
+    const r = this.result;
+    if (!r || hasErrors(r.diagnostics) || !r.routines.some((x) => x.graph)) {
+      this.strip.hidden = false;
+      this.strip.replaceChildren(h("span", "help-pg-sim-note", "Fix the problems first: then Run simulates the chart."));
+      return;
+    }
+    this.sim = new Simulator(r);
+    this.sim.scan();
+    this.editor.setReadOnly(true);
+    this.runBtn.textContent = "■ Stop";
+    this.runBtn.classList.add("on");
+    this.root.classList.add("sim-on");
+    this.simTimer = window.setInterval(() => {
+      this.sim?.scan();
+      this.renderSim();
+    }, this.sim.scanMs);
+    this.renderSim();
+  }
+
+  private stop(): void {
+    window.clearInterval(this.simTimer);
+    this.simTimer = undefined;
+    this.strip.hidden = true;
+    this.strip.replaceChildren();
+    if (!this.sim) return;
+    this.sim = undefined;
+    this.editor.setReadOnly(false);
+    this.editor.setSimLines([], []);
+    this.runBtn.textContent = "▶ Run";
+    this.runBtn.classList.remove("on");
+    this.root.classList.remove("sim-on");
+    this.drawDiagram();
+  }
+
+  private renderSim(): void {
+    const s = this.sim;
+    const r = this.result;
+    if (!s || !r) return;
+    this.drawDiagram();
+    const lines = activeLines(s, r.routines);
+    this.editor.setSimLines(lines.steps, lines.actions);
+    this.strip.hidden = false;
+    // a number field being typed in keeps its text
+    const focused = document.activeElement;
+    if (focused instanceof HTMLInputElement && this.strip.contains(focused)) return;
+    const parts: HTMLElement[] = [h("span", "help-pg-sim-clock", escapeHtml(`▶ ${clockText(s.time, s.scans)}`))];
+    const tags = s.tagList();
+    const ins = tags.filter((t) => t.input);
+    const outs = tags.filter((t) => !t.input && t.type === "BOOL");
+    if (ins.length) parts.push(h("span", "help-pg-sim-label", "Inputs:"));
+    for (const t of ins) {
+      if (t.type === "BOOL") {
+        const b = button(`${t.name} ${t.value ? 1 : 0}`, `live-sw help-pg-sw${t.value ? " on" : ""}`);
+        b.title = "Click to toggle, Shift+click for one scan";
+        b.addEventListener("click", (e) => {
+          if (e.shiftKey) s.pulse(t.name);
+          else s.toggle(t.name);
+          this.renderSim();
+        });
+        parts.push(b);
+      } else {
+        const wrap = h("label", "help-pg-num", escapeHtml(t.name));
+        const inp = document.createElement("input");
+        inp.type = "number";
+        inp.className = "live-num";
+        inp.value = String(t.value);
+        inp.addEventListener("change", () => {
+          s.setTag(t.name, Number(inp.value) || 0);
+          inp.blur();
+          this.renderSim();
+        });
+        wrap.append(inp);
+        parts.push(wrap);
+      }
+    }
+    if (outs.length) parts.push(h("span", "help-pg-sim-label", "Outputs:"));
+    for (const t of outs) {
+      const o = h("span", "help-pg-out");
+      o.append(h("span", `live-lamp${t.value ? " on" : ""}`), document.createTextNode(t.name));
+      parts.push(o);
+    }
+    this.strip.replaceChildren(...parts);
+  }
+
+  /** While running: an input toggles (Shift: one scan), a transition whose steps are active fires. */
+  private diagramClick(e: MouseEvent): void {
+    const s = this.sim;
+    if (!s) return;
+    const t = e.target as Element | null;
+    const input = t?.closest("[data-input]")?.getAttribute("data-input");
+    if (input) {
+      if (e.shiftKey) s.pulse(input);
+      else s.toggle(input);
+      this.renderSim();
+      return;
+    }
+    const id = t?.closest(".qsfc-transition")?.getAttribute("data-id");
+    const routine = t?.closest("[data-routine]")?.getAttribute("data-routine");
+    if (!id || !routine) return;
+    if (!s.fire(routine, id)) {
+      s.scan();
+      this.renderSim();
+    }
   }
 
   private renderProblems(diags: readonly Diagnostic[]): void {
@@ -139,6 +269,7 @@ class Playground {
   }
 
   destroy(): void {
+    this.stop();
     window.clearTimeout(this.timer);
     this.editor.view.destroy();
   }

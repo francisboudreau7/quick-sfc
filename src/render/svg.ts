@@ -59,6 +59,73 @@ export interface SvgOptions {
   showActions?: boolean;
   /** Textbook only: "numbers" shows GRAFCET step numbers 1, 2, 3 (file order) with the name beside. */
   numbering?: "names" | "numbers";
+  /** Simulation (Phase 4e, docs/mockups/sim/diagram.html): the live state to draw. */
+  sim?: SimDraw;
+}
+
+/** What the simulation adds to the diagram. */
+export interface SimDraw {
+  /** Active steps. */
+  active: ReadonlySet<GraphId>;
+  /** A step's timer, shown beside it ("1.4 / 3 s"). */
+  badges?: ReadonlyMap<GraphId, string>;
+  transitions: ReadonlyMap<GraphId, SimTransition>;
+}
+
+export interface SimTransition {
+  /** true / false: a step before it is active (it can fire, click to fire it); idle: not now. */
+  state: "true" | "false" | "idle";
+  /** The parts of its condition, each true or false (offsets in the condition text). */
+  parts: ReadonlyArray<{ from: number; to: number; value: boolean; input?: string; label?: string }>;
+}
+
+/** Room around an input button in a condition (each side), and its extra height. */
+const PILL_PAD = 6;
+
+/**
+ * A condition while simulating: every part green or red, inputs as buttons (`data-input`),
+ * comparisons with their tag's value under them. Text after a button moves right by its padding.
+ */
+function simCondition(x: number, y: number, text: string, sim: SimTransition): { svg: string; width: number } {
+  const cw = monoWidth("x", 11);
+  const parts = [...sim.parts].sort((a, b) => a.from - b.from);
+  let back = "";
+  let spans = "";
+  let shift = 0;
+  let at = 0;
+  const plain = (from: number, to: number): void => {
+    if (to <= from) return;
+    spans += `<tspan x="${n(x + from * cw + shift)}" class="qsfc-p-op">${escapeXml(text.slice(from, to))}</tspan>`;
+  };
+  for (const p of parts) {
+    plain(at, p.from);
+    const w = (p.to - p.from) * cw;
+    const cls = p.value ? "qsfc-p-true" : "qsfc-p-false";
+    if (p.input) {
+      shift += PILL_PAD;
+      const px = x + p.from * cw + shift;
+      back +=
+        `<rect class="qsfc-pill ${p.value ? "qsfc-pill-on" : "qsfc-pill-off"}" data-input="${escapeXml(p.input)}" x="${n(px - PILL_PAD)}" y="${n(y - 12)}" width="${n(w + 2 * PILL_PAD)}" height="17" rx="8.5">` +
+        `<title>${escapeXml(`${p.input} = ${p.value ? 1 : 0} · click to toggle, Shift+click for one scan`)}</title></rect>`;
+      spans += `<tspan x="${n(px)}" class="${p.value ? "qsfc-pt-on" : "qsfc-pt-off"}" data-input="${escapeXml(p.input)}">${escapeXml(text.slice(p.from, p.to))}</tspan>`;
+      shift += PILL_PAD;
+    } else {
+      const px = x + p.from * cw + shift;
+      spans += `<tspan x="${n(px)}" class="${cls}">${escapeXml(text.slice(p.from, p.to))}</tspan>`;
+      if (p.label) {
+        const lw = monoWidth(p.label, 9) + 6;
+        back += `<rect class="qsfc-chip" x="${n(px - 1)}" y="${n(y + 5)}" width="${n(lw)}" height="11" rx="3"/>`;
+        back += `<text class="qsfc-chip-t" x="${n(px + 2)}" y="${n(y + 13.2)}">${escapeXml(p.label)}</text>`;
+        back += `<path class="${p.value ? "qsfc-u-true" : "qsfc-u-false"}" d="M${n(px)} ${n(y + 3)}H${n(px + w)}"/>`;
+      }
+    }
+    at = p.to;
+  }
+  plain(at, text.length);
+  const width = text.length * cw + shift;
+  const res =
+    sim.state === "idle" ? "" : `<text class="qsfc-res ${sim.state === "true" ? "qsfc-p-true" : "qsfc-p-false"}" x="${n(x + width + 8)}" y="${n(y)}">${sim.state === "true" ? "✓" : "✗"}</text>`;
+  return { svg: `${back}<text class="qsfc-code qsfc-cond" y="${n(y)}">${spans}</text>${res}`, width: width + (res ? 18 : 0) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -416,6 +483,8 @@ interface Env {
   stepPlans: Map<GraphId, StepPlan>;
   transPlans: Map<GraphId, TransPlan>;
   routes: RoutePlan;
+  /** Simulation state to draw (Phase 4e). */
+  sim?: SimDraw;
 }
 
 interface Pass {
@@ -464,6 +533,7 @@ function decide(graph: Graph, layout: Layout, options: SvgOptions, fixed?: Set<s
     transPlans,
     routes: planRoutes(graph, layout),
   };
+  if (options.sim) env.sim = options.sim;
 
   // Draw every jump wire; while some still cross something, turn one of them into a
   // cross-reference: the one whose removal leaves the fewest crossings.
@@ -495,6 +565,7 @@ function lessThan(a: number[], b: number[]): boolean {
 
 function drawPass(env: Env, xref: Set<string>): Pass {
   const { graph, layout, look, M, numbers, stepById, transById, branchById, stepPlans, transPlans, routes } = env;
+  const options = { sim: env.sim };
   const jumps = routes.jumps.filter((j) => !xref.has(j.id));
   const xrefs = routes.jumps.filter((j) => xref.has(j.id));
   const labelDx = 5;
@@ -1006,10 +1077,19 @@ function drawPass(env: Env, xref: Set<string>): Pass {
       extend(tx - plan.nameW, y - 8, tx, y + 8);
     }
     const cx = x + half + M.transTextGap;
-    parts.push(textEl("qsfc-code qsfc-cond", cx, y + 3.8, plan.cond, t.condition));
-    addText(cx, y + 3.8, monoWidth(plan.cond.text, M.codeSize), M.codeSize, "start", t.id);
-    extend(x - half, y - M.transHalfH, cx + monoWidth(plan.cond.text, M.codeSize), y + M.transHalfH);
-    trans.push(`<g class="qsfc-transition${t.auto ? " qsfc-auto" : ""}" data-id="${escapeXml(t.id)}">${parts.join("")}</g>`);
+    const simT = options.sim?.transitions.get(t.id);
+    if (simT && !plan.cond.truncated) {
+      const c = simCondition(cx, y + 3.8, t.condition, simT);
+      parts.push(c.svg);
+      addText(cx, y + 3.8, c.width, M.codeSize, "start", t.id);
+      extend(x - half, y - M.transHalfH, cx + c.width, y + M.transHalfH + (simT.parts.some((p) => p.label) ? 12 : 0));
+    } else {
+      parts.push(textEl("qsfc-code qsfc-cond", cx, y + 3.8, plan.cond, t.condition));
+      addText(cx, y + 3.8, monoWidth(plan.cond.text, M.codeSize), M.codeSize, "start", t.id);
+      extend(x - half, y - M.transHalfH, cx + monoWidth(plan.cond.text, M.codeSize), y + M.transHalfH);
+    }
+    const simCls = simT ? ` qsfc-sim-${simT.state}${simT.state === "idle" ? "" : " qsfc-sim-fire"}` : "";
+    trans.push(`<g class="qsfc-transition${t.auto ? " qsfc-auto" : ""}${simCls}" data-id="${escapeXml(t.id)}">${parts.join("")}</g>`);
   }
   out.push(`<g class="qsfc-transitions">${trans.join("")}</g>`);
 
@@ -1066,7 +1146,15 @@ function drawPass(env: Env, xref: Set<string>): Pass {
       segs.push({ x0: x + plan.w / 2, y0: linkY, x1: ax, y1: linkY, owner: s.id });
       boxes.push({ x0: ax, y0, x1: ax + plan.action.w, y1: y0 + plan.action.h, owner: s.id });
     }
-    steps.push(`<g class="qsfc-step${s.initial ? " qsfc-initial" : ""}" data-id="${escapeXml(s.id)}">${parts.join("")}</g>`);
+    const live = options.sim?.active.has(s.id);
+    const badge = live ? options.sim?.badges?.get(s.id) : undefined;
+    if (badge) {
+      const bw = sansWidth(badge, 10) + 10;
+      const bx = x + plan.w / 2 - bw + 4;
+      const by = y0 - 15;
+      parts.push(`<rect class="qsfc-sim-badge" x="${n(bx)}" y="${n(by)}" width="${n(bw)}" height="13" rx="3"/><text class="qsfc-sim-badge-t" x="${n(bx + bw / 2)}" y="${n(by + 9.6)}" text-anchor="middle">${escapeXml(badge)}</text>`);
+    }
+    steps.push(`<g class="qsfc-step${s.initial ? " qsfc-initial" : ""}${live ? " qsfc-sim-active" : ""}" data-id="${escapeXml(s.id)}">${parts.join("")}</g>`);
   }
   out.push(`<g class="qsfc-steps">${steps.join("")}</g>`);
 
@@ -1292,6 +1380,32 @@ function css(look: SvgLook): string {
     `${L} .qsfc-tname-box{fill:var(--qsfc-tname-fill);stroke:var(--qsfc-tname-stroke);stroke-width:1}`,
     `${L} .qsfc-tname{font-size:${studio ? STUDIO.labelSize : TEXTBOOK.labelSize}px;font-weight:${studio ? 600 : 400};${studio ? "" : "font-style:italic;"}fill:var(--qsfc-tname)}`,
     `${L} .qsfc-jump-label,${L} .qsfc-xref-from{font-size:${TEXTBOOK.labelSize}px;font-style:italic;fill:var(--qsfc-label)}`,
+    // simulation (Phase 4e)
+    `${L}{--qsfc-on:#15803d;--qsfc-off:#b42318;--qsfc-on-fill:#dcfce7;--qsfc-ring:#1d5fd1}`,
+    `@media (prefers-color-scheme: dark){${L}:not(.qsfc-light *){--qsfc-on:#4ade80;--qsfc-off:#ff7b72;--qsfc-on-fill:#123a22;--qsfc-ring:#6ea8ff}}`,
+    `.qsfc-dark ${L}{--qsfc-on:#4ade80;--qsfc-off:#ff7b72;--qsfc-on-fill:#123a22;--qsfc-ring:#6ea8ff}`,
+    `${L} .qsfc-sim-active .qsfc-step-box{fill:var(--qsfc-on-fill);stroke:var(--qsfc-on);stroke-width:2.5}`,
+    `${L} .qsfc-sim-active .qsfc-step-inner{stroke:var(--qsfc-on)}`,
+    `${L} .qsfc-sim-badge{fill:var(--qsfc-on)}`,
+    `${L} .qsfc-sim-badge-t{font-size:10px;font-weight:600;fill:var(--qsfc-bg)}`,
+    `${L} .qsfc-sim-true .qsfc-trans-bar{fill:var(--qsfc-on)}`,
+    `${L} .qsfc-sim-false .qsfc-trans-bar{fill:var(--qsfc-off)}`,
+    `${L} .qsfc-sim-idle .qsfc-trans-bar{opacity:.5}`,
+    `${L} .qsfc-sim-fire{cursor:pointer}`,
+    `${L} .qsfc-sim-fire:hover .qsfc-trans-bar{stroke:var(--qsfc-ring);stroke-width:6;stroke-opacity:.35;paint-order:stroke}`,
+    `${L} .qsfc-p-true{fill:var(--qsfc-on);font-weight:700}`,
+    `${L} .qsfc-p-false{fill:var(--qsfc-off);font-weight:700}`,
+    `${L} .qsfc-p-op{fill:var(--qsfc-caption)}`,
+    `${L} .qsfc-res{font-family:${SANS};font-size:12px;font-weight:700}`,
+    `${L} .qsfc-pill{cursor:pointer}`,
+    `${L} .qsfc-pill-on{fill:var(--qsfc-on)}`,
+    `${L} .qsfc-pill-off{fill:var(--qsfc-bg);stroke:var(--qsfc-off);stroke-width:1.2}`,
+    `${L} .qsfc-pt-on{fill:var(--qsfc-bg);font-weight:700;pointer-events:none}`,
+    `${L} .qsfc-pt-off{fill:var(--qsfc-off);font-weight:700;pointer-events:none}`,
+    `${L} .qsfc-chip{fill:var(--qsfc-head-fill);stroke:var(--qsfc-box-stroke);stroke-width:.5}`,
+    `${L} .qsfc-chip-t{font-family:${MONO};font-size:9px;font-weight:600;fill:var(--qsfc-code)}`,
+    `${L} .qsfc-u-true{stroke:var(--qsfc-on);stroke-width:1.5}`,
+    `${L} .qsfc-u-false{stroke:var(--qsfc-off);stroke-width:1.5}`,
   ];
   return rules.join("");
 }

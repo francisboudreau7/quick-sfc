@@ -11,7 +11,7 @@ import { allSteps, key, programStepNames, sfcCharts } from "../src/model/ast.js"
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import type { Graph } from "../src/model/graph.js";
 import { renderStudioSketch } from "../src/render/sketch.js";
-import { renderSvg } from "../src/render/svg.js";
+import { renderSvg, type SimDraw } from "../src/render/svg.js";
 import { tidyL5X, type TidyReport } from "../src/tidy/index.js";
 import type { TagInfo } from "../src/model/graph.js";
 import type { CompletionInfo } from "./complete.js";
@@ -78,6 +78,8 @@ import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusL
 import { importFileName, importProblem, noteItems, notesTitle, previewHtml, routineStatus } from "./importl5x.js";
 import { EXAMPLES, findExample } from "./examples.js";
 import { createHelp } from "./help/view.js";
+import { Simulator } from "../src/sim/index.js";
+import { activeLines, clockText, routineLive, simDraw, traceLines } from "./sim.js";
 import { importL5X, type ImportResult } from "../src/import/index.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
@@ -121,6 +123,15 @@ const ui = {
   fileName: el("file-name"),
   fileRoutine: el("file-routine"),
   exportBtn: el<HTMLButtonElement>("export-btn"),
+  simBtn: el<HTMLButtonElement>("sim-btn"),
+  simBar: el("sim-bar"),
+  simPlay: el<HTMLButtonElement>("sim-play"),
+  simSpeed: el<HTMLSelectElement>("sim-speed"),
+  simScan: el<HTMLSelectElement>("sim-scan"),
+  simClock: el("sim-clock"),
+  liveTags: el("live-tags"),
+  traceBtn: el<HTMLButtonElement>("trace-btn"),
+  traceList: el("trace-list"),
   tagCount: el("tag-count"),
   tagsEmpty: el("tags-empty"),
   tagTable: el<HTMLTableElement>("tag-table"),
@@ -465,6 +476,7 @@ async function confirmDiscard(action: string): Promise<boolean> {
 // ---------------------------------------------------------------------------------------------
 
 function setDoc(file: FileState, text: string, handle: FileHandle | undefined, initial: string): void {
+  stopSim();
   doc = { file, initial, handle };
   result = undefined;
   lastGood.clear();
@@ -1190,12 +1202,231 @@ function diagramOf(r: CompiledRoutine): Diagram | undefined {
   return r.graph && r.layout ? { graph: r.graph, layout: r.layout, name: r.name } : undefined;
 }
 
-function svgOf(d: Diagram): string {
+/** The diagram as the app draws it; `override` is a Help playground's own simulation. */
+function svgOf(d: Diagram, override?: SimDraw): string {
+  const routine = sim && !override ? result?.routines.find((r) => r.name === d.name && r.graph === d.graph) : undefined;
+  const live = override ?? (sim && routine ? simDraw(sim, routine) : undefined);
   return renderSvg(d.graph, d.layout, {
     look: "textbook",
     numbering: view.numbers ? "numbers" : "names",
     showActions: view.showActions,
+    ...(live ? { sim: live } : {}),
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Simulation (Phase 4e, docs/mockups/sim): the chart runs like the PLC, scan by scan
+// ---------------------------------------------------------------------------------------------
+
+let sim: Simulator | undefined;
+let simTimer: number | undefined;
+let simRev = 0;
+let showTrace = false;
+
+function startSim(): void {
+  if (sim) return;
+  if (!doc || !result || countProblems(diagnostics).errors > 0 || !result.routines.some((r) => r.graph)) {
+    toast(doc ? "Fix the errors in the Problems panel before simulating" : "Open a chart to simulate it", "error");
+    return;
+  }
+  sim = new Simulator(result);
+  sim.scanMs = Number(ui.simScan.value) || 100;
+  sim.scan();
+  editor.setReadOnly(true);
+  ui.simBar.hidden = false;
+  ui.simBtn.textContent = "■ Stop";
+  ui.simBtn.classList.add("on");
+  document.body.classList.add("sim-on");
+  showTrace = true;
+  renderSim();
+}
+
+function stopSim(): void {
+  if (!sim) return;
+  pauseSim();
+  sim = undefined;
+  editor.setReadOnly(!!watching);
+  editor.setSimLines([], []);
+  ui.simBar.hidden = true;
+  ui.simBtn.textContent = "▶ Simulate";
+  ui.simBtn.classList.remove("on");
+  document.body.classList.remove("sim-on");
+  showTrace = false;
+  drawn = undefined;
+  renderSimPanels();
+  renderDiagram(false);
+  renderTabs(result?.routines ?? [], activeIndex());
+}
+
+function playSim(): void {
+  if (!sim || simTimer !== undefined) return;
+  simTimer = window.setInterval(() => {
+    if (!sim) return;
+    for (let k = 0; k < (Number(ui.simSpeed.value) || 1); k++) sim.scan();
+    renderSim();
+  }, sim.scanMs);
+  ui.simPlay.textContent = "❚❚ Pause";
+  ui.simPlay.classList.add("on");
+}
+
+function pauseSim(): void {
+  if (simTimer !== undefined) window.clearInterval(simTimer);
+  simTimer = undefined;
+  ui.simPlay.textContent = "▶ Play";
+  ui.simPlay.classList.remove("on");
+}
+
+/** Redraws everything the simulation touches. */
+function renderSim(): void {
+  if (!sim || !result) return;
+  simRev++;
+  renderDiagram(false);
+  renderSimPanels();
+  const lines = activeLines(sim, result.routines);
+  editor.setSimLines(lines.steps, lines.actions);
+  ui.simClock.textContent = clockText(sim.time, sim.scans);
+  for (const b of ui.routineTabs.querySelectorAll<HTMLElement>('[role="tab"]')) {
+    const r = result.routines[Number(b.dataset["index"])];
+    b.classList.toggle("sim-live", !!r && routineLive(sim, r.name));
+  }
+}
+
+/** Live tags (in place of the tag table) and the trace (in place of the problems). */
+function renderSimPanels(): void {
+  ui.liveTags.hidden = !sim;
+  ui.traceBtn.hidden = !sim;
+  ui.traceBtn.setAttribute("aria-pressed", String(showTrace));
+  ui.traceList.hidden = !sim || !showTrace;
+  ui.problemList.hidden = !!sim && showTrace;
+  el("tags-title").firstChild!.textContent = sim ? "Live tags " : "Tags ";
+  if (!sim) {
+    ui.liveTags.replaceChildren();
+    ui.traceList.replaceChildren();
+    renderTags();
+    return;
+  }
+  ui.tagTable.hidden = true;
+  ui.tagsEmpty.hidden = true;
+  const s = sim;
+  const tags = s.tagList();
+  const rows: HTMLElement[] = [];
+  const head = (title: string, note: string): void => {
+    const h = cell("div", "", "live-h");
+    h.append(cell("span", title), cell("span", note, "live-note"));
+    rows.push(h);
+  };
+  const ins = tags.filter((t) => t.input);
+  const outs = tags.filter((t) => !t.input);
+  if (ins.length) head("Inputs", "click to change");
+  for (const t of ins) {
+    const row = cell("div", "", "live-row");
+    if (t.type === "BOOL") {
+      const b = cell("button", t.value ? "1" : "0", `live-sw${t.value ? " on" : ""}`) as HTMLButtonElement;
+      b.type = "button";
+      b.title = `${t.name} = ${t.value ? 1 : 0}: click to toggle, Shift+click for one scan`;
+      b.addEventListener("click", (e) => {
+        if (e.shiftKey) s.pulse(t.name);
+        else s.toggle(t.name);
+        renderSim();
+      });
+      row.append(b);
+    } else {
+      const inp = document.createElement("input");
+      inp.type = "number";
+      inp.className = "live-num";
+      inp.value = String(t.value);
+      inp.setAttribute("aria-label", t.name);
+      inp.addEventListener("change", () => {
+        s.setTag(t.name, Number(inp.value) || 0);
+        renderSim();
+      });
+      row.append(inp);
+    }
+    row.append(cell("span", t.name, "live-name"), cell("span", t.description ?? "", "live-note"));
+    rows.push(row);
+  }
+  if (outs.length) head("Outputs", "");
+  for (const t of outs) {
+    const row = cell("div", "", "live-row");
+    if (t.type === "BOOL") row.append(cell("span", "", `live-lamp${t.value ? " on" : ""}`));
+    else row.append(cell("span", typeof t.value === "number" ? String(Math.round(t.value * 100) / 100) : String(t.value), "live-val"));
+    row.append(cell("span", t.name, "live-name"), cell("span", t.description ?? "", "live-note"));
+    rows.push(row);
+  }
+  const steps = s.stepList();
+  if (steps.length) head("Steps", "");
+  const multi = new Set(steps.map((x) => x.routine)).size > 1;
+  for (const st of steps) {
+    const row = cell("div", "", `live-row${st.active ? " live-active" : ""}`);
+    const time = st.active ? `${(st.t / 1000).toFixed(1)} s${st.presetMs ? ` of ${st.presetMs / 1000} s` : ""}` : st.count ? `ran ${st.count}×` : "";
+    row.append(cell("span", "", `live-lamp${st.active ? " on" : ""}`), cell("span", multi ? `${st.routine} · ${st.name}` : st.name, "live-name"), cell("span", time, "live-note"));
+    rows.push(row);
+  }
+  ui.liveTags.replaceChildren(...rows);
+  ui.tagCount.textContent = String(tags.length);
+  if (showTrace) {
+    ui.traceList.replaceChildren(...traceLines(s.trace).map((l) => cell("li", l.text, `trace-${l.kind}`)));
+  }
+}
+
+ui.simPlay.addEventListener("click", () => (simTimer === undefined ? playSim() : pauseSim()));
+el("sim-step").addEventListener("click", () => {
+  if (!sim) return;
+  pauseSim();
+  sim.scan();
+  renderSim();
+});
+el("sim-reset").addEventListener("click", () => {
+  if (!sim) return;
+  pauseSim();
+  sim.reset();
+  sim.scan();
+  renderSim();
+});
+el("sim-stop").addEventListener("click", () => stopSim());
+ui.simScan.addEventListener("change", () => {
+  if (!sim) return;
+  sim.scanMs = Number(ui.simScan.value) || 100;
+  if (simTimer !== undefined) {
+    pauseSim();
+    playSim();
+  }
+});
+ui.simSpeed.addEventListener("change", () => {
+  if (simTimer !== undefined) {
+    pauseSim();
+    playSim();
+  }
+});
+ui.traceBtn.addEventListener("click", () => {
+  showTrace = !showTrace;
+  renderSimPanels();
+});
+
+/** A click on the diagram while simulating: an input toggles, a transition fires. True when handled. */
+function simClick(target: EventTarget | null, shift: boolean): boolean {
+  if (!sim || !result) return false;
+  const t = target as Element | null;
+  const input = t?.closest?.("[data-input]")?.getAttribute("data-input");
+  if (input) {
+    if (shift) sim.pulse(input);
+    else sim.toggle(input);
+    renderSim();
+    return true;
+  }
+  const g = t?.closest?.(".qsfc-transition");
+  const id = g?.getAttribute("data-id");
+  const routine = drawn ? result.routines.find((r) => r.graph === drawn!.diagram.graph) : undefined;
+  if (id && routine) {
+    const why = sim.fire(routine.name, id);
+    if (why) toast(`This transition can't fire now: ${why}`, "error");
+    else {
+      sim.scan();
+      renderSim();
+    }
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1237,7 +1468,7 @@ function renderHeader(): void {
 }
 
 function viewKey(): string {
-  return `${view.numbers}|${view.showActions}`;
+  return `${view.numbers}|${view.showActions}|${sim ? simRev : ""}`;
 }
 
 /** Index of the routine the cursor is in (-1: none). */
@@ -1859,7 +2090,8 @@ function scrollIntoCanvas(target: Element): void {
 }
 
 /** A click (not a drag) on the diagram: put the cursor on the element's line. */
-function diagramClick(target: EventTarget | null): void {
+function diagramClick(target: EventTarget | null, shift = false): void {
+  if (simClick(target, shift)) return;
   const graph = drawn?.diagram.graph;
   if (!graph) return;
   const ids: string[] = [];
@@ -1945,7 +2177,7 @@ ui.canvas.addEventListener("pointerup", (e) => {
   const d = drag;
   drag = undefined;
   ui.canvas.classList.remove("dragging");
-  if (!d.moved) diagramClick(d.target);
+  if (!d.moved) diagramClick(d.target, e.shiftKey);
 });
 ui.canvas.addEventListener("pointercancel", () => {
   drag = undefined;
@@ -2543,6 +2775,10 @@ function runCommand(item: HTMLElement): void {
     case "cheatsheet":
       help.open("cheatsheet");
       break;
+    case "simulate":
+      if (sim) stopSim();
+      else startSim();
+      break;
     case "help-learning":
       help.open("learning");
       break;
@@ -2583,6 +2819,7 @@ function runCommand(item: HTMLElement): void {
 }
 
 ui.exportBtn.addEventListener("click", () => runCommand(ui.exportBtn));
+ui.simBtn.addEventListener("click", () => runCommand(ui.simBtn));
 el("welcome-open").addEventListener("click", () => void openFile());
 el("welcome-new").addEventListener("click", () => void newChart(STARTER));
 
@@ -2624,9 +2861,9 @@ function openUrl(url: string, fileName: string, html: string): void {
 const help = createHelp(el("help"), {
   makeEditor: (parent, cb) => createEditor(parent, cb),
   completionFor,
-  svg: (r, i) => {
+  svg: (r, i, live) => {
     const d = diagramOf(r.routines[i]!);
-    return d ? svgOf(d) : "";
+    return d ? svgOf(d, live) : "";
   },
   openInEditor: (source, label) => void openHelpExample(source, label),
   cheatsheetHtml: QSFC_CHEATSHEET,
@@ -2663,6 +2900,13 @@ function showAbout(): void {
 window.addEventListener(
   "keydown",
   (e) => {
+    if (e.key === "F5" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !help.isOpen) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (sim) stopSim();
+      else startSim();
+      return;
+    }
     if (e.key === "F1" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       e.stopPropagation();

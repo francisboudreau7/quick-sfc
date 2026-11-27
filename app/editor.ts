@@ -242,6 +242,38 @@ const stepRefs = ViewPlugin.fromClass(
   { decorations: (v) => v.decorations },
 );
 
+// ---- simulation (Phase 4e): the active steps' lines and their action lines ----
+
+const setSimLines = StateEffect.define<{ steps: readonly number[]; actions: readonly number[] }>();
+const simStepLine = Decoration.line({ class: "qsfc-sim-step" });
+const simActionLine = Decoration.line({ class: "qsfc-sim-action" });
+const simLinesField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (!e.is(setSimLines)) continue;
+      const doc = tr.state.doc;
+      const marks = [
+        ...e.value.steps.map((n) => ({ n, d: simStepLine })),
+        ...e.value.actions.map((n) => ({ n, d: simActionLine })),
+      ]
+        .filter((m) => m.n >= 1 && m.n <= doc.lines)
+        .sort((a, b) => a.n - b.n);
+      const b = new RangeSetBuilder<Decoration>();
+      let last = -1;
+      for (const m of marks) {
+        if (m.n === last) continue;
+        last = m.n;
+        const from = doc.line(m.n).from;
+        b.add(from, from, m.d);
+      }
+      return b.finish();
+    }
+    return tr.docChanged ? value.map(tr.changes) : value;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 // ---- S / T column (View → Structure column): what each line is in the chart ----
 
 class StructureMarker extends GutterMarker {
@@ -281,6 +313,8 @@ const theme = EditorView.theme({
   ".qsfc-st-mark.st-init": { textDecoration: "underline", textUnderlineOffset: "2px" },
   ".qsfc-st-mark.st-trans": { color: "var(--syn-trans)" },
   ".qsfc-st-mark.st-branch": { color: "var(--syn-branch)", opacity: "0.8" },
+  ".qsfc-sim-step": { backgroundColor: "var(--sim-step-bg)", boxShadow: "inset 3px 0 0 var(--sim-on)" },
+  ".qsfc-sim-action": { backgroundColor: "var(--sim-action-bg)" },
   ".qsfc-stepref": { color: "var(--syn-ref)", fontWeight: "var(--syn-ref-w)" },
   ".qsfc-stepmember": { color: "var(--syn-ref-member)" },
   ".qsfc-steptime": { color: "var(--syn-ref-time)", fontStyle: "var(--syn-time-style)" },
@@ -363,6 +397,8 @@ export interface Editor {
   setStepNames(names: Iterable<string>): void;
   /** View → Structure column: the S / T column left of the line numbers. */
   setStructureColumn(on: boolean): void;
+  /** Simulation: light up the active steps' lines and their action lines (empty lists: none). */
+  setSimLines(steps: readonly number[], actions: readonly number[]): void;
 }
 
 function renderDiag(d: Diagnostic): () => Node {
@@ -478,6 +514,7 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       search({ top: true }),
       lintGutter(),
       stepNamesField.init(() => stepNames),
+      simLinesField,
       stepRefs,
       qsfcLanguage,
       qsfcIndent,
@@ -585,6 +622,9 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       if (next.size === stepNames.size && [...next].every((n) => stepNames.has(n))) return;
       stepNames = next;
       view.dispatch({ effects: setStepNames.of(next) });
+    },
+    setSimLines(steps, actions) {
+      view.dispatch({ effects: setSimLines.of({ steps, actions }) });
     },
     setStructureColumn(on) {
       if (on === stOn) return;

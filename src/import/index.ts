@@ -7,7 +7,7 @@
  *   3. names: the step / transition tag descriptions (what the qSFC export writes), else the
  *      step's `// name - description` comment, else a plain name from the operand (`Step_003` →
  *      `s3`, which pins the operand again on export, SPEC §8.2). Unnamed transitions stay
- *      unnamed unless their operand needs pinning (`t5:`) or the code refers to them;
+ *      unnamed unless their operand needs pinning (`tr5:`) or the code refers to them;
  *   4. text: Studio's ST as is, with operands replaced by names; sugar (`on`, `set`, `reset`,
  *      `call`, `after`) only where the export gives back exactly the same text (checked by
  *      compiling both versions);
@@ -327,7 +327,7 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
   for (const el of transitions) {
     if (el.name !== undefined || !ident(el.node.operand).test(code)) continue;
     const n = opNumber(el.node.operand, "Tran");
-    el.name = n !== undefined && take(`t${n}`) ? `t${n}` : fresh("t");
+    el.name = n !== undefined && take(`tr${n}`) ? `tr${n}` : fresh("tr");
     el.given = true;
   }
   const knownOperands = new Set([...elements.map((e) => key(e.node.operand))]);
@@ -345,8 +345,8 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     for (const el of order.transitions) {
       const want = opNumber(el.node.operand, "Tran");
       if (el.name !== undefined || want === undefined || nums.get(el) === want) continue;
-      if (take(`t${want}`)) {
-        el.name = `t${want}`;
+      if (take(`tr${want}`)) {
+        el.name = `tr${want}`;
         el.given = true;
         changed = true;
       }
@@ -359,7 +359,7 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
   const blocked: string[] = [];
   for (const el of order.transitions) {
     const want = opNumber(el.node.operand, "Tran");
-    if (el.name === undefined && want !== undefined && nums.get(el) !== want) blocked.push(`t${want}`);
+    if (el.name === undefined && want !== undefined && nums.get(el) !== want) blocked.push(`tr${want}`);
   }
   for (const el of [...order.steps, ...order.transitions]) {
     const prefix = el.node.kind === "transition" ? "Tran" : "Step";
@@ -368,7 +368,7 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     if (key(now) !== key(el.node.operand)) moved.push(`${el.node.operand} (${el.name ?? "a transition"}) → ${now}`);
   }
   if (moved.length) {
-    warn(`operands renumbered on export: ${moved.slice(0, 5).join(", ")}${moved.length > 5 ? `, and ${moved.length - 5} more` : ""} (a step named s<N> or a transition t<N> keeps its operand${blocked.length ? `; ${blocked.slice(0, 4).join(", ")} ${blocked.length > 1 ? "are" : "is"} already used by other names here` : ""})`);
+    warn(`operands renumbered on export: ${moved.slice(0, 5).join(", ")}${moved.length > 5 ? `, and ${moved.length - 5} more` : ""} (a step named s<N> or a transition tr<N> keeps its operand${blocked.length ? `; ${blocked.slice(0, 4).join(", ")} ${blocked.length > 1 ? "are" : "is"} already used by other names here` : ""})`);
   }
   const plainNamed = steps.filter((e) => e.plain).length;
   if (plainNamed) info(`${plainNamed} step${plainNamed > 1 ? "s have" : " has"} no name in Studio: named from the operand (Step_003 → s3), which keeps the operand on export`);

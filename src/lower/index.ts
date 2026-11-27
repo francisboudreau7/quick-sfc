@@ -54,9 +54,9 @@ export interface OperandBase {
 }
 
 const STEP_PIN = /^s(0|[1-9]\d*)$/i;
-const TRANS_PIN = /^t(0|[1-9]\d*)$/i;
+const TRANS_PIN = /^tr(0|[1-9]\d*)$/i;
 
-/** The operand number a name pins (`s3` -> 3 for a step, `t3` -> 3 for a named transition), if any. */
+/** The operand number a name pins (`s3` -> 3 for a step, `tr3` -> 3 for a named transition), if any. */
 export function pinnedOperand(kind: "step" | "transition", name: string): number | undefined {
   const m = (kind === "step" ? STEP_PIN : TRANS_PIN).exec(name);
   return m ? Number(m[1]) : undefined;
@@ -64,7 +64,7 @@ export function pinnedOperand(kind: "step" | "transition", name: string): number
 
 /**
  * Operand numbers across the program (SPEC §8.2): a step named `s<N>` is Step_<N> and a named
- * transition `t<N>` is Tran_<N>; every other step / transition takes the next free number in file
+ * transition `tr<N>` is Tran_<N>; every other step / transition takes the next free number in file
  * order, skipping the pinned ones. Auto-named transitions (`T1`) never pin.
  */
 export function assignOperands(charts: readonly Chart[]): Array<{ steps: number[]; transitions: number[] }> {

@@ -44,8 +44,14 @@ describe("a chart drawn in Studio (legacy/tests/MainProgram.L5X)", () => {
     expect(out).toMatch(/<Tag Name="Bonsens"[^>]*>\s*<Data Format="L5K">\s*<!\[CDATA\[1\]\]>/);
   });
 
-  it("reports what it can't keep", () => {
-    expect(r.notes.map((n) => n.text).join("\n")).toContain("operands renumbered on export");
-    expect(r.source).toContain("// Not kept or changed:");
+  it("keeps every Tran operand too, with tr<N> names where file order would renumber", () => {
+    const ops = (x: string) =>
+      [...x.matchAll(/<Transition ID="\d+"[^>]*Operand="(Tran_\d+)"[\s\S]*?<!\[CDATA\[([^\]]*)\]\]>/g)]
+        .map((m) => `${m[1]}=${m[2]!.replace(/;\s*$/, "").trim()}`)
+        .sort();
+    const out = exportL5X(r.source, { fileName: "MainProgram.qsfc" }).text!;
+    expect(ops(out)).toEqual(ops(xml));
+    expect(r.source).toContain("-- tr4: s4.DN");
+    expect(r.notes.filter((n) => n.level === "warning")).toEqual([]);
   });
 });

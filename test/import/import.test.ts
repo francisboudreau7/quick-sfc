@@ -21,10 +21,15 @@ describe("operand pins (SPEC §8.2)", () => {
     };
   };
 
-  it("s<N> and t<N> keep their number, the others take the free ones in file order", () => {
-    const o = operands("init s3\n-- t7: x\nstep a\n-- y\nstep s0\n-- w -> s3\n");
+  it("s<N> and tr<N> keep their number, the others take the free ones in file order", () => {
+    const o = operands("init s3\n-- tr7: x\nstep a\n-- y\nstep s0\n-- w -> s3\n");
     expect(o.steps).toEqual(["s3=3", "a=1", "s0=0"]);
-    expect(o.trans).toEqual(["t7=7", "T1=0", "T2=1"]);
+    expect(o.trans).toEqual(["tr7=7", "T1=0", "T2=1"]);
+  });
+
+  it("t<N> is an ordinary name (a timer T4 is common), so it doesn't pin", () => {
+    const o = operands("init a\n-- t7: x\nstep b\n-- y -> a\n");
+    expect(o.trans).toEqual(["t7=0", "T1=1"]);
   });
 
   it("auto names T1, T2 never pin; s01 is an ordinary name", () => {
@@ -39,7 +44,7 @@ describe("operand pins (SPEC §8.2)", () => {
   });
 
   it("is written in the L5X", () => {
-    expect(l5x("sfc demo\ninit s5\n-- t9: x -> s5\n")).toMatch(/Operand="Step_005"[\s\S]*Operand="Tran_009"/);
+    expect(l5x("sfc demo\ninit s5\n-- tr9: x -> s5\n")).toMatch(/Operand="Step_005"[\s\S]*Operand="Tran_009"/);
   });
 
   it("a routine may be named like a qSFC keyword", () => {

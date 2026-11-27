@@ -244,7 +244,7 @@ What to look at in the `.qsfc`:
 - the steps had no names in Studio, so they are `s0` … `s19`, named from their operands: **`s3` is exported as `Step_003` again** (operand pins, SPEC §8.2), so Step operands are the same as in your original;
 - `sfc SFC`: the routine keeps its name (a routine may now be named like a qSFC keyword);
 - the 21 aliases came back as an `io` block, the timers as `tag T2 : TIMER 3s` (presets kept, new `tag` values, SPEC §7.4), `Bonsens : BOOL = 1` and `X : DINT = 1` as initial values;
-- the comment block at the top lists what changed: four transition operands get new numbers (`t4`, `t7`, `t9`, `t10` are timer names here, so they can't pin `Tran_004` …).
+- transitions whose operand would otherwise change are named `tr<N>:` (`tr4: a0` is `Tran_004`), so every Tran operand is the same as in your original too; the comment block at the top lists anything else that changed.
 
 **Before importing:** the program is named `MainProgram`, like the one already in your project. Import it into a **new project** with the same I/O modules, or let the Import dialog rename it (e.g. `MainProgram_qsfc`).
 

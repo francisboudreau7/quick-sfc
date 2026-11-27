@@ -1,8 +1,6 @@
 // Test pack 14: legacy/tests/MainProgram.L5X (drawn by hand in Studio), imported by QuickSFC
-// (Phase 4d) and exported again. Checks: same wires and Step operands, timer presets, sfc SFC.
+// (Phase 4d) and exported again. Checks: same wires, Step and Tran operands, timer presets, sfc SFC.
 // Imported from a Studio 5000 L5X by QuickSFC.
-// Not kept or changed:
-//  - operands renumbered on export: Tran_010 (a transition) → Tran_004, Tran_004 (a transition) → Tran_007, Tran_007 (a transition) → Tran_009, Tran_009 (a transition) → Tran_010 (a step named s<N> or a transition t<N> keeps its operand; t10, t4, t7, t9 are already used by other names here)
 
 program MainProgram
 
@@ -60,56 +58,56 @@ select
     Bonsens:=1;
   -- s3.DN
 |
-  -- s2.DN and not d1
+  -- tr10: s2.DN and not d1
   step s9 1s500ms
     Bonsens:=0;
-  -- t20: s9.DN
+  -- tr20: s9.DN
 end
 step s4 500ms
   D:=0;
--- s4.DN
+-- tr4: s4.DN
 step s5
   F:=0;
--- t5: f0
+-- tr5: f0
 step s6
   E:=1;
--- t6: e1
+-- tr6: e1
 step s7 1s250ms
--- s7.DN
+-- tr7: s7.DN
 step s8
   E:=0;
 select
-  -- Bonsens
+  -- tr9: Bonsens
   step s11
     A_moins[:=]1;
-  -- t12: a0
+  -- tr12: a0
   step s12
     B:=1;
-  -- b1
+  -- tr13: b1
   step s13 500ms
     V:=1;
-  -- t14: s13.DN
+  -- tr14: s13.DN
   step s14
     B:=0;
-  -- t15: b0
+  -- tr15: b0
   step s15
     A_plus[:=]1;
-  -- t16: a1
+  -- tr16: a1
   step s16
     B:=1;
-  -- b1
+  -- tr17: b1
   step s17 500ms
     V:=0;
-  -- t18: s17.DN
+  -- tr18: s17.DN
   step s18
     B:=0;
-  -- t19: b0
+  -- tr19: b0
   step s19
     A_moins[:=]1;
-  -- t21: a0 -> s0
+  -- tr21: a0 -> s0
 |
-  -- t8: not Bonsens
+  -- tr8: not Bonsens
   step s10 1s500ms
     C[:=]1;
-  -- t11: s10.DN -> s0
+  -- tr11: s10.DN -> s0
 end

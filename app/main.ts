@@ -3,14 +3,16 @@
  * The chart is recompiled ~150 ms after typing stops; on errors the last valid diagram
  * stays, dimmed. Plain DOM plus CodeMirror (app/editor.ts). The markup lives in
  * app/index.html; the pure logic in app/{state,problems,format,highlight,complete,nav,
- * dirty,splitter,watch}.ts.
+ * dirty,splitter,watch,tidy}.ts.
  */
 import { compile, exportL5X, routineName, type CompiledRoutine, type CompileResult } from "../src/compile.js";
 import type { Layout } from "../src/layout/index.js";
 import { allSteps, key, sfcCharts } from "../src/model/ast.js";
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import type { Graph } from "../src/model/graph.js";
+import { renderStudioSketch } from "../src/render/sketch.js";
 import { renderSvg } from "../src/render/svg.js";
+import { tidyL5X, type TidyReport } from "../src/tidy/index.js";
 import type { CompletionInfo } from "./complete.js";
 import {
   isDirty,
@@ -65,6 +67,7 @@ import {
   type Theme,
   type ViewOptions,
 } from "./state.js";
+import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusLine, tidiedText, tidyFileName, tidyProblem } from "./tidy.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
 /** Inlined at build time (scripts/build-app.ts): docs/cheatsheet.html and the package version. */
@@ -129,6 +132,16 @@ const ui = {
   confirmText: el("confirm-text"),
   dropOverlay: el("drop-overlay"),
   toast: el("toast"),
+  tidyInput: el<HTMLInputElement>("tidy-input"),
+  tidy: el<HTMLDialogElement>("tidy"),
+  tidyFile: el("tidy-file"),
+  tidyBody: el("tidy-body"),
+  tidyBefore: el("tidy-before"),
+  tidyAfter: el("tidy-after"),
+  tidyBeforeSub: el("tidy-before-sub"),
+  tidyAfterSub: el("tidy-after-sub"),
+  tidyNote: el("tidy-note"),
+  tidySave: el<HTMLButtonElement>("tidy-save"),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -153,6 +166,7 @@ const canPickOpen = typeof fsWindow.showOpenFilePicker === "function";
 /** Checked at each save (the API can be missing or removed, e.g. by a test). */
 const canPickSave = (): boolean => typeof fsWindow.showSaveFilePicker === "function";
 const PICKER_TYPES = [{ description: "qSFC chart", accept: { "text/plain": [".qsfc"] } }];
+const L5X_TYPES = [{ description: "Studio 5000 L5X", accept: { "application/xml": [".L5X"] } }];
 
 // ---------------------------------------------------------------------------------------------
 // State
@@ -304,6 +318,14 @@ function runCompile(fit = false): void {
     return watching?.name;
   },
   editor,
+  /** Tidy dialog: open(file) as a drop would; output() is the text Save would write. */
+  tidy: {
+    open: (file: File) => openTidy(file),
+    get state() {
+      return tidyState && { fileName: tidyState.fileName, routines: tidyState.routines, ticked: [...tidyState.ticked], shown: tidyState.shown };
+    },
+    output: () => tidyState && tidiedText(tidyState.original, [...tidyState.ticked]),
+  },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -540,6 +562,11 @@ window.addEventListener("drop", (e) => {
   const item = e.dataTransfer?.items?.[0] as (DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileHandle | null> }) | undefined;
   const file = e.dataTransfer?.files[0];
   if (!file) return;
+  // An L5X opens the Tidy dialog; the editor is not touched.
+  if (looksLikeL5X(file.name)) {
+    void openTidy(file);
+    return;
+  }
   const handlePromise = item?.getAsFileSystemHandle?.().catch(() => null) ?? Promise.resolve(null);
   void handlePromise.then(async (h) => {
     if (!(await confirmDiscard(`open ${file.name}`))) return;
@@ -677,6 +704,197 @@ function exportSvgCmd(): void {
   const out = (result?.routines.length ?? 0) > 1 ? `${d.name}.svg` : svgFileName(doc.file.name);
   download(out, svgOf(d), "image/svg+xml");
   toast(`Exported ${out}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tidy an L5X (Phase 4a): a Studio export in, the same file with a clean SFC layout out.
+// Works with or without a chart open; never touches the editor.
+// ---------------------------------------------------------------------------------------------
+
+interface TidyState {
+  fileName: string;
+  /** The file's text as read, BOM and CRLF included. */
+  original: string;
+  /** tidyL5X(original).text: every tidiable routine tidied (for the After pane). */
+  tidied: string;
+  routines: TidyReport[];
+  ticked: Set<string>;
+  /** Index of the routine shown in the panes. */
+  shown: number;
+  /** Where the focus goes back when the dialog closes. */
+  returnFocus: HTMLElement | null;
+}
+
+let tidyState: TidyState | undefined;
+
+async function tidyCmd(): Promise<void> {
+  const back = el("file-btn");
+  if (canPickOpen) {
+    try {
+      const [handle] = await fsWindow.showOpenFilePicker!({ types: L5X_TYPES, excludeAcceptAllOption: false, multiple: false });
+      if (handle) await openTidy(await handle.getFile(), back);
+      return;
+    } catch (e) {
+      if ((e as DOMException).name === "AbortError") return;
+      // SecurityError and friends: plain input
+    }
+  }
+  ui.tidyInput.value = "";
+  ui.tidyInput.click();
+}
+
+ui.tidyInput.addEventListener("change", () => {
+  const file = ui.tidyInput.files?.[0];
+  if (file) void openTidy(file, el("file-btn"));
+});
+
+async function openTidy(file: File, returnFocus: HTMLElement | null = document.activeElement as HTMLElement | null): Promise<void> {
+  let original: string;
+  try {
+    original = decodeL5X(await file.arrayBuffer());
+  } catch (e) {
+    toast(`Could not read ${file.name}: ${(e as Error).message}`, "error");
+    return;
+  }
+  const result = tidyL5X(original);
+  const problem = tidyProblem(file.name, result);
+  if (problem) {
+    toast(problem, "error");
+    return;
+  }
+  const routines = result.routines;
+  const first = routines.findIndex(canTick);
+  tidyState = {
+    fileName: file.name,
+    original,
+    tidied: result.text,
+    routines,
+    ticked: new Set(defaultTicked(routines)),
+    shown: first >= 0 ? first : 0,
+    returnFocus: tidyState?.returnFocus ?? returnFocus,
+  };
+  const programs = programsLabel(original);
+  ui.tidyFile.textContent = programs ? `${file.name} · ${programs}` : file.name;
+  ui.tidyNote.textContent = routines.some(canTick)
+    ? "Only positions change. Import the saved file into Studio: right-click the program's task → Import Program, or replace the routine."
+    : "Nothing to tidy: every SFC routine is already tidy or is left as it is.";
+  renderTidyTable();
+  renderTidyPanes();
+  if (!ui.tidy.open) ui.tidy.showModal();
+  (ui.tidySave.disabled ? el("tidy-cancel") : ui.tidySave).focus();
+}
+
+function renderTidyTable(): void {
+  const t = tidyState;
+  if (!t) return;
+  const rows = t.routines.map((r, i) => {
+    const tr = document.createElement("tr");
+    tr.dataset["i"] = String(i);
+    if (i === t.shown) {
+      tr.className = "sel";
+      tr.setAttribute("aria-current", "true");
+    }
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = t.ticked.has(r.name);
+    box.disabled = !canTick(r);
+    box.setAttribute("aria-label", `Tidy ${r.name}`);
+    const show = document.createElement("button");
+    show.type = "button";
+    show.className = "tidy-show";
+    show.title = "Show it before and after";
+    const kind = document.createElement("span");
+    kind.className = "tidy-kind";
+    kind.textContent = "(SFC)";
+    show.append(`${r.name} `, kind);
+    const st = statusLine(r);
+    const tdTick = cell("td", "", "tick");
+    tdTick.append(box);
+    const tdName = cell("td", "");
+    tdName.append(show);
+    const extra = r.status === "tidied" ? "links, actions, conditions and tags unchanged" : "";
+    tr.append(tdTick, tdName, cell("td", st.text, `st-${st.kind}`), cell("td", extra, "tidy-extra"));
+    return tr;
+  });
+  ui.tidyBody.replaceChildren(...rows);
+  const n = t.ticked.size;
+  ui.tidySave.disabled = n === 0;
+  ui.tidySave.title = n ? `Save ${tidyFileName(t.fileName)} with ${plural(n, "routine")} tidied` : "Tick a routine to tidy first";
+}
+
+function renderTidyPanes(): void {
+  const t = tidyState;
+  const r = t?.routines[t.shown];
+  if (!t || !r) return;
+  const ticked = t.ticked.has(r.name);
+  ui.tidyBefore.innerHTML = renderStudioSketch(t.original, r.name);
+  ui.tidyAfter.innerHTML = renderStudioSketch(ticked ? t.tidied : t.original, r.name);
+  ui.tidyBeforeSub.textContent = `· ${r.name}`;
+  ui.tidyAfterSub.textContent =
+    r.status !== "tidied" ? `· ${r.name}, ${statusLine(r).text}` : ticked ? `· ${r.name}` : `· ${r.name}, not ticked: kept as it is`;
+  for (const pane of [ui.tidyBefore, ui.tidyAfter]) pane.scrollTo(0, 0);
+}
+
+function showTidyRoutine(i: number, focus: "name" | "box"): void {
+  const t = tidyState;
+  if (!t) return;
+  t.shown = i;
+  renderTidyTable();
+  renderTidyPanes();
+  ui.tidyBody.querySelector<HTMLElement>(`tr[data-i="${i}"] ${focus === "box" ? "input" : ".tidy-show"}`)?.focus();
+}
+
+ui.tidyBody.addEventListener("click", (e) => {
+  const tr = (e.target as Element).closest<HTMLElement>("tr[data-i]");
+  if (!tidyState || !tr || (e.target as Element).closest("input")) return; // a checkbox: the change handler
+  const i = Number(tr.dataset["i"]);
+  if (i !== tidyState.shown) showTidyRoutine(i, "name");
+});
+
+ui.tidyBody.addEventListener("change", (e) => {
+  const t = tidyState;
+  const box = e.target as HTMLInputElement;
+  const tr = box.closest<HTMLElement>("tr[data-i]");
+  if (!t || !tr) return;
+  const i = Number(tr.dataset["i"]);
+  const r = t.routines[i]!;
+  if (box.checked) t.ticked.add(r.name);
+  else t.ticked.delete(r.name);
+  showTidyRoutine(i, "box");
+});
+
+ui.tidySave.addEventListener("click", () => void saveTidy());
+
+ui.tidy.addEventListener("close", () => {
+  if (ui.tidy.open) return; // the close event is queued: reopened (another file) meanwhile
+  const back = tidyState?.returnFocus;
+  tidyState = undefined;
+  ui.tidyBefore.replaceChildren();
+  ui.tidyAfter.replaceChildren();
+  if (back?.isConnected && back.offsetParent !== null) back.focus();
+});
+
+/** Writes the original text with only the ticked routines tidied, as is (BOM, CRLF kept). */
+async function saveTidy(): Promise<void> {
+  const t = tidyState;
+  if (!t || !t.ticked.size) return;
+  const text = tidiedText(t.original, [...t.ticked]);
+  const name = tidyFileName(t.fileName);
+  if (canPickSave()) {
+    try {
+      const handle = await fsWindow.showSaveFilePicker!({ suggestedName: name, types: L5X_TYPES });
+      await writeHandle(handle, text);
+      ui.tidy.close();
+      toast(`Saved ${handle.name}`);
+      return;
+    } catch (e) {
+      if ((e as DOMException).name === "AbortError") return;
+      // writing refused or not available: download instead
+    }
+  }
+  download(name, text, "application/xml");
+  ui.tidy.close();
+  toast(`Downloaded ${name}`);
 }
 
 function diagramOf(r: CompiledRoutine): Diagram | undefined {
@@ -1522,6 +1740,9 @@ function runCommand(item: HTMLElement): void {
     case "export-svg":
       exportSvgCmd();
       break;
+    case "tidy":
+      void tidyCmd();
+      break;
     case "cheatsheet":
       openCheatSheet();
       break;
@@ -1588,14 +1809,13 @@ window.addEventListener(
       return;
     }
     const mod = e.ctrlKey || e.metaKey;
-    if (!mod) return;
+    if (!mod || ui.tidy.open) return;
     const k = e.key.toLowerCase();
     let run: (() => void) | undefined;
     if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) run = () => void newChart("");
     else if (!e.altKey && !e.shiftKey && k === "o") run = () => void openFile();
     else if (!e.altKey && k === "s") run = () => void save(e.shiftKey);
     else if (!e.altKey && !e.shiftKey && k === "e") run = () => runCommand(ui.exportBtn);
-    if (!run) return;
     if (!run) return;
     e.preventDefault();
     e.stopPropagation();

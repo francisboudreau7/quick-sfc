@@ -1,19 +1,24 @@
 /**
- * qsfc command-line tool (Phase 1).
+ * qsfc command-line tool.
  *   qsfc check  <file.qsfc>
  *   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
  *   qsfc show   <file.qsfc>
- * Exit codes: 0 OK (warnings allowed), 1 errors in the chart, 2 usage or file error.
+ *   qsfc tidy   <in.L5X> [-o out.L5X]      (Phase 4a, SPEC §8.6; default out: <in>_tidy.L5X)
+ * Exit codes: 0 OK (warnings allowed; tidy: the file was written, even if some routines were
+ * skipped), 1 errors in the chart (tidy: no SFC routine could be tidied, nothing written),
+ * 2 usage or file error.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { compile, exportL5X, showAscii } from "../compile.js";
 import { formatDiagnostic, hasErrors, type Diagnostic } from "../model/diagnostics.js";
+import { tidyL5X } from "../tidy/index.js";
 
 const USAGE = `usage:
   qsfc check  <file.qsfc>
   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
-  qsfc show   <file.qsfc>`;
+  qsfc show   <file.qsfc>
+  qsfc tidy   <in.L5X> [-o out.L5X]`;
 
 interface Args {
   command: string;
@@ -25,7 +30,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args | string {
   const [command, ...rest] = argv;
-  if (!command || !["check", "export", "show"].includes(command)) return USAGE;
+  if (!command || !["check", "export", "show", "tidy"].includes(command)) return USAGE;
   const args: Partial<Args> = { command };
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]!;
@@ -57,6 +62,7 @@ export function main(argv: string[]): number {
     console.error(args);
     return 2;
   }
+  if (args.command === "tidy") return tidy(args);
   let source: string;
   try {
     source = readFileSync(args.file, "utf8").replace(/^﻿/, "");
@@ -90,6 +96,48 @@ export function main(argv: string[]): number {
   const out = args.out ?? args.file.replace(/\.qsfc$/i, "") + ".L5X";
   try {
     writeFileSync(out, text, "utf8");
+  } catch (e) {
+    console.error(`cannot write ${out}: ${(e as Error).message}`);
+    return 2;
+  }
+  console.error(`wrote ${out}`);
+  return 0;
+}
+
+/** `qsfc tidy`: one line per SFC routine on stdout, problems on stderr. */
+function tidy(args: Args): number {
+  if (args.program !== undefined || args.version !== undefined) {
+    console.error(`tidy takes only -o\n${USAGE}`);
+    return 2;
+  }
+  let text: string;
+  try {
+    text = readFileSync(args.file, "utf8");
+  } catch (e) {
+    console.error(`cannot read ${args.file}: ${(e as Error).message}`);
+    return 2;
+  }
+  const result = tidyL5X(text);
+  if (result.error) {
+    console.error(`${basename(args.file)}: ${result.error}`);
+    return 1;
+  }
+  if (result.routines.length === 0) {
+    console.error(`${basename(args.file)}: no SFC routine in the file`);
+    return 1;
+  }
+  for (const r of result.routines) {
+    if (r.status === "skipped") console.log(`${r.name}: skipped, ${r.reason}`);
+    else if (r.status === "unchanged") console.log(`${r.name}: unchanged (already tidy)`);
+    else console.log(`${r.name}: tidied, ${r.moved} element(s) moved, ${r.hidden} hidden wire(s)`);
+  }
+  if (result.routines.every((r) => r.status === "skipped")) {
+    console.error("nothing could be tidied, no file written");
+    return 1;
+  }
+  const out = args.out ?? args.file.replace(/\.l5x$/i, "") + "_tidy.L5X";
+  try {
+    writeFileSync(out, result.text, "utf8");
   } catch (e) {
     console.error(`cannot write ${out}: ${(e as Error).message}`);
     return 2;

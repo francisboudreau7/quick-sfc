@@ -197,6 +197,23 @@ function sfcForL5X(
   positions: L5XPositions,
   operands: Map<string, string>,
 ): L5XRoutine {
+  // action box as exported: the name comment line plus the action (SPEC §8.3)
+  const actionLines = new Map(graph.steps.map((s) => [s.id, s.action.length + 1] as const));
+  const placed = studioPositions(graph, layout, actionLines, positions);
+  return { kind: "sfc", name, graph: rewriteGraph(graph, operands), positions: placed.positions, hiddenLinks: placed.hiddenLinks };
+}
+
+/**
+ * Studio 5000 coordinates as exported, and the hidden wires (Show="false"). Shared by the export
+ * and Tidy (src/tidy). `actionLines`: step id -> lines of its action box(es) in Studio.
+ * `positions`, when given, is reused when no wire is hidden (same result as without hidden wires).
+ */
+export function studioPositions(
+  graph: Graph,
+  layout: Layout,
+  actionLines: ReadonlyMap<string, number>,
+  positions?: L5XPositions,
+): { positions: L5XPositions; hiddenLinks: Set<string> } {
   // Wires the app draws as cross-references are hidden in Studio too (SPEC §8.2). Studio writes
   // the target's name under such a transition: the row below gets more room, and the
   // transition moves right when it starts a leg (tp05 imports, 2026-11-26).
@@ -205,9 +222,10 @@ function sfcForL5X(
   // the target is a step, or a convergence leg "b3.1" whose bar is "b3"
   const hiddenTo = new Set([...hiddenLinks].map((id) => id.slice(id.indexOf("-") + 1).replace(/\.\d+$/, "")));
   const legStart = new Set(graph.links.filter((l) => l.from.includes(".")).map((l) => l.to));
-  const actionLines = new Map(graph.steps.map((s) => [s.id, s.action.length + 1] as const));
-  const finalPositions = hiddenFrom.size ? l5xPositions(layout, { actionLines, hiddenFrom, hiddenTo, legStart }) : positions;
-  return { kind: "sfc", name, graph: rewriteGraph(graph, operands), positions: finalPositions, hiddenLinks };
+  const final = hiddenFrom.size
+    ? l5xPositions(layout, { actionLines, hiddenFrom, hiddenTo, legStart })
+    : (positions ?? l5xPositions(layout, actionLines));
+  return { positions: final, hiddenLinks };
 }
 
 function operandMap(routines: CompiledRoutine[]): Map<string, string> {

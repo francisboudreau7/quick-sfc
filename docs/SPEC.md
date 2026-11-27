@@ -487,6 +487,16 @@ Beyond the language rules, the exporter refuses to write a file when:
 - a program and its SFC routine having the same name (§8.1)
 - several routines in one program, an ST routine, `JSR(name,0);` in ST (from an ST routine and from an SFC action), and operands continuing across two SFC routines (§4.5)
 
+### 8.6 Tidy (Phase 4a)
+`qsfc tidy in.L5X [-o out.L5X]` (default `in_tidy.L5X`) re-lays out every SFC routine of an L5X exported from Studio 5000 (program, routine or controller export) with the qSFC layout engine.
+
+- **What changes:** only attribute values, in place in the original text: `X`, `Y`, `DescX`, `DescY` of `Step`, `Transition` and `Stop` (a description keeps its offset from its element), `Y` of `Branch`, `X`/`Y` of a `TextBox` attached to a moved element (`<Attachment>`; it moves with that element, a free text box stays), and `Show` of `DirectedLink` (the jump wires the app draws as cross-references get `Show="false"`, every other wire `Show="true"`, as in §8.2).
+- **What never changes:** everything else, byte for byte: links, IDs, operands, actions and qualifiers, conditions, presets, descriptions, tags, other routines, the BOM, CRLF, Studio's line wraps inside long start tags, CDATA.
+- **How:** Tidy rebuilds a qSFC structure from the links (chains, `select` / `parallel` blocks, jumps, automatic convergences), runs the normal pipeline on it (parse, validate, lower, layout) and computes the coordinates as the export does (§8.3: rows grow with the action boxes; a step's box counts all its actions' lines plus one header line per extra action). A Stop is laid out as a step with nothing after it.
+- **Skip rule:** a routine is left untouched, with a one-sentence reason, when its shape is one qSFC can't draw (e.g. a jump into a parallel leg, a step with two incoming wires and no converge), when it has an element Tidy doesn't know, or when the rebuilt chart's links, mapped back to the original IDs, are not exactly the original `DirectedLink`s (same pairs, same branch types and flows, same legs). Other routines of the file are still tidied.
+- **Choosing the structure.** Several qSFC sources can give the same links. qSFC's own export numbers steps and transitions in file order, so Tidy first looks for a structure in that order (tidying a qSFC export changes nothing); otherwise (a chart drawn in Studio) any order. Among the structures that fit it prefers: no steps inside a jumping leg that could follow `end`, then the fewest jumps, then balanced legs, the least nesting, the fewest chains. One known ambiguity: `-- t -> s` right above `step s` (W301) comes back as `-- t` + `step s`.
+- **[Verify]** The Stop, SbrRet, TextBox and Attachment formats are assumed (no Studio export with them yet).
+
 ---
 
 ## 9. Diagnostics

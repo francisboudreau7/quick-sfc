@@ -26,6 +26,7 @@
           <div role="separator" class="menu-sep"></div>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="export-l5x"><span>Export L5X…</span><kbd>Ctrl+E</kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="export-svg"><span>Export diagram as SVG…</span><kbd></kbd></button>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="tidy" title="Clean up the SFC layout of a Studio 5000 export: only positions change"><span>Tidy an L5X…</span><kbd></kbd></button>
         </div>
       </div>
       <div class="menu">
@@ -152,7 +153,8 @@
 </div>
 
 <input type="file" id="file-input" accept=".qsfc,.txt,text/plain" hidden>
-<div class="drop-overlay" id="drop-overlay" hidden><div>Drop the <code>.qsfc</code> file to open it</div></div>
+<input type="file" id="tidy-input" accept=".L5X,.l5x" hidden>
+<div class="drop-overlay" id="drop-overlay" hidden><div>Drop a <code>.qsfc</code> file to open it, or an <code>.L5X</code> file to tidy it</div></div>
 <dialog class="confirm" id="confirm" aria-labelledby="confirm-title">
   <form method="dialog">
     <h2 id="confirm-title">Unsaved changes</h2>
@@ -170,6 +172,33 @@
     <p>A drafting language for IEC 61131-3 Sequential Function Charts, with live diagrams and Studio 5000 L5X export. This single file works offline; nothing you type leaves your computer.</p>
     <p class="about-keys">F1 cheat sheet · Ctrl+S save · Ctrl+Space complete · F12 or Ctrl+click go to definition · Ctrl+E export L5X</p>
     <div class="confirm-actions"><button type="submit" class="btn primary" value="ok">OK</button></div>
+  </form>
+</dialog>
+<dialog class="tidy" id="tidy" aria-labelledby="tidy-title" aria-describedby="tidy-note">
+  <form method="dialog" class="tidy-form">
+    <div class="tidy-head"><h2 id="tidy-title">Tidy an L5X</h2><span class="tidy-file" id="tidy-file"></span></div>
+    <div class="tidy-routines">
+      <table class="tidy-table">
+        <caption class="sr-only">SFC routines: tick the ones to tidy; choose a routine to see it before and after</caption>
+        <thead class="sr-only"><tr><th scope="col">Tidy</th><th scope="col">Routine</th><th scope="col">Result</th><th scope="col">Note</th></tr></thead>
+        <tbody id="tidy-body"></tbody>
+      </table>
+    </div>
+    <div class="tidy-panes">
+      <section class="tidy-pane" aria-labelledby="tidy-before-title">
+        <h3 id="tidy-before-title">Before <span class="tidy-pane-sub" id="tidy-before-sub"></span></h3>
+        <div class="tidy-sketch" id="tidy-before" tabindex="0" role="group" aria-labelledby="tidy-before-title"></div>
+      </section>
+      <section class="tidy-pane" aria-labelledby="tidy-after-title">
+        <h3 id="tidy-after-title">After <span class="tidy-pane-sub" id="tidy-after-sub"></span></h3>
+        <div class="tidy-sketch" id="tidy-after" tabindex="0" role="group" aria-labelledby="tidy-after-title"></div>
+      </section>
+    </div>
+    <div class="tidy-foot">
+      <p class="tidy-note" id="tidy-note"></p>
+      <button type="submit" class="btn" value="cancel" id="tidy-cancel">Cancel</button>
+      <button type="button" class="btn primary" id="tidy-save">Save tidied L5X…</button>
+    </div>
   </form>
 </dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>

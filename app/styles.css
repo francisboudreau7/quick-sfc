@@ -511,6 +511,67 @@ th[aria-sort] .sort { color: var(--text); }
 :root.qsfc-dark .toast.error { color: #1c1f24; }
 @media (prefers-color-scheme: dark) { :root:not(.qsfc-light) .toast.error { color: #1c1f24; } }
 
+/* ---------------------------------------------------------------- Tidy an L5X dialog */
+.tidy {
+  border: 1px solid var(--border-strong); border-radius: 10px; padding: 0; margin: auto;
+  width: min(1100px, calc(100vw - 32px)); max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px);
+  background: var(--surface); color: var(--text); box-shadow: var(--pop); overflow: hidden;
+}
+.tidy::backdrop { background: rgba(16, 24, 40, 0.35); }
+.tidy-form { display: flex; flex-direction: column; max-height: inherit; min-height: 0; }
+.tidy-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 4px 12px; align-items: baseline; flex-wrap: wrap; flex: none; }
+.tidy-head h2 { margin: 0; font-size: 16px; }
+.tidy-file { color: var(--muted); font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.tidy-routines { padding: 8px 16px; border-bottom: 1px solid var(--border); max-height: 28vh; overflow: auto; flex: none; }
+.tidy-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.tidy-table td { padding: 4px 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); vertical-align: baseline; }
+.tidy-table tr:last-child td { border-bottom: 0; }
+.tidy-table tbody tr { cursor: pointer; }
+.tidy-table tbody tr:hover td { background: var(--surface-2); }
+.tidy-table tbody tr.sel td { background: var(--accent-soft); }
+.tidy-table td.tick { width: 1%; }
+.tidy-table input[type="checkbox"] { margin: 0; accent-color: var(--accent); vertical-align: middle; }
+.tidy-show { border: 0; background: none; padding: 0; cursor: pointer; text-align: left; font-weight: 600; white-space: nowrap; }
+.tidy-show:hover { color: var(--accent); }
+.tidy-kind { color: var(--muted); font-weight: 400; }
+.tidy-table .st-ok { color: var(--ok); }
+.tidy-table .st-skip { color: var(--warn); }
+.tidy-table .st-same { color: var(--muted); }
+.tidy-table .tidy-extra { color: var(--muted); }
+.tidy-panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); flex: 1 1 auto; min-height: 0; }
+.tidy-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tidy-pane + .tidy-pane { border-left: 1px solid var(--border); }
+.tidy-pane h3 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+  margin: 0; padding: 10px 16px 6px; flex: none;
+}
+.tidy-pane-sub { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.tidy-sketch { overflow: auto; padding: 0 16px 12px; min-height: 160px; flex: 1 1 auto; }
+.tidy-sketch:focus-visible { outline-offset: -2px; }
+.tidy-sketch svg {
+  display: block; background-color: var(--surface);
+  background-image: radial-gradient(var(--dots) 1px, transparent 1px); background-size: 12px 12px;
+}
+.tidy-foot { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; flex: none; }
+.tidy-note { margin: 0 auto 0 0; color: var(--muted); font-size: 12.5px; flex: 1 1 320px; }
+.tidy-foot .btn:not(.primary) { border-color: var(--border-strong); background: var(--surface); }
+.tidy-foot .btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 799.98px) {
+  .tidy { height: calc(100vh - 32px); height: calc(100dvh - 32px); }
+  .tidy-form { height: 100%; }
+  .tidy-panes { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .tidy-pane + .tidy-pane { border-left: 0; border-top: 1px solid var(--border); }
+  .tidy-sketch { min-height: 120px; }
+}
+@media (max-width: 600px) {
+  .tidy { width: calc(100vw - 16px); max-width: calc(100vw - 16px); height: calc(100dvh - 16px); max-height: calc(100dvh - 16px); }
+  .tidy-head, .tidy-routines, .tidy-foot { padding-left: 12px; padding-right: 12px; }
+  .tidy-pane h3 { padding-left: 12px; padding-right: 12px; }
+  .tidy-sketch { padding: 0 12px 10px; }
+  .tidy-table .tidy-extra { display: none; }
+  .tidy-table td { padding: 4px 6px; }
+}
+
 /* ---------------------------------------------------------------- narrow screens */
 @media (max-width: 799.98px) {
   .app { height: auto; min-height: 100vh; min-height: 100dvh; grid-template-rows: auto auto auto auto auto auto; }

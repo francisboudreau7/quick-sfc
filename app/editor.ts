@@ -3,7 +3,7 @@
  * underlines from the compiler's diagnostics, and completion from app/complete.ts.
  * main.ts owns the compile loop; this module only wires CodeMirror.
  */
-import { autocompletion, completionKeymap, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, completionKeymap, snippet, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
 import { bracketMatching, HighlightStyle, indentOnInput, indentService, StreamLanguage, syntaxHighlighting, type StringStream } from "@codemirror/language";
 import { lintGutter, lintKeymap, setDiagnostics, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
@@ -25,22 +25,31 @@ import {
 import { tags as t } from "@lezer/highlight";
 import type { Diagnostic } from "../src/model/diagnostics.js";
 import { completeLine, type CompletionInfo } from "./complete.js";
-import { headerOf, lineKind, indentAfter, indentStructure, TOKEN_STYLE, tokenizeLine, type Token } from "./highlight.js";
+import { headerOf, ioStateAfter, lineKind, indentAfter, indentStructure, TOKEN_STYLE, tokenizeLine, type Token } from "./highlight.js";
 import { spanToRange } from "./nav.js";
+import { SNIPPETS, snippetContext, snippetLine, snippetTemplate, templateText, usedNames } from "./snippets.js";
 
 interface LineState {
   line: string | undefined;
   toks: Token[];
+  /** The current line is inside an `io … end` block (SPEC §7.6). */
+  ioHere: boolean;
+  /** The next line is. */
+  ioNext: boolean;
 }
 
 const qsfcLanguage = StreamLanguage.define<LineState>({
   name: "qsfc",
-  startState: () => ({ line: undefined, toks: [] }),
-  copyState: (s) => ({ line: s.line, toks: s.toks }),
+  startState: () => ({ line: undefined, toks: [], ioHere: false, ioNext: false }),
+  copyState: (s) => ({ ...s }),
   token(stream: StringStream, state: LineState): string | null {
+    if (stream.sol()) {
+      state.ioHere = state.ioNext;
+      state.ioNext = ioStateAfter(stream.string, state.ioHere);
+    }
     if (stream.sol() || state.line !== stream.string) {
       state.line = stream.string;
-      state.toks = tokenizeLine(stream.string);
+      state.toks = tokenizeLine(stream.string, { inIo: state.ioHere });
     }
     const pos = stream.pos;
     const tok = state.toks.find((x) => x.to > pos);
@@ -92,14 +101,18 @@ function headerDecorations(view: EditorView): DecorationSet {
   const b = new RangeSetBuilder<Decoration>();
   const doc = view.state.doc;
   let seen = false; // a routine started above (a header, or steps without a header)
+  let inIo = false; // inside an `io … end` block (not a routine)
   for (let n = 1; n <= doc.lines; n++) {
     const line = doc.line(n);
+    const wasIo = inIo;
+    inIo = ioStateAfter(line.text, inIo);
+    if (inIo || (wasIo && lineKind(line.text).kind === "end")) continue;
     const h = headerOf(line.text);
     if (h) {
       if (h.keyword === "program") continue;
       if (seen) b.add(line.from, line.from, headerLine);
       seen = true;
-    } else if (!seen && !["blank", "comment", "tag", "action"].includes(lineKind(line.text).kind)) {
+    } else if (!seen && !["blank", "comment", "tag", "meta", "action"].includes(lineKind(line.text).kind)) {
       seen = true;
     }
   }
@@ -132,6 +145,7 @@ const qsfcHighlight = HighlightStyle.define([
   { tag: t.propertyName, color: "var(--syn-member)" },
   { tag: t.function(t.variableName), color: "var(--syn-func)" },
   { tag: t.typeName, color: "var(--syn-type)" },
+  { tag: t.url, color: "var(--syn-num)" },
   { tag: t.operator, color: "var(--syn-op)" },
   { tag: t.variableName, color: "var(--syn-ident)" },
 ]);
@@ -161,6 +175,8 @@ const theme = EditorView.theme({
   ".cm-tooltip-autocomplete ul li[aria-selected] .cm-completionDetail": { color: "var(--on-accent)" },
   ".cm-completionDetail": { color: "var(--muted)", fontStyle: "normal", marginLeft: "1em", fontFamily: "system-ui, sans-serif", fontSize: "12px" },
   ".cm-completionInfo": { padding: "6px 9px", fontSize: "12.5px", maxWidth: "320px" },
+  ".cm-completionInfo pre.qsfc-snippet-preview": { margin: 0, fontFamily: "var(--mono)", fontSize: "12px", lineHeight: "1.4", whiteSpace: "pre" },
+  ".cm-snippetField": { backgroundColor: "var(--selection-match)" },
   ".cm-completionMatchedText": { textDecoration: "none", fontWeight: "700" },
   ".cm-diagnostic": { padding: "5px 9px", fontSize: "13px", maxWidth: "460px" },
   ".cm-diagnostic-error": { borderLeft: "4px solid var(--err)" },
@@ -209,6 +225,12 @@ export interface Editor {
   setDiagnostics(diags: readonly Diagnostic[]): void;
   /** Cursor to 1-based line and column; scrolls it into view and focuses the editor. */
   goTo(line: number, col?: number, focus?: boolean): void;
+  /** Selects from (line, col) to (line, endCol) (1-based, end exclusive) and scrolls it into view. */
+  select(line: number, col: number, endCol: number, focus?: boolean): void;
+  /** Writes a CodeMirror snippet template on line `line` (1-based), replacing what follows its indentation. */
+  insertSnippet(template: string, line: number): void;
+  /** The document's lines. */
+  lines(): string[];
   focus(): void;
 }
 
@@ -234,11 +256,40 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
   let lastLine = -1;
   let lastCol = -1;
 
+  /**
+   * Snippets (app/snippets.ts) at the start of a line where a step can start (or after the
+   * last step): "snippet: timeout → fault"…, inserted with Tab fields.
+   */
+  const snippetOptions = (ctx: CompletionContext, lineNumber: number, text: string, pos: number): Completion[] => {
+    if (!snippetLine(text, pos)) return [];
+    if (pos === /^[ \t]*/.exec(text)![0].length && !ctx.explicit) return [];
+    const lines = ctx.state.doc.toJSON();
+    const where = snippetContext(lines, lineNumber - 1);
+    if (!where) return [];
+    const used = usedNames(lines, lineNumber - 1);
+    return SNIPPETS.map((def): Completion => {
+      const template = snippetTemplate(def, where, used);
+      return {
+        label: `snippet: ${def.label}`,
+        detail: def.detail,
+        type: "text",
+        boost: -4,
+        apply: snippet(template),
+        info: () => {
+          const pre = document.createElement("pre");
+          pre.className = "qsfc-snippet-preview";
+          pre.textContent = templateText(template);
+          return pre;
+        },
+      };
+    });
+  };
+
   const source = (ctx: CompletionContext): CompletionResult | null => {
     const line = ctx.state.doc.lineAt(ctx.pos);
-    const r = completeLine(line.text, ctx.pos - line.from, cb.completionInfo(), { explicit: ctx.explicit, lineNumber: line.number });
-    if (!r || r.options.length === 0) return null;
-    const options: Completion[] = r.options.map((o) => {
+    const pos = ctx.pos - line.from;
+    const r = completeLine(line.text, pos, cb.completionInfo(), { explicit: ctx.explicit, lineNumber: line.number });
+    const options: Completion[] = (r?.options ?? []).map((o) => {
       const c: Completion = { label: o.label, type: o.type };
       if (o.detail) c.detail = o.detail;
       if (o.info) c.info = o.info;
@@ -246,7 +297,19 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       if (o.boost !== undefined) c.boost = o.boost;
       return c;
     });
-    return { from: line.from + r.from, to: line.from + r.to, options, validFor: /^\w*$/ };
+    const lead = /^[ \t]*/.exec(line.text)![0].length;
+    let from = r?.from;
+    let to = r?.to;
+    if (!r || r.from === lead) {
+      const snippets = snippetOptions(ctx, line.number, line.text, pos);
+      if (snippets.length) {
+        options.push(...snippets);
+        from = lead;
+        to = pos;
+      }
+    }
+    if (options.length === 0 || from === undefined || to === undefined) return null;
+    return { from: line.from + from, to: line.from + to, options, validFor: /^\w*$/ };
   };
 
   /** Jumps to the definition of the name at document offset `pos`. True when it did. */
@@ -357,6 +420,22 @@ export function createEditor(parent: HTMLElement, cb: EditorCallbacks, extraKeys
       view.dispatch({ selection: EditorSelection.cursor(pos), effects: EditorView.scrollIntoView(pos, { y: "center" }) });
       if (focus) view.focus();
     },
+    select(line, col, endCol, focus = false) {
+      const doc = view.state.doc;
+      const l = doc.line(Math.min(Math.max(1, line), doc.lines));
+      const from = l.from + Math.min(Math.max(0, col - 1), l.length);
+      const to = l.from + Math.min(Math.max(0, endCol - 1), l.length);
+      view.dispatch({ selection: EditorSelection.range(from, Math.max(from, to)), effects: EditorView.scrollIntoView(from, { y: "center" }) });
+      if (focus) view.focus();
+    },
+    insertSnippet(template, line) {
+      const doc = view.state.doc;
+      const l = doc.line(Math.min(Math.max(1, line), doc.lines));
+      const from = l.from + /^[ \t]*/.exec(l.text)![0].length;
+      view.focus();
+      snippet(template)(view, null, from, l.to);
+    },
+    lines: () => view.state.doc.toJSON(),
     focus: () => view.focus(),
   };
 

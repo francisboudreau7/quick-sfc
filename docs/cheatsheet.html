@@ -37,19 +37,34 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <tr><td><code><span class="k">--</span> start_btn</code></td><td>transition (auto-named T1, T2…)</td></tr>
 <tr><td><code><span class="k">--</span> go: a AND b</code></td><td>named transition</td></tr>
 <tr><td><code><span class="k">--</span> done <span class="k">-&gt;</span> idle</code></td><td>jump to a step</td></tr>
+<tr><td><code><span class="k">--</span> <span class="k">after</span> 5s AND ok</code></td><td>the step above active 5 s (= <code>fill.T &gt;= 5000</code>)</td></tr>
 <tr><td><code><span class="k">tag</span> n : DINT <span class="s">"desc"</span></code></td><td>optional type/description override</td></tr>
 <tr><td><code><span class="c">// comment</span></code></td><td>comment (kept in actions, dropped elsewhere)</td></tr>
 </table>
+
+<h2>File header</h2>
+<table>
+<tr><td><code><span class="k">program</span> tank <span class="s">"Title"</span></code></td><td>Program name; title = its description and the print title</td></tr>
+<tr><td><code><span class="k">course</span> <span class="s">"GEI-243"</span></code></td><td>printed in the title block (not exported)</td></tr>
+<tr><td><code><span class="k">author</span> <span class="s">"Name"</span></code></td><td>printed in the title block (not exported)</td></tr>
+</table>
+
+<h2>I/O mapping</h2>
+<pre><span class="k">io</span>
+  start_btn  Local:1:I.Data.0  <span class="s">"Start"</span>
+  valve      Local:2:O.Data.3
+<span class="k">end</span></pre>
+<p class="sub">Each line becomes an alias tag. A bit address (<code>.0</code>) makes the tag BOOL. The module must exist in the Studio project.</p>
 
 <h2>Durations</h2>
 <p><code>500ms</code> <code>5s</code> <code>2m</code> <code>1h</code> <code>1m30s</code> — a unit is required.</p>
 
 <h2>Step members</h2>
 <table>
-<tr><td><code>fill.X</code></td><td>step active</td></tr>
-<tr><td><code>fill.FS</code></td><td>first scan of the step</td></tr>
-<tr><td><code>fill.DN</code></td><td>timer reached the preset</td></tr>
-<tr><td><code>fill.T</code></td><td>time active (ms)</td></tr>
+<tr><td><code>fill.X</code> = <code>fill.active</code></td><td>step active</td></tr>
+<tr><td><code>fill.FS</code> = <code>fill.first</code></td><td>first scan of the step</td></tr>
+<tr><td><code>fill.DN</code> = <code>fill.done</code></td><td>timer reached the preset</td></tr>
+<tr><td><code>fill.T</code> = <code>fill.time</code></td><td>time active (ms)</td></tr>
 </table>
 <p class="sub">Exported as <code>Step_001.DN</code> etc.</p>
 
@@ -125,6 +140,14 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <li><code>call</code> works in ST routines and in actions, not in conditions. <code>JSR(name, 0);</code> works too.</li>
 <li>Jumps stay inside their SFC routine; read another routine's step with <code>fill.X</code>.</li>
 </ul>
+
+<h2>In the app</h2>
+<table>
+<tr><td>Ctrl+Space</td><td>complete; at the start of a line where a step can start, also <b>snippets</b> (start / stop, timeout → fault, reset sequence, parallel join, counter loop; Insert menu too). Tab fills the names.</td></tr>
+<tr><td>Ctrl+F</td><td>in the diagram: find steps, conditions and actions (Enter: next); in the editor: search the text</td></tr>
+<tr><td>Ctrl+P</td><td>print or save as PDF: title block, diagram, tags with I/O addresses, code</td></tr>
+<tr><td>Tags sidebar</td><td>click a tag: its uses light up in the diagram; Enter: next use in the editor</td></tr>
+</table>
 
 <h2>Rules to remember</h2>
 <ul>

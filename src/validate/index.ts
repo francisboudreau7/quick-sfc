@@ -21,6 +21,7 @@ import {
   buildFlow,
   collectInfo,
   isJump,
+  stepBefore,
   stepsByKey,
   type ElementInfo,
   type FlowGraph,
@@ -79,6 +80,7 @@ class Validator {
     this.initialRules();
     this.names();
     this.conditions();
+    this.afterTerms();
     this.jumps();
     this.reachability();
   }
@@ -275,6 +277,17 @@ class Validator {
       if (t.condition.text === "") {
         this.err("E307", t.span, "transition has no condition; write `TRUE` for \"always\"");
       }
+    }
+  }
+
+  /** E416: `after 5s` needs the single step before its transition (SPEC §4.4). */
+  private afterTerms(): void {
+    for (const t of allTransitions(this.chart)) {
+      const first = t.after?.[0];
+      if (!first || stepBefore(t, this.info) !== "parallel") continue;
+      this.err("E416", first.span,
+        "`after` needs one step before the transition; this transition follows the `end` of a `parallel` block",
+        "test the time of one leg's last step instead, e.g.  -- step_name.time >= 5000");
     }
   }
 

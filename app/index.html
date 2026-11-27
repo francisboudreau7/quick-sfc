@@ -27,6 +27,8 @@
           <button type="button" role="menuitem" tabindex="-1" data-cmd="export-l5x"><span>Export L5X…</span><kbd>Ctrl+E</kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="export-svg"><span>Export diagram as SVG…</span><kbd></kbd></button>
           <button type="button" role="menuitem" tabindex="-1" data-cmd="tidy" title="Clean up the SFC layout of a Studio 5000 export: only positions change"><span>Tidy an L5X…</span><kbd></kbd></button>
+          <div role="separator" class="menu-sep"></div>
+          <button type="button" role="menuitem" tabindex="-1" data-cmd="print" title="Title block, diagram, tags and code; choose Save as PDF in the print dialog for a PDF"><span>Print…</span><kbd>Ctrl+P</kbd></button>
         </div>
       </div>
       <div class="menu">
@@ -34,6 +36,7 @@
         <div class="dropdown" id="view-menu" role="menu" aria-labelledby="view-btn" hidden>
           <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="numbers" aria-checked="false"><span class="check" aria-hidden="true"></span><span>GRAFCET step numbers</span></button>
           <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="actions" aria-checked="true"><span class="check" aria-hidden="true"></span><span>Show actions</span></button>
+          <button type="button" role="menuitemcheckbox" tabindex="-1" data-cmd="overview" aria-checked="true" title="A small map of the whole chart in a corner of the diagram, when it doesn't fit"><span class="check" aria-hidden="true"></span><span>Overview map</span></button>
           <div role="separator" class="menu-sep"></div>
           <div class="menu-label" id="theme-label">Theme</div>
           <div role="group" aria-labelledby="theme-label">
@@ -41,6 +44,14 @@
             <button type="button" role="menuitemradio" tabindex="-1" data-cmd="theme" data-value="light" aria-checked="false"><span class="radio" aria-hidden="true"></span><span>Light</span></button>
             <button type="button" role="menuitemradio" tabindex="-1" data-cmd="theme" data-value="dark" aria-checked="false"><span class="radio" aria-hidden="true"></span><span>Dark</span></button>
           </div>
+        </div>
+      </div>
+      <div class="menu">
+        <button type="button" class="btn menu-btn" id="insert-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="insert-menu">Insert <span class="caret" aria-hidden="true"></span></button>
+        <div class="dropdown" id="insert-menu" role="menu" aria-labelledby="insert-btn" hidden>
+          <div class="menu-label" id="snippet-label">Snippet</div>
+          <div role="group" aria-labelledby="snippet-label" id="snippet-items"></div>
+          <p class="menu-note">Goes on the cursor's line, where a step can start. Tab fills the names.</p>
         </div>
       </div>
       <div class="menu">
@@ -89,6 +100,18 @@
           <div class="stage" id="stage"></div>
         </div>
         <div class="stale-badge" id="stale-badge" role="status" hidden>Showing last valid diagram</div>
+        <div class="diagram-search" id="diagram-search" role="search" aria-label="Find in the diagram" hidden>
+          <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+          <input type="text" id="search-input" placeholder="Find in diagram" aria-label="Find step names, conditions and actions" autocomplete="off" spellcheck="false">
+          <span class="search-count" id="search-count" aria-live="polite"></span>
+          <button type="button" class="btn icon" id="search-prev" aria-label="Previous match" title="Previous match (Shift+Enter)">‹</button>
+          <button type="button" class="btn icon" id="search-next" aria-label="Next match" title="Next match (Enter)">›</button>
+          <button type="button" class="btn icon" id="search-close" aria-label="Close the search" title="Close (Esc)">×</button>
+        </div>
+        <div class="overview" id="overview" aria-hidden="true" title="Overview: drag the frame, or click to go there" hidden>
+          <div class="overview-map" id="overview-map"></div>
+          <div class="overview-frame" id="overview-frame"></div>
+        </div>
         <div class="empty" id="broken" hidden>
           <div class="empty-card">
             <svg class="empty-art err" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="24"/><path d="M32 18v18M32 44v1"/></svg>
@@ -109,6 +132,7 @@
           <tr>
             <th scope="col" aria-sort="ascending"><button type="button" class="sort" data-sort="name">Name<span class="arrow" aria-hidden="true"></span></button></th>
             <th scope="col"><button type="button" class="sort" data-sort="type">Type<span class="arrow" aria-hidden="true"></span></button></th>
+            <th scope="col" class="addr" id="addr-col"><button type="button" class="sort" data-sort="address">I/O address<span class="arrow" aria-hidden="true"></span></button></th>
             <th scope="col" class="num"><button type="button" class="sort" data-sort="uses">Uses<span class="arrow" aria-hidden="true"></span></button></th>
             <th scope="col"><button type="button" class="sort" data-sort="description">Description<span class="arrow" aria-hidden="true"></span></button></th>
           </tr>
@@ -170,7 +194,7 @@
   <form method="dialog">
     <h2 id="about-title">QuickSFC <span id="about-version"></span></h2>
     <p>A drafting language for IEC 61131-3 Sequential Function Charts, with live diagrams and Studio 5000 L5X export. This single file works offline; nothing you type leaves your computer.</p>
-    <p class="about-keys">F1 cheat sheet · Ctrl+S save · Ctrl+Space complete · F12 or Ctrl+click go to definition · Ctrl+E export L5X</p>
+    <p class="about-keys">F1 cheat sheet · Ctrl+S save · Ctrl+Space complete · F12 or Ctrl+click go to definition · Ctrl+E export L5X · Ctrl+F in the diagram: find · Ctrl+P print</p>
     <div class="confirm-actions"><button type="submit" class="btn primary" value="ok">OK</button></div>
   </form>
 </dialog>
@@ -201,7 +225,24 @@
     </div>
   </form>
 </dialog>
+<dialog class="confirm print-dlg" id="print-dlg" aria-labelledby="print-title">
+  <form method="dialog">
+    <h2 id="print-title">Print</h2>
+    <p>Choose what to print. For a PDF, choose <b>Save as PDF</b> in the print dialog.</p>
+    <fieldset class="print-parts">
+      <legend class="sr-only">Parts to print</legend>
+      <label><input type="checkbox" id="print-diagram" checked> Diagram</label>
+      <label><input type="checkbox" id="print-tags" checked> Tags</label>
+      <label><input type="checkbox" id="print-code" checked> Code</label>
+    </fieldset>
+    <div class="confirm-actions">
+      <button type="submit" class="btn" value="cancel">Cancel</button>
+      <button type="submit" class="btn primary" value="print" id="print-go">Print…</button>
+    </div>
+  </form>
+</dialog>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="print-view" id="print-view"></div>
 <script>/*__SCRIPT__*/</script>
 </body>
 </html>

@@ -12,6 +12,8 @@ export interface ViewOptions {
   theme: Theme;
   /** Problems panel expanded. */
   problemsOpen: boolean;
+  /** Overview map in a corner of the diagram when it doesn't fit (Phase 4c). */
+  overview: boolean;
 }
 
 export const DEFAULT_VIEW: Readonly<ViewOptions> = {
@@ -19,6 +21,7 @@ export const DEFAULT_VIEW: Readonly<ViewOptions> = {
   showActions: true,
   theme: "system",
   problemsOpen: true,
+  overview: true,
 };
 
 export const STORAGE_KEY = "qsfc.view.v1";
@@ -39,11 +42,12 @@ export function parseViewOptions(raw: string | null | undefined): ViewOptions {
   if (typeof d["showActions"] === "boolean") out.showActions = d["showActions"];
   if (d["theme"] === "system" || d["theme"] === "light" || d["theme"] === "dark") out.theme = d["theme"];
   if (typeof d["problemsOpen"] === "boolean") out.problemsOpen = d["problemsOpen"];
+  if (typeof d["overview"] === "boolean") out.overview = d["overview"];
   return out;
 }
 
 export function serializeViewOptions(v: ViewOptions): string {
-  return JSON.stringify({ numbers: v.numbers, showActions: v.showActions, theme: v.theme, problemsOpen: v.problemsOpen });
+  return JSON.stringify({ numbers: v.numbers, showActions: v.showActions, theme: v.theme, problemsOpen: v.problemsOpen, overview: v.overview });
 }
 
 /** Minimal Storage shape, so tests can pass a Map-backed fake. */

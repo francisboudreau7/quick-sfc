@@ -64,8 +64,15 @@ export interface CompleteOptions {
   lineNumber?: number;
 }
 
-/** SFC_STEP members (SPEC §7.3) with a short description. */
+/**
+ * SFC_STEP members (SPEC §7.3) with a short description; the readable names (`.active` `.done`
+ * `.time` `.first`, Phase 4c) first. They export as `.X` `.DN` `.T` `.FS`.
+ */
 export const STEP_MEMBERS: ReadonlyArray<{ name: string; detail: string; info: string }> = [
+  { name: "active", detail: "step active (= X)", info: "TRUE while the step is active. Exported as .X." },
+  { name: "done", detail: "timer done (= DN)", info: "TRUE once the step has been active for its preset. Exported as .DN." },
+  { name: "time", detail: "time active, ms (= T)", info: "Time the step has been active, in milliseconds. Exported as .T." },
+  { name: "first", detail: "first scan (= FS)", info: "TRUE only on the first scan after the step becomes active. Exported as .FS." },
   { name: "X", detail: "step active", info: "TRUE while the step is active." },
   { name: "FS", detail: "first scan", info: "TRUE only on the first scan after the step becomes active." },
   { name: "LS", detail: "last scan", info: "TRUE on the last scan before the step becomes inactive." },
@@ -113,8 +120,20 @@ export const LINE_KEYWORDS: ReadonlyArray<Option> = [
   { label: "tag", type: "keyword", apply: "tag ", detail: "tag name [: TYPE] [\"description\"]" },
   { label: "sfc", type: "keyword", apply: "sfc ", detail: "sfc name: starts an SFC routine" },
   { label: "st", type: "keyword", apply: "st ", detail: "st name: starts an ST routine" },
-  { label: "program", type: "keyword", apply: "program ", detail: "program name (before the first routine)" },
+  { label: "program", type: "keyword", apply: "program ", detail: "program name [\"title\"] (before the first routine)" },
+  { label: "io", type: "keyword", detail: "io … end: name  Local:1:I.Data.0  [\"description\"] (alias tags)" },
+  { label: "course", type: "keyword", apply: "course \"", detail: "course \"…\": printed in the title block" },
+  { label: "author", type: "keyword", apply: "author \"", detail: "author \"…\": printed in the title block" },
 ];
+
+/** `after 5s` in a condition (SPEC §4.4): offered with the condition keywords. */
+export const AFTER_OPTION: Option = {
+  label: "after",
+  type: "keyword",
+  apply: "after ",
+  detail: "after 5s: the step above has been active 5 s",
+  info: "Exported as step.T >= 5000, where step is the step before this transition.",
+};
 
 /** Action qualifiers (SPEC §4.3), offered at the start of a line: a qualifier line starts an action. */
 export const QUALIFIER_OPTIONS: ReadonlyArray<Option> = [
@@ -195,8 +214,8 @@ function completeST(
     if (step) {
       const options = STEP_MEMBERS.map((m, i): Option => {
         const o: Option = { label: m.name, type: "property", detail: m.detail, info: m.info, boost: -i };
-        if (m.name === "DN" && step.presetMs === undefined) {
-          o.info = `${m.info} ${step.name} has no preset, so DN is TRUE immediately (W302): add a duration, e.g. step ${step.name} 5s.`;
+        if ((m.name === "DN" || m.name === "done") && step.presetMs === undefined) {
+          o.info = `${m.info} ${step.name} has no preset, so ${m.name} is TRUE immediately (W302): add a duration, e.g. step ${step.name} 5s.`;
         }
         return o;
       });
@@ -218,6 +237,7 @@ function completeST(
     ...(where === "condition" ? CONDITION_KEYWORDS : ACTION_KEYWORDS).map(
       (k): Option => ({ label: k, type: "keyword", boost: -1 }),
     ),
+    ...(where === "condition" ? [AFTER_OPTION] : []),
   ];
   return { from, to: pos, options };
 }

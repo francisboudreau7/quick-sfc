@@ -114,3 +114,23 @@ export function buildFlow(chart: Chart): FlowGraph {
   seqFlow(chart.body);
   return { succ, pred };
 }
+
+/**
+ * The step an `after 5s` term of transition `t` refers to (SPEC §4.4): the element right before
+ * the transition, or, for the first transition of a `select` leg, the step before the `select`.
+ * "parallel" when that element is a `parallel` block (several steps: E416); undefined when
+ * there is nothing before it (a structure error reported elsewhere).
+ */
+export function stepBefore(t: TransitionNode, info: ReadonlyMap<Element, ElementInfo>): StepNode | "parallel" | undefined {
+  let el: Element = t;
+  for (;;) {
+    const i = info.get(el);
+    if (!i) return undefined;
+    if (i.index > 0) {
+      const prev = i.seq[i.index - 1]!;
+      return prev.kind === "step" ? prev : prev.kind === "parallel" ? "parallel" : undefined;
+    }
+    if (!i.parent || i.parent.kind !== "select") return undefined;
+    el = i.parent;
+  }
+}

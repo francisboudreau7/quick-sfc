@@ -197,3 +197,41 @@ Check:
 5. **Layout:** the action boxes of `fill` are stacked; check that they don't run into the `fill.DN OR level_high` transition below (the row after `fill` is made taller for 5 actions).
 6. Tags: `alarm_lamp`, `done_lamp`, `horn`, `mixer`, `pump`, `ready`, `valve`, `start_btn`, `level_high`, `ack_btn` are BOOL, `count` is DINT (*Parts filled*).
 7. Optional run test: set `start_btn`. In `fill`: `valve`/`pump` on, `alarm_lamp` on, `horn` on for 5 s then off, `mixer` on after 2 s, `count` + 1 once. After 10 s `done`: `ready`/`done_lamp` on; set `ack_btn` to go back to `idle`.
+
+## tp13_ux: program title, I/O mapping, `after` and readable members (Phase 4c, added 2026-11-27)
+
+`idle` → `start_btn` → `fill` (10 s, *Fill the tank*, valve on) → `fill.done OR (after 3s AND level_ok)` → `check` → **selection**:
+- leg 1: `check.time > 2000 AND level_ok` → `done` → `after 2s` → back to `idle`
+- leg 2: `after 5s AND NOT level_ok` → `retry` → `retry.active` → back to `fill`
+
+**Before importing: the I/O addresses.** The file maps three points with an `io` block; each becomes an **alias tag**:
+
+| Tag | Alias for | Description |
+|---|---|---|
+| `start_btn` | `Local:1:I.Data.0` | Start button |
+| `level_ok` | `Local:1:I.Data.1` | Level switch |
+| `valve` | `Local:2:O.Data.3` | Fill valve |
+
+Studio only resolves an alias when the project has a module at that place: a digital **input** module in slot 1 and an **output** module in slot 2 of the local chassis. **Adjust the addresses to your rack** before exporting (edit the three lines of the `io` block in `tp13_ux.qsfc`, then `qsfc export testpack/tp13_ux.qsfc`), or import into a project that has modules there. Otherwise Studio flags the aliases as unresolved references (import errors or Verify errors), which is expected and not a qSFC bug.
+
+What the L5X contains (all of it **new, unverified** L5X shapes):
+- the Program's **description** `Tank filling` (from `program tp13_ux "Tank filling"`), as `<Description>` right after `<Program ...>`;
+- three alias tags, e.g. `<Tag Name="start_btn" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.0" ExternalAccess="Read/Write">` with a `<Description>` inside (the alias line itself, without a description, is the verified shape from the reference export);
+- `<Module Use="Reference" Name="Local">` in the context `<Modules>` (L5X_GUIDE: every module an alias points to is listed). Studio's own exports also list the module at the slot (e.g. `Discrete_IO`); qSFC can't know that name;
+- `course "GEI-243"` and `author "Francis B."` are **not** in the L5X (printing only).
+
+The conditions arrive rewritten:
+- `fill.done OR (after 3s AND level_ok)` → **`Step_001.DN OR (Step_001.T >= 3000 AND level_ok)`**
+- `check.time > 2000 AND level_ok` → `Step_002.T > 2000 AND level_ok`
+- `after 2s` (below `done`) → `Step_003.T >= 2000`
+- `after 5s AND NOT level_ok` (first transition of leg 2: the step before the select) → `Step_002.T >= 5000 AND NOT level_ok`
+- `retry.active` → `Step_004.X`
+- in `check`'s action, `IF check.first THEN` → `IF Step_002.FS THEN`
+
+Check:
+1. **Import.** Note any message about the alias tags or modules verbatim (a photo of the Import Configuration dialog's tag list is useful).
+2. **Program description:** Program Properties → General shows the description *Tank filling*.
+3. **Alias tags:** in the program tags, `start_btn`, `level_ok` and `valve` are aliases of the addresses above, with their descriptions; their type comes from the module (BOOL bits).
+4. **Verify** the program: 0 errors when the modules exist at those slots.
+5. **Conditions** read as listed above; `count` is DINT.
+6. Optional run test: set `start_btn`; `valve` turns on in `fill`; with `level_ok` set the chart goes to `check` after 3 s, then to `done` after 2 more seconds and back to `idle` 2 s later. With `level_ok` off it waits 10 s in `fill` (`.DN`), then goes from `check` to `retry` after 5 s and back to `fill`.

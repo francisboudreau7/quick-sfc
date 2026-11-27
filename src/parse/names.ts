@@ -1,7 +1,7 @@
 /** Name rules (SPEC §3.4) and small string utilities shared by parse and validate. */
 import { error, type Diagnostic, type Span } from "../model/diagnostics.js";
 
-export const QSFC_KEYWORDS = ["sfc", "tag", "init", "step", "select", "parallel", "end"] as const;
+export const QSFC_KEYWORDS = ["sfc", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io"] as const;
 
 export const ST_KEYWORDS = [
   "AND", "OR", "XOR", "NOT", "MOD", "TRUE", "FALSE", "IF", "THEN", "ELSIF", "ELSE", "END_IF",

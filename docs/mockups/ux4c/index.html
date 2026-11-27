@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 4c mockups</title>
+<style>
+body { margin:0; padding:16px; font:14px/1.45 system-ui,sans-serif; background:#f4f5f7; color:#1d2228; }
+h1 { font-size:18px; margin:0 0 4px; } .lead { color:#59626e; margin:0 0 14px; max-width:900px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(460px,1fr)); gap:16px; }
+figure { margin:0; background:#fff; border:1px solid #d5dae0; border-radius:8px; padding:12px; }
+figcaption { font-weight:600; margin-bottom:8px; } figure p { color:#59626e; font-size:13px; margin:8px 0 0; }
+svg { width:100%; height:auto; display:block; font-family:system-ui; }
+.mono { font-family:ui-monospace,Consolas,monospace; }
+pre { background:#f4f5f7; border:1px solid #d5dae0; border-radius:6px; padding:8px 10px; font:12.5px/1.5 ui-monospace,Consolas,monospace; margin:0; }
+.k { color:#8250df; font-weight:600; } .s { color:#0a3069; } .c { color:#6e7781; }
+</style></head><body>
+<h1>Phase 4c: user experience (mockups)</h1>
+<p class="lead">Four visible additions, drawn on a simplified app window. The language parts (<code>after 5s</code>, <code>fill.done</code>, the <code>io</code> block, header lines) are shown in the last panel.</p>
+<div class="grid">
+
+<figure><figcaption>A. Where a tag is used</figcaption>
+<svg viewBox="0 0 460 250">
+  <rect x="0" y="0" width="300" height="250" fill="#fafbfc" stroke="#d5dae0"/>
+  <g stroke="#1d2228" fill="#fff" stroke-width="1.3">
+    <rect x="40" y="20" width="44" height="30"/><path d="M62 50 V80 M62 98 V130"/><rect x="50" y="86" width="24" height="4" fill="#1d2228"/>
+    <rect x="40" y="130" width="44" height="30" stroke="#d9480f" stroke-width="2.5"/><path d="M62 160 V190"/><rect x="50" y="196" width="24" height="4" fill="#1d2228"/>
+    <rect x="96" y="135" width="150" height="20" stroke="#d9480f" stroke-width="2.5"/>
+  </g>
+  <text x="62" y="40" font-size="11" text-anchor="middle">idle</text><text x="82" y="92" font-size="10">start_btn</text>
+  <text x="62" y="150" font-size="11" text-anchor="middle">fill</text>
+  <text x="102" y="149" font-size="10" class="mono"><tspan fill="#d9480f" font-weight="700">valve</tspan> [:=] 1;</text>
+  <text x="82" y="202" font-size="10">fill.DN</text>
+  <rect x="310" y="0" width="150" height="250" fill="#fff" stroke="#d5dae0"/>
+  <text x="318" y="18" font-size="11" fill="#59626e">TAGS 4</text>
+  <g font-size="10.5" class="mono"><text x="318" y="42">alarm</text><text x="318" y="62">start_btn</text></g>
+  <rect x="312" y="68" width="146" height="20" fill="#fde6dc"/><text x="318" y="82" font-size="10.5" class="mono" font-weight="700">valve</text><text x="420" y="82" font-size="10" fill="#59626e">2 uses</text>
+  <text x="318" y="102" font-size="10.5" class="mono">level</text>
+  <text x="318" y="130" font-size="10" fill="#59626e">Click a tag: every step and</text><text x="318" y="143" font-size="10" fill="#59626e">transition using it lights up;</text><text x="318" y="156" font-size="10" fill="#59626e">click again or Esc to clear.</text>
+</svg>
+<p>Clicking a tag in the Tags sidebar outlines the steps, actions and transitions that use it (and its uses in other routines get a dot on their tab). Enter / the "uses" count jumps the editor to the next use.</p></figure>
+
+<figure><figcaption>B. Overview map and search</figcaption>
+<svg viewBox="0 0 460 250">
+  <rect x="0" y="0" width="460" height="250" fill="#fafbfc" stroke="#d5dae0"/>
+  <rect x="10" y="8" width="210" height="24" rx="4" fill="#fff" stroke="#b9c0c8"/><text x="18" y="24" font-size="11" fill="#1d2228">🔍 drain</text><text x="160" y="24" font-size="10" fill="#59626e">1 of 2  ‹ ›</text>
+  <g stroke="#1d2228" fill="#fff" stroke-width="1.2"><rect x="60" y="60" width="44" height="28"/><rect x="60" y="130" width="44" height="28" stroke="#d9480f" stroke-width="2.5"/><path d="M82 88 V130 M82 158 V200"/></g>
+  <text x="82" y="78" font-size="10" text-anchor="middle">wash</text><text x="82" y="148" font-size="10" text-anchor="middle">drain</text>
+  <rect x="330" y="140" width="118" height="98" fill="#fff" stroke="#b9c0c8" rx="4"/>
+  <g stroke="#8a929c" stroke-width="1"><path d="M350 150 V230 M350 175 H380 V215 M395 160 V225"/></g>
+  <g fill="#8a929c"><rect x="345" y="150" width="10" height="6"/><rect x="345" y="168" width="10" height="6"/><rect x="345" y="186" width="10" height="6"/><rect x="375" y="190" width="10" height="6"/><rect x="390" y="160" width="10" height="6"/><rect x="345" y="208" width="10" height="6"/></g>
+  <rect x="338" y="160" width="52" height="40" fill="rgba(26,95,180,.12)" stroke="#1a5fb4"/>
+  <text x="335" y="132" font-size="10" fill="#59626e">overview (drag the frame)</text>
+</svg>
+<p>The overview shows the whole chart in a corner of the diagram when it doesn't fit; the blue frame is the visible part (drag it, or click to jump). Ctrl+F in the diagram searches step names, transition conditions and action text; Enter goes to the next match.</p></figure>
+
+<figure><figcaption>C. Snippets</figcaption>
+<svg viewBox="0 0 460 230">
+  <rect x="0" y="0" width="460" height="230" fill="#fff" stroke="#d5dae0"/>
+  <text x="12" y="22" font-size="11.5" class="mono"><tspan fill="#8250df" font-weight="700">step</tspan> fill</text>
+  <text x="12" y="42" font-size="11.5" class="mono">  snip|</text>
+  <rect x="40" y="50" width="300" height="150" rx="5" fill="#fff" stroke="#b9c0c8"/>
+  <g font-size="11"><rect x="41" y="51" width="298" height="24" fill="#e6effa"/>
+  <text x="50" y="67" font-weight="600">start / stop</text><text x="170" y="67" fill="#59626e">idle, run, stop with a seal-in</text>
+  <text x="50" y="91" font-weight="600">timeout → fault</text><text x="170" y="91" fill="#59626e">select: done | after 30s → fault</text>
+  <text x="50" y="115" font-weight="600">reset sequence</text><text x="170" y="115" fill="#59626e">reset button back to idle</text>
+  <text x="50" y="139" font-weight="600">parallel join</text><text x="170" y="139" fill="#59626e">two legs, wait for both</text>
+  <text x="50" y="163" font-weight="600">counter loop</text><text x="170" y="163" fill="#59626e">repeat n times, then go on</text>
+  <text x="50" y="189" font-size="10" fill="#59626e">Tab to fill the names one after the other</text></g>
+</svg>
+<p>Snippets appear in autocomplete (and in Insert ▸ Snippet in the menu). Each one inserts valid qSFC with placeholder names you fill with Tab, renamed automatically if a name is already used.</p></figure>
+
+<figure><figcaption>D. Print / PDF view (File → Print…)</figcaption>
+<svg viewBox="0 0 460 300">
+  <rect x="80" y="4" width="300" height="292" fill="#fff" stroke="#b9c0c8"/>
+  <rect x="96" y="16" width="268" height="44" fill="none" stroke="#1d2228"/>
+  <text x="104" y="32" font-size="12" font-weight="700">Tank filling</text><text x="104" y="48" font-size="9.5" fill="#59626e">GEI-243 · Francis B. · 2026-11-27</text><text x="356" y="32" font-size="9" text-anchor="end" fill="#59626e">program tank</text><text x="356" y="48" font-size="9" text-anchor="end" fill="#59626e">page 1 / 2</text>
+  <g stroke="#1d2228" fill="#fff" stroke-width="1"><rect x="130" y="76" width="34" height="22"/><path d="M147 98 V120 M147 132 V150"/><rect x="138" y="124" width="18" height="3" fill="#1d2228"/><rect x="130" y="150" width="34" height="22"/><rect x="172" y="153" width="90" height="16"/></g>
+  <text x="147" y="91" font-size="9" text-anchor="middle">idle</text><text x="147" y="165" font-size="9" text-anchor="middle">fill</text>
+  <text x="96" y="200" font-size="9.5" font-weight="700">Tags</text>
+  <g font-size="8.5" class="mono"><text x="96" y="214">start_btn  BOOL  Local:1:I.Data.0  Start button</text><text x="96" y="226">valve      BOOL  Local:2:O.Data.3</text><text x="96" y="238">count      DINT                    Parts filled</text></g>
+  <text x="96" y="262" font-size="9.5" font-weight="700">Code</text><text x="96" y="276" font-size="8.5" fill="#59626e">(the .qsfc text, with line numbers, on the next page)</text>
+</svg>
+<p>Uses the browser's print dialog (Save as PDF). Title block from the file header; date filled in when printing. Pages: diagram (scaled to fit), tag table with I/O addresses, then the code. Checkboxes choose what to include; several routines print one after the other.</p></figure>
+
+<figure style="grid-column:1/-1"><figcaption>E. The language parts of 4c</figcaption>
+<pre><span class="k">program</span> tank <span class="s">"Tank filling"</span>      <span class="c">// title for printing and the Program description</span>
+<span class="k">course</span> <span class="s">"GEI-243"</span>                   <span class="c">// header lines (printed in the title block)</span>
+<span class="k">author</span> <span class="s">"Francis B."</span>
+
+<span class="k">io</span>                                   <span class="c">// I/O mapping: exported as alias tags</span>
+  start_btn   Local:1:I.Data.0  <span class="s">"Start button"</span>
+  valve       Local:2:O.Data.3
+<span class="k">end</span>
+
+<span class="k">init</span> idle
+<span class="k">--</span> start_btn
+<span class="k">step</span> fill
+  <span class="k">on</span> valve
+<span class="k">--</span> <span class="k">after</span> 5s                         <span class="c">// = fill.T >= 5000 (the step above)</span>
+<span class="k">step</span> check
+<span class="k">--</span> fill.done OR check.time > 2000    <span class="c">// readable members: .active .done .time .first = .X .DN .T .FS</span></pre>
+<p>All of this exports to plain Studio L5X. The <code>io</code> alias tags and the Program description are new L5X shapes, to verify in Studio (a tp13 in the test pack).</p></figure>
+</div>
+</body></html>

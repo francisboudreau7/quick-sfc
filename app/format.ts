@@ -22,7 +22,7 @@ export function chartCounts(graph: Graph | undefined): ChartCounts | undefined {
 // Tags table
 // ---------------------------------------------------------------------------------------------
 
-export type TagSortKey = "name" | "type" | "uses" | "description";
+export type TagSortKey = "name" | "type" | "address" | "uses" | "description";
 export type SortDir = "asc" | "desc";
 
 export interface TagSort {
@@ -44,6 +44,13 @@ export function sortTags(tags: readonly TagInfo[], sort: TagSort): TagInfo[] {
         return byName(a, b);
       case "type":
         return a.type.localeCompare(b.type);
+      case "address": {
+        // Tags without an I/O address go last in ascending order.
+        const da = a.address ?? "";
+        const db = b.address ?? "";
+        if (!da !== !db) return da ? -1 : 1;
+        return da.localeCompare(db, undefined, { numeric: true });
+      }
       case "uses":
         return a.uses.length - b.uses.length;
       case "description": {

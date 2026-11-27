@@ -1,16 +1,21 @@
-import { key } from "../model/ast.js";
+import { type AfterTerm, key, READABLE_MEMBERS } from "../model/ast.js";
 
 const NUM_RE = /\d[0-9A-Za-z_]*(?:#[0-9A-Za-z_]+)?(?:\.\d+(?:[eE][+-]?\d+)?)?/y;
 const ID_RE = /[A-Za-z_][A-Za-z0-9_]*/y;
 
 /**
- * Rewrites `stepname.member` to `operand.member` (SPEC §8.4). Identifier-aware, case-insensitive,
- * skips ST strings and comments; every other byte is copied unchanged.
+ * Rewrites `stepname.member` to `operand.member` (SPEC §8.4), and a readable member to Studio's
+ * (`fill.done` → `Step_001.DN`, SPEC §7.3). Identifier-aware, case-insensitive, skips ST strings
+ * and comments; every other byte is copied unchanged.
  */
 export function rewriteStepRefs(text: string, operandByStepKey: Map<string, string>): string {
   return mapIdentifiers(text, (word, i, j) => {
     const operand = operandByStepKey.get(key(word));
-    return operand !== undefined && !precededByDot(text, i) && followedByMember(text, j) ? { text: operand, next: j } : undefined;
+    if (operand === undefined || precededByDot(text, i) || !followedByMember(text, j)) return undefined;
+    const m = /^[ \t]*\.[ \t]*([A-Za-z_][A-Za-z0-9_]*)/.exec(text.slice(j))!;
+    const studio = READABLE_MEMBERS[key(m[1]!)];
+    if (studio === undefined) return { text: operand, next: j };
+    return { text: operand + m[0].slice(0, m[0].length - m[1]!.length) + studio, next: j + m[0].length };
   });
 }
 
@@ -128,4 +133,26 @@ function followedByMember(text: string, j: number): boolean {
   k++;
   while (k < text.length && (text.charAt(k) === " " || text.charAt(k) === "\t")) k++;
   return /[A-Za-z_]/.test(text.charAt(k));
+}
+
+/**
+ * Expands the `after 5s` terms of a condition (SPEC §4.4) to `step.T >= 5000`, where `step` is
+ * the step before the transition (rewritten to its operand afterwards by `rewriteStepRefs`). A
+ * term between anything else than `AND` / `OR` / `XOR` / `&` / brackets gets parentheses
+ * (`NOT (fill.T >= 5000)`). `terms` are offsets in `text`, in order; every other byte is kept.
+ */
+export function rewriteAfter(text: string, terms: readonly AfterTerm[] | undefined, stepName: string | undefined): string {
+  if (!terms?.length || stepName === undefined) return text;
+  let out = "";
+  let at = 0;
+  for (const t of terms) {
+    const before = text.slice(0, t.start).trimEnd();
+    const after = text.slice(t.end).trimStart();
+    const loneLeft = before === "" || before.endsWith("(") || before.endsWith("&") || /(?:^|[^\w.])(?:AND|OR|XOR)$/i.test(before);
+    const loneRight = after === "" || after.startsWith(")") || after.startsWith("&") || /^(?:AND|OR|XOR)(?!\w)/i.test(after);
+    const expr = `${stepName}.T >= ${t.ms ?? 0}`;
+    out += text.slice(at, t.start) + (loneLeft && loneRight ? expr : `(${expr})`);
+    at = t.end;
+  }
+  return out + text.slice(at);
 }

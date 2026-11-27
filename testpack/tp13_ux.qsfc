@@ -1,0 +1,33 @@
+// Test pack 13: the language parts of Phase 4c: program title, header lines,
+// an io block (alias tags), `after` in a condition and readable step members.
+program tp13_ux "Tank filling"   // title: the Program description in Studio
+course "GEI-243"                 // printing only, not exported
+author "Francis B."
+
+// I/O mapping: each line becomes an alias tag. Adjust the addresses to your rack.
+io
+  start_btn   Local:1:I.Data.0  "Start button"
+  level_ok    Local:1:I.Data.1  "Level switch"
+  valve       Local:2:O.Data.3  "Fill valve"
+end
+
+sfc tp13_ux
+init idle
+  count := 0;
+-- start_btn
+step fill 10s "Fill the tank"
+  on valve
+-- fill.done OR (after 3s AND level_ok)   // .done = .DN; after 3s = fill.T >= 3000
+step check
+  IF check.first THEN   // .first = .FS
+    count := count + 1;
+  END_IF;
+select
+  -- check.time > 2000 AND level_ok       // .time = .T
+  step done
+  -- after 2s -> idle                     // = done.T >= 2000
+|
+  -- after 5s AND NOT level_ok            // first transition of a leg: check.T >= 5000
+  step retry
+  -- retry.active -> fill                 // .active = .X
+end

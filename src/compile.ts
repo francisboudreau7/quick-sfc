@@ -8,7 +8,7 @@ import type { L5XPositions } from "./model/positions.js";
 import { parse } from "./parse/index.js";
 import { validateProgram } from "./validate/index.js";
 import { routineLabel } from "./validate/program.js";
-import { analyzeTags, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
+import { analyzeTags, rewriteAfter, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
 import { actionOperands, lower } from "./lower/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
@@ -183,6 +183,7 @@ export function exportL5X(source: string, options: ExportOptions): ExportResult 
       : sfcForL5X(r.name, r.graph!, r.layout!, r.positions!, operands),
   );
   const l5xOptions: L5XProgramOptions = { programName: program };
+  if (result.program.title !== undefined) l5xOptions.programDescription = result.program.title;
   if (options.softwareRevision !== undefined) l5xOptions.softwareRevision = options.softwareRevision;
   if (options.exportDate !== undefined) l5xOptions.exportDate = options.exportDate;
   const text = writeProgramL5X(routines, result.tags, l5xOptions);
@@ -247,8 +248,8 @@ function operandMap(routines: CompiledRoutine[]): Map<string, string> {
 }
 
 /**
- * ST as exported: `call x` → `JSR(x,0)` (SPEC §4.5), `step.member` → operand (SPEC §8.4),
- * `TRUE`/`FALSE` → `1`/`0` (SPEC §8.4).
+ * ST as exported: `call x` → `JSR(x,0)` (SPEC §4.5), `step.member` → operand and a readable
+ * member → Studio's (`fill.done` → `Step_001.DN`, SPEC §8.4), `TRUE`/`FALSE` → `1`/`0` (SPEC §8.4).
  */
 function rewriteSt(text: string, operands: Map<string, string>): string {
   return rewriteBoolLiterals(rewriteStepRefs(rewriteCalls(text), operands));
@@ -263,7 +264,11 @@ function rewriteGraph(graph: Graph, operands: Map<string, string>): Graph {
   return {
     ...graph,
     steps: graph.steps.map((s) => ({ ...s, actions: s.actions.map((a) => ({ ...a, lines: rewriteLines(a.lines, operands) })) })),
-    transitions: graph.transitions.map((t) => ({ ...t, condition: rewriteSt(t.condition, operands) })),
+    // `after 5s` → `step.T >= 5000` first (SPEC §4.4), then the step becomes its operand
+    transitions: graph.transitions.map((t) => ({
+      ...t,
+      condition: rewriteSt(rewriteAfter(t.condition, t.node.after, t.afterStep), operands),
+    })),
   };
 }
 

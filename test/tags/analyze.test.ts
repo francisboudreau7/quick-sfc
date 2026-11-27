@@ -176,10 +176,10 @@ describe("E400 / E401 / W302 step references", () => {
     expect(r.tags.map((t) => t.name)).toEqual(["x"]);
   });
   it("E401: unknown member, with did-you-mean", () => {
-    const r = run({ body: [...body, { tran: "fill.DONE" }, { tran: "fill.Dn OR fill.zzzzzz" }] });
+    const r = run({ body: [...body, { tran: "fill.DNE" }, { tran: "fill.Dn OR fill.zzzzzz" }] });
     const d = byCode(r, "E401");
     expect(d).toHaveLength(2);
-    expect(d[0]!.message).toBe("`fill.DONE`: steps have no member `DONE` (did you mean `DN`?)");
+    expect(d[0]!.message).toBe("`fill.DNE`: steps have no member `DNE` (did you mean `DN`?)");
     expect(d[1]!.message).not.toContain("did you mean");
     expect(d[1]!.hint).toContain("valid members");
   });

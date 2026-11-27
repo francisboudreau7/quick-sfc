@@ -6,8 +6,10 @@
 import type {
   ActionLine,
   ActionNode,
+  AfterTerm,
   BranchNode,
   Chart,
+  IoEntry,
   Name,
   ProgramNode,
   Qualifier,
@@ -86,6 +88,17 @@ export function readSugar(line: SourceText): Sugar | undefined {
   return sugar;
 }
 const TRANSITION_NAME_RE = /^\s*([A-Za-z_]\w*)\s*:(?!=)/;
+/**
+ * A Logix I/O path for the `io` block (SPEC §7.6), checked loosely: a module part with at
+ * least one `:` (`Local:1:I`, `Rack1:I`), then `.member`, `.bit` or `[index]` parts.
+ */
+export const IO_ADDRESS_RE = /^[A-Za-z_]\w*(?::\w+)+(?:\.\w+|\[\d+\])*$/;
+/** `after <duration>` in a condition (SPEC §4.4): `after` not after a dot or a name character. */
+const AFTER_RE = /(?<![\w.])after[ \t]+(\d\w*)/gi;
+/** First words that end an `io` block that is missing its `end` (E206). */
+const IO_BREAKERS: ReadonlySet<string> = new Set([
+  "program", "sfc", "st", "tag", "init", "step", "select", "parallel", "course", "author", "io",
+]);
 
 interface BufferedLine {
   line: number;
@@ -166,6 +179,8 @@ class Parser {
 
   private readonly unnamed: TransitionNode[] = [];
   private readonly used = new Set<string>();
+  /** The open `io` block (SPEC §7.6), if any. */
+  private ioBlock: { span: Span } | null = null;
 
   constructor(source: string) {
     this.lines = source.split(/\r?\n/);
@@ -193,7 +208,17 @@ class Parser {
       this.line(i + 1, raw);
     });
     this.closeRoutine();
+    this.closeIo();
     this.assignAutoNames();
+  }
+
+  /** E206 for an `io` block without `end` (at the end of the file, or before a structure line). */
+  private closeIo(): void {
+    if (!this.ioBlock) return;
+    this.diags.push(
+      error("E206", this.ioBlock.span, `\`io\` at line ${this.ioBlock.span.line} is never closed: add \`end\``),
+    );
+    this.ioBlock = null;
   }
 
   /** Ends the current routine: closes its action block or ST body, reports open branches. */
@@ -220,6 +245,16 @@ class Parser {
     const rest = t.slice(word?.length ?? 0);
     // `st := 1;` is ST, `st main` is a header
     const headerShape = rest.trim() === "" || /^\s+(?![:=])\S/.test(rest) || /^\s*\/\//.test(rest);
+    if (this.ioBlock && this.ioLine(n, raw, indent, t, word, headerShape)) return;
+    if (word === "io" && headerShape) {
+      if (!this.st) this.structure("an `io` block");
+      this.ioStart(n, raw, indent);
+      return;
+    }
+    if ((word === "course" || word === "author") && (headerShape || /^\s*"/.test(rest))) {
+      this.metaLine(n, raw, indent, word);
+      return;
+    }
     if (word === "program" && headerShape) {
       this.programHeader(n, raw, indent);
       return;
@@ -311,13 +346,23 @@ class Parser {
 
   // ---- header -------------------------------------------------------------
 
-  /** Reads `keyword name`; reports E101 / E107 and returns the name. */
-  private headerName(n: number, raw: string, indent: number, keyword: string, what: string): Name | undefined {
+  /**
+   * Reads `keyword name`; reports E101 / E107 and returns the name. With `title`, a `"string"`
+   * may follow the name (`program tank "Tank filling"`, SPEC §4.5); it is passed to `title`.
+   */
+  private headerName(
+    n: number,
+    raw: string,
+    indent: number,
+    keyword: string,
+    what: string,
+    title?: (value: string) => void,
+  ): Name | undefined {
     const end = contentEnd(raw);
     const span = lineSpan(n, indent, end);
     let i = skipWs(raw, indent + keyword.length, end);
     const start = i;
-    while (i < end && !isWs(raw[i])) i++;
+    while (i < end && !isWs(raw[i]) && !(title && raw[i] === '"')) i++;
     if (start === i) {
       this.diags.push(error("E101", span, `\`${keyword}\` needs a ${what} name: \`${keyword} name\``));
       return undefined;
@@ -325,6 +370,14 @@ class Parser {
     const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
     this.diags.push(...checkName(name.text, name.span, { reserved: true }));
     this.used.add(key(name.text));
+    if (title) {
+      const j = skipWs(raw, i, end);
+      if (raw[j] === '"') {
+        const d = this.description(n, raw, j, end);
+        title(d.value);
+        i = d.next;
+      }
+    }
     this.extraText(n, raw, i, end, `the ${what} name \`${name.text}\``);
     return name;
   }
@@ -340,8 +393,102 @@ class Parser {
         error("E210", span, "the `program` line must come before the first routine (comments, blank lines and `tag` lines may come before it)"),
       );
     }
-    const name = this.headerName(n, raw, indent, "program", "program");
-    if (name) this.program.header = name;
+    let title: string | undefined;
+    const name = this.headerName(n, raw, indent, "program", "program", (v) => (title = v));
+    if (name) {
+      this.program.header = name;
+      if (title !== undefined) this.program.title = title;
+    }
+  }
+
+  /** `course "…"` / `author "…"` (SPEC §4.5): before the first routine, once each; printing only. */
+  private metaLine(n: number, raw: string, indent: number, word: "course" | "author"): void {
+    const end = contentEnd(raw);
+    const span = lineSpan(n, indent, end);
+    const meta = this.program.meta;
+    if (meta?.[word] !== undefined) {
+      this.diags.push(error("E210", span, `the \`${word}\` line can appear only once`));
+      return;
+    }
+    if (this.program.routines.length > 0) {
+      this.diags.push(
+        error("E210", span, `the \`${word}\` line must come before the first routine (comments, blank lines and \`tag\` lines may come before it)`),
+      );
+    }
+    let i = skipWs(raw, indent + word.length, end);
+    const example = word === "course" ? '"GEI-243"' : '"Your name"';
+    if (raw[i] !== '"') {
+      this.diags.push(
+        i < end
+          ? error("E107", lineSpan(n, i, end), `unexpected text \`${raw.slice(i, end)}\` after \`${word}\``, `write the text in quotes: ${word} ${example}`)
+          : error("E107", span, `\`${word}\` needs a text in quotes: \`${word} ${example}\``),
+      );
+      return;
+    }
+    const d = this.description(n, raw, i, end);
+    i = d.next;
+    this.extraText(n, raw, i, end, `the \`${word}\` text`);
+    this.program.meta = { ...meta, [word]: d.value };
+  }
+
+  // ---- io block (SPEC §7.6) ---------------------------------------------------------
+
+  private ioStart(n: number, raw: string, indent: number): void {
+    this.extraText(n, raw, indent + 2, contentEnd(raw), "`io`");
+    this.ioBlock = { span: lineSpan(n, indent, indent + 2) };
+    if (!this.program.io) this.program.io = [];
+  }
+
+  /**
+   * A line inside an `io` block. Returns false when the line is not part of the block (the
+   * block misses its `end`: E206), so the caller reads it as usual.
+   */
+  private ioLine(n: number, raw: string, indent: number, t: string, word: string | undefined, headerShape: boolean): boolean {
+    if (t.trim() === "" || t.startsWith("//")) return true;
+    if (word === "end") {
+      this.ioBlock = null;
+      this.extraText(n, raw, indent + 3, contentEnd(raw), "`end`");
+      return true;
+    }
+    if (t.startsWith("--") || t.startsWith("|") || (word !== undefined && IO_BREAKERS.has(word) && headerShape)) {
+      this.closeIo();
+      return false;
+    }
+    const end = contentEnd(raw);
+    const span = lineSpan(n, indent, end);
+    let i = indent;
+    while (i < end && !isWs(raw[i]) && raw[i] !== '"') i++;
+    const name: Name = { text: raw.slice(indent, i), span: lineSpan(n, indent, i) };
+    if (name.text === "") {
+      this.diags.push(error("E101", span, "an `io` line starts with a tag name: `name  Local:1:I.Data.0  [\"description\"]`"));
+      return true;
+    }
+    this.diags.push(...checkName(name.text, name.span));
+    this.used.add(key(name.text));
+    i = skipWs(raw, i, end);
+    const as = i;
+    while (i < end && !isWs(raw[i]) && raw[i] !== '"') i++;
+    const address: SourceText = { text: raw.slice(as, i), span: lineSpan(n, as, i) };
+    if (address.text === "") {
+      this.diags.push(
+        error("E413", name.span, `I/O point \`${name.text}\` has no address`, `write it after the name, e.g.  ${name.text}  Local:1:I.Data.0`),
+      );
+    } else if (!IO_ADDRESS_RE.test(address.text)) {
+      this.diags.push(
+        error("E413", address.span, `\`${address.text}\` is not a valid I/O address`,
+          "write a Logix I/O path, e.g. Local:1:I.Data.0 (input bit) or Local:2:O.Data.3 (output bit)"),
+      );
+    }
+    const entry: IoEntry = { name, address, span };
+    i = skipWs(raw, i, end);
+    if (raw[i] === '"') {
+      const d = this.description(n, raw, i, end);
+      entry.description = d.value;
+      i = d.next;
+    }
+    this.extraText(n, raw, i, end, `the I/O point \`${name.text}\``);
+    (this.program.io ??= []).push(entry);
+    return true;
   }
 
   private header(n: number, raw: string, indent: number, kind: "sfc" | "st"): void {
@@ -662,6 +809,8 @@ class Parser {
       condition,
       span,
     };
+    const after = this.afterTerms(condition);
+    if (after.length) node.after = after;
 
     if (arrow >= 0) {
       let i = skipWs(raw, arrow + 2, end);
@@ -685,6 +834,24 @@ class Parser {
     }
     if (!name) this.unnamed.push(node);
     this.current.push(node);
+  }
+
+  /** `after 5s` terms of a condition (SPEC §4.4); E104 / E105 for a bad duration. */
+  private afterTerms(condition: SourceText): AfterTerm[] {
+    const out: AfterTerm[] = [];
+    const { masked } = mask(condition.text);
+    const { line, col } = condition.span;
+    for (const m of masked.matchAll(AFTER_RE)) {
+      const start = m.index!;
+      const end = start + m[0].length;
+      const dur = condition.text.slice(end - m[1]!.length, end);
+      const ds = col + end - dur.length;
+      const term: AfterTerm = { span: { line, col: col + start, endLine: line, endCol: col + end }, start, end };
+      const ms = parseDuration(dur, { line, col: ds, endLine: line, endCol: ds + dur.length }, this.diags);
+      if (ms !== undefined) term.ms = ms;
+      out.push(term);
+    }
+    return out;
   }
 
   // ---- branches -------------------------------------------------------------

@@ -3,7 +3,7 @@
  * The chart is recompiled ~150 ms after typing stops; on errors the last valid diagram
  * stays, dimmed. Plain DOM plus CodeMirror (app/editor.ts). The markup lives in
  * app/index.html; the pure logic in app/{state,problems,format,highlight,complete,nav,
- * dirty,splitter,watch,tidy}.ts.
+ * dirty,splitter,watch,tidy,taguse,overview,search,snippets,print}.ts.
  */
 import { compile, exportL5X, routineName, type CompiledRoutine, type CompileResult } from "../src/compile.js";
 import type { Layout } from "../src/layout/index.js";
@@ -13,6 +13,7 @@ import type { Graph } from "../src/model/graph.js";
 import { renderStudioSketch } from "../src/render/sketch.js";
 import { renderSvg } from "../src/render/svg.js";
 import { tidyL5X, type TidyReport } from "../src/tidy/index.js";
+import type { TagInfo } from "../src/model/graph.js";
 import type { CompletionInfo } from "./complete.js";
 import {
   isDirty,
@@ -67,6 +68,11 @@ import {
   type Theme,
   type ViewOptions,
 } from "./state.js";
+import { clampScroll, dragScroll, overviewGeometry, overviewMax, scrollToPoint } from "./overview.js";
+import { buildPrintModel, DEFAULT_PRINT, printHtml, type PrintOptions } from "./print.js";
+import { cycleIndex, matchLabel, searchDiagram, type DiagramMatch } from "./search.js";
+import { findSnippet, SNIPPETS, snippetContext, snippetTemplate, usedNames } from "./snippets.js";
+import { nextUse, routinesUsing, splitOnName, tagElements, useIndex } from "./taguse.js";
 import { canTick, decodeL5X, defaultTicked, looksLikeL5X, programsLabel, statusLine, tidiedText, tidyFileName, tidyProblem } from "./tidy.js";
 import { shouldApplyText, Watcher } from "./watch.js";
 
@@ -142,6 +148,16 @@ const ui = {
   tidyAfterSub: el("tidy-after-sub"),
   tidyNote: el("tidy-note"),
   tidySave: el<HTMLButtonElement>("tidy-save"),
+  diagramArea: el("diagram-area"),
+  canvasWrap: el("diagram-area").parentElement!,
+  overview: el("overview"),
+  overviewMap: el("overview-map"),
+  overviewFrame: el("overview-frame"),
+  search: el("diagram-search"),
+  searchInput: el<HTMLInputElement>("search-input"),
+  searchCount: el("search-count"),
+  printDlg: el<HTMLDialogElement>("print-dlg"),
+  printView: el("print-view"),
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -207,6 +223,8 @@ let zoom = 1;
 let svgSize = { width: 0, height: 0 };
 let selectedProblem: string | undefined;
 let tagSort: TagSort = DEFAULT_TAG_SORT;
+/** The tag picked in the Tags sidebar (lower case): its uses light up in the diagram. */
+let selectedTag: string | undefined;
 let cursor = { line: 1, col: 1 };
 let watching: { watcher: Watcher; name: string; first: boolean } | undefined;
 let dirty = false;
@@ -326,6 +344,19 @@ function runCompile(fit = false): void {
     },
     output: () => tidyState && tidiedText(tidyState.original, [...tidyState.ticked]),
   },
+  /** Phase 4c. The tag picked in the Tags sidebar; selectTag(name) as a click on its row. */
+  get selectedTag() {
+    return selectedTag;
+  },
+  selectTag: (name: string | undefined) => setSelectedTag(name),
+  /** The print layout as File → Print builds it, without opening the print dialog; clear() removes it. */
+  print: {
+    build: (o: Partial<PrintOptions> = {}) => buildPrintView({ ...DEFAULT_PRINT, ...o }),
+    clear: () => clearPrintView(),
+  },
+  get search() {
+    return { open: !ui.search.hidden, query: ui.searchInput.value, count: search.matches.length, index: search.index };
+  },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -344,6 +375,7 @@ function syncViewMenu(): void {
     let on = false;
     if (cmd === "numbers") on = view.numbers;
     else if (cmd === "actions") on = view.showActions;
+    else if (cmd === "overview") on = view.overview;
     else if (cmd === "theme") on = item.dataset["value"] === view.theme;
     item.setAttribute("aria-checked", String(on));
   }
@@ -1161,6 +1193,7 @@ function renderDiagram(fit: boolean): void {
   ui.canvas.hidden = !doc || !shown;
   ui.broken.hidden = !doc || !!shown || st;
   ui.staleBadge.hidden = !stale;
+  if (!shown && !ui.search.hidden) closeSearch(false);
   ui.canvas.classList.toggle("stale", stale);
   for (const id of ["zoom-out", "zoom-reset", "zoom-in", "zoom-fit"]) el<HTMLButtonElement>(id).disabled = !shown;
   if (!doc) return;
@@ -1170,6 +1203,9 @@ function renderDiagram(fit: boolean): void {
     ui.stage.replaceChildren();
     drawn = undefined;
     drawnSvg = "";
+    setOverviewSvg("");
+    applyTagHighlight();
+    refreshSearch();
     const empty = editor.view.state.doc.length === 0 || editor.getText().trim() === "";
     const { errors } = countProblems(diagnostics);
     ui.brokenTitle.textContent = empty ? "Type a chart in the editor" : "Fix the errors below to see the diagram";
@@ -1187,8 +1223,7 @@ function renderDiagram(fit: boolean): void {
     const same = !first && svgText === drawnSvg;
     drawn = { diagram: shown, index: pos, key: vk };
     if (same) {
-      applySelectionHighlight(false);
-      highlightCursorElement(false);
+      afterDraw();
       return;
     }
     drawnSvg = svgText;
@@ -1196,11 +1231,20 @@ function renderDiagram(fit: boolean): void {
     const svg = ui.stage.querySelector("svg")!;
     svg.setAttribute("aria-label", `SFC diagram of ${shown.name}`);
     svgSize = { width: Number(svg.getAttribute("width")) || 1, height: Number(svg.getAttribute("height")) || 1 };
+    setOverviewSvg(svgText);
     if (fit || first) requestAnimationFrame(() => fitToWindow());
     else setZoom(zoom);
   }
+  afterDraw();
+}
+
+/** Highlights that live in the drawn SVG, put back after each drawing. */
+function afterDraw(): void {
   applySelectionHighlight(false);
+  applyTagHighlight();
+  refreshSearch();
   highlightCursorElement(false);
+  scheduleOverview();
 }
 
 function renderTags(): void {
@@ -1214,27 +1258,148 @@ function renderTags(): void {
     if (key === tagSort.key) th.setAttribute("aria-sort", tagSort.dir === "asc" ? "ascending" : "descending");
     else th.removeAttribute("aria-sort");
   }
+  // The I/O address column only when the file has an `io` block (SPEC §7.6).
+  const hasAddr = tags.some((t) => t.address);
+  ui.tagTable.classList.toggle("has-addr", hasAddr);
+  if (selectedTag && !tags.some((t) => t.name.toLowerCase() === selectedTag)) selectedTag = undefined;
   const rows = sortTags(tags, tagSort).map((t) => {
     const tr = document.createElement("tr");
-    tr.dataset["tag"] = t.name.toLowerCase();
+    const k = t.name.toLowerCase();
+    tr.dataset["tag"] = k;
+    tr.tabIndex = 0;
+    tr.classList.add("link");
+    if (k === selectedTag) tr.classList.add("sel");
+    tr.setAttribute("aria-label", `${t.name}, ${t.type}${t.address ? `, ${t.address}` : ""}, ${plural(t.uses.length, "use")}`);
+    tr.title = `${usesTitle(t)}. Click to show where it is used in the diagram; Enter goes to the next use.`;
     const name = cell("td", t.name, "mono name");
     if (!t.declared) name.title = "Not declared: type inferred from its uses";
+    if (hasAddr && t.address) name.append(cell("span", t.address, "addr-sub"));
     const type = document.createElement("td");
     type.append(cell("span", t.type, `type type-${t.type.toLowerCase()}`));
-    const uses = cell("td", String(t.uses.length), "num");
-    uses.title = usesTitle(t);
+    const addr = cell("td", t.address ?? "—", `mono addr${t.address ? "" : " none"}`);
+    const uses = document.createElement("td");
+    uses.className = "num";
+    const usesBtn = cell("button", String(t.uses.length), "uses-btn") as HTMLButtonElement;
+    usesBtn.type = "button";
+    usesBtn.tabIndex = -1;
+    usesBtn.disabled = t.uses.length === 0;
+    usesBtn.title = t.uses.length ? `${usesTitle(t)}. Click to go to the next use.` : usesTitle(t);
+    uses.append(usesBtn);
     const desc = cell("td", t.description ?? "", "desc");
-    tr.append(name, type, uses, desc);
-    const first = t.uses[0];
-    if (first) {
-      tr.classList.add("link");
-      tr.title = `${usesTitle(t)}. Click to go to the first use.`;
-      tr.addEventListener("click", () => editor.goTo(first.line, first.col, true));
-    }
+    tr.append(name, type, ...(hasAddr ? [addr] : []), uses, desc);
     return tr;
   });
   ui.tagBody.replaceChildren(...rows);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Where a tag is used (Phase 4c): click a tag row to light up its uses in the diagram
+// ---------------------------------------------------------------------------------------------
+
+function tagNamed(k: string | undefined): TagInfo | undefined {
+  return k ? result?.tags.find((t) => t.name.toLowerCase() === k) : undefined;
+}
+
+function setSelectedTag(name: string | undefined): void {
+  selectedTag = name?.toLowerCase();
+  if (!tagNamed(selectedTag)) selectedTag = undefined;
+  for (const tr of ui.tagBody.querySelectorAll<HTMLElement>("tr[data-tag]")) tr.classList.toggle("sel", tr.dataset["tag"] === selectedTag);
+  applyTagHighlight();
+  // Scroll the first element using it into view.
+  const first = ui.stage.querySelector(".qsfc-tag");
+  if (first) scrollIntoCanvas(first);
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Outlines the steps and transitions using the picked tag, its name in their text, and the tabs of other routines using it. */
+function applyTagHighlight(): void {
+  for (const e of ui.stage.querySelectorAll(".qsfc-tag")) e.classList.remove("qsfc-tag");
+  for (const span of ui.stage.querySelectorAll("tspan.qsfc-tag-name")) {
+    const parent = span.parentNode;
+    span.replaceWith(document.createTextNode(span.textContent ?? ""));
+    parent?.normalize();
+  }
+  for (const b of ui.routineTabs.querySelectorAll(".uses-tag")) b.classList.remove("uses-tag");
+  const tag = tagNamed(selectedTag);
+  if (!tag || !doc) return;
+  for (const id of tagElements(drawn?.diagram.graph, tag.uses)) {
+    const g = stageElement(id);
+    if (!g) continue;
+    g.classList.add("qsfc-tag");
+    for (const text of g.querySelectorAll("text.qsfc-code")) emphasizeName(text, tag.name);
+  }
+  const routines = result?.routines ?? [];
+  if (routines.length > 1) {
+    for (const i of routinesUsing(routines, tag.uses)) {
+      if (i === shownIndex) continue;
+      const b = ui.routineTabs.querySelector(`[data-index="${i}"]`);
+      if (b) {
+        b.classList.add("uses-tag");
+        b.setAttribute("title", `${b.getAttribute("title")?.replace(/ · uses .*$/, "") ?? ""} · uses ${tag.name}`);
+      }
+    }
+  }
+}
+
+/** Wraps each whole-word `name` in the text nodes of an SVG <text> in a <tspan class="qsfc-tag-name">. */
+function emphasizeName(text: Element, name: string): void {
+  for (const node of [...text.childNodes]) {
+    if (node.nodeType !== Node.TEXT_NODE) continue; // the <title> holding the full text
+    const parts = splitOnName(node.textContent ?? "", name);
+    if (!parts.some((p) => p.hit)) continue;
+    const frag = document.createDocumentFragment();
+    for (const p of parts) {
+      if (!p.hit) frag.append(p.text);
+      else {
+        const t = document.createElementNS(SVG_NS, "tspan");
+        t.setAttribute("class", "qsfc-tag-name");
+        t.textContent = p.text;
+        frag.append(t);
+      }
+    }
+    node.replaceWith(frag);
+  }
+}
+
+/** Moves the editor to the next use of the tag after the cursor (cycling), selecting it. */
+function goToNextUse(tag: TagInfo, focusEditor: boolean): void {
+  const u = nextUse(tag.uses, cursor);
+  if (!u) return;
+  editor.select(u.line, u.col, u.endLine === u.line && u.endCol !== undefined ? u.endCol : u.col + tag.name.length, focusEditor);
+  toast(`${tag.name}: use ${useIndex(tag.uses, u)} of ${tag.uses.length}, line ${u.line}`);
+}
+
+ui.tagBody.addEventListener("click", (e) => {
+  const tr = (e.target as Element).closest<HTMLElement>("tr[data-tag]");
+  if (!tr) return;
+  const k = tr.dataset["tag"];
+  if ((e.target as Element).closest(".uses-btn")) {
+    if (selectedTag !== k) setSelectedTag(k);
+    const tag = tagNamed(k);
+    if (tag) goToNextUse(tag, false);
+    tr.focus();
+    return;
+  }
+  setSelectedTag(selectedTag === k ? undefined : k);
+});
+
+ui.tagBody.addEventListener("keydown", (e) => {
+  const tr = (e.target as Element).closest<HTMLElement>("tr[data-tag]");
+  if (!tr || e.target !== tr || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = tr.dataset["tag"];
+  if (e.key === "Enter") {
+    if (selectedTag !== k) setSelectedTag(k);
+    const tag = tagNamed(k);
+    if (tag) goToNextUse(tag, false);
+  } else if (e.key === " ") {
+    setSelectedTag(selectedTag === k ? undefined : k);
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const next = (e.key === "ArrowDown" ? tr.nextElementSibling : tr.previousElementSibling) as HTMLElement | null;
+    next?.focus();
+  } else return;
+  e.preventDefault();
+});
 
 function cell(tag: string, text: string, className?: string): HTMLElement {
   const e = document.createElement(tag);
@@ -1436,6 +1601,7 @@ function setZoom(z: number, anchor?: { x: number; y: number }): void {
   const after = svg.getBoundingClientRect();
   ui.canvas.scrollLeft += after.left + px * zoom - a.x;
   ui.canvas.scrollTop += after.top + py * zoom - a.y;
+  scheduleOverview();
 }
 
 function fitToWindow(): void {
@@ -1496,6 +1662,334 @@ ui.canvas.addEventListener("keydown", (e) => {
   else if (e.key === "0") fitToWindow();
   else return;
   e.preventDefault();
+});
+
+// ---------------------------------------------------------------------------------------------
+// Overview map (Phase 4c): the whole chart in a corner when it doesn't fit
+// ---------------------------------------------------------------------------------------------
+
+/** Thumbnail pixels per canvas pixel, from the last update. */
+let overviewScale = 1;
+let overviewFrame: number | undefined;
+
+function setOverviewSvg(svgText: string): void {
+  if (!svgText) {
+    ui.overviewMap.replaceChildren();
+    ui.overview.hidden = true;
+    return;
+  }
+  ui.overviewMap.innerHTML = svgText;
+  const mini = ui.overviewMap.querySelector("svg");
+  mini?.removeAttribute("role");
+  mini?.setAttribute("aria-hidden", "true");
+  mini?.setAttribute("focusable", "false");
+}
+
+function scheduleOverview(): void {
+  if (overviewFrame !== undefined) return;
+  overviewFrame = requestAnimationFrame(() => {
+    overviewFrame = undefined;
+    updateOverview();
+  });
+}
+
+function updateOverview(): void {
+  const c = ui.canvas;
+  const svg = ui.stage.querySelector("svg");
+  const mini = ui.overviewMap.querySelector("svg");
+  if (!view.overview || !doc || !svg || !mini || c.hidden || c.clientWidth === 0) {
+    ui.overview.hidden = true;
+    return;
+  }
+  const content = { width: c.scrollWidth, height: c.scrollHeight };
+  const box = { width: c.clientWidth, height: c.clientHeight };
+  const g = overviewGeometry(content, box, { x: c.scrollLeft, y: c.scrollTop }, overviewMax(box));
+  ui.overview.hidden = !g.needed;
+  if (!g.needed) return;
+  overviewScale = g.scale;
+  // Keep clear of the canvas scroll bars.
+  ui.overview.style.right = `${12 + (c.offsetWidth - c.clientWidth)}px`;
+  ui.overview.style.bottom = `${12 + (c.offsetHeight - c.clientHeight)}px`;
+  ui.overview.style.width = `${g.width}px`;
+  ui.overview.style.height = `${g.height}px`;
+  const cr = c.getBoundingClientRect();
+  const sr = svg.getBoundingClientRect();
+  mini.style.left = `${(sr.left - cr.left + c.scrollLeft) * g.scale}px`;
+  mini.style.top = `${(sr.top - cr.top + c.scrollTop) * g.scale}px`;
+  mini.setAttribute("width", String(Math.max(1, sr.width * g.scale)));
+  mini.setAttribute("height", String(Math.max(1, sr.height * g.scale)));
+  const f = ui.overviewFrame.style;
+  f.left = `${g.frame.x}px`;
+  f.top = `${g.frame.y}px`;
+  f.width = `${g.frame.width}px`;
+  f.height = `${g.frame.height}px`;
+}
+
+ui.canvas.addEventListener("scroll", scheduleOverview, { passive: true });
+new ResizeObserver(scheduleOverview).observe(ui.canvas);
+
+let overviewDrag: { x: number; y: number; scroll: { x: number; y: number }; id: number } | undefined;
+const canvasBoxes = (): { content: { width: number; height: number }; box: { width: number; height: number } } => ({
+  content: { width: ui.canvas.scrollWidth, height: ui.canvas.scrollHeight },
+  box: { width: ui.canvas.clientWidth, height: ui.canvas.clientHeight },
+});
+
+ui.overview.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const r = ui.overview.getBoundingClientRect();
+  const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+  const f = ui.overviewFrame.getBoundingClientRect();
+  const inFrame = e.clientX >= f.left && e.clientX <= f.right && e.clientY >= f.top && e.clientY <= f.bottom;
+  const { content, box } = canvasBoxes();
+  if (!inFrame) {
+    // A click outside the frame: go there, and keep dragging from there.
+    const to = scrollToPoint(p, overviewScale, content, box);
+    ui.canvas.scrollTo({ left: to.x, top: to.y });
+  }
+  overviewDrag = { x: e.clientX, y: e.clientY, scroll: { x: ui.canvas.scrollLeft, y: ui.canvas.scrollTop }, id: e.pointerId };
+  ui.overview.setPointerCapture(e.pointerId);
+  ui.overview.classList.add("dragging");
+});
+ui.overview.addEventListener("pointermove", (e) => {
+  if (!overviewDrag || e.pointerId !== overviewDrag.id) return;
+  const { content, box } = canvasBoxes();
+  const to = dragScroll(overviewDrag.scroll, { x: e.clientX - overviewDrag.x, y: e.clientY - overviewDrag.y }, overviewScale, content, box);
+  ui.canvas.scrollTo({ left: to.x, top: to.y });
+});
+const endOverviewDrag = (): void => {
+  overviewDrag = undefined;
+  ui.overview.classList.remove("dragging");
+};
+ui.overview.addEventListener("pointerup", endOverviewDrag);
+ui.overview.addEventListener("pointercancel", endOverviewDrag);
+ui.overview.addEventListener(
+  "wheel",
+  (e) => {
+    // The wheel over the map scrolls the diagram, as over the canvas.
+    if (e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    const { content, box } = canvasBoxes();
+    const to = clampScroll({ x: ui.canvas.scrollLeft + e.deltaX, y: ui.canvas.scrollTop + e.deltaY }, content, box);
+    ui.canvas.scrollTo({ left: to.x, top: to.y });
+  },
+  { passive: false },
+);
+
+// ---------------------------------------------------------------------------------------------
+// Find in the diagram (Ctrl+F on the canvas, Phase 4c); the editor keeps CodeMirror's search
+// ---------------------------------------------------------------------------------------------
+
+const search: { matches: DiagramMatch[]; index: number } = { matches: [], index: -1 };
+
+function openSearch(): void {
+  if (!drawn) {
+    toast("There is no diagram to search", "error");
+    return;
+  }
+  ui.search.hidden = false;
+  ui.searchInput.focus();
+  ui.searchInput.select();
+  refreshSearch();
+}
+
+function closeSearch(focusCanvas: boolean): void {
+  ui.search.hidden = true;
+  search.matches = [];
+  search.index = -1;
+  paintSearch();
+  if (focusCanvas && !ui.canvas.hidden) ui.canvas.focus();
+}
+
+/** Recomputes the matches (new query or new diagram), keeping the current one when it still matches. */
+function refreshSearch(): void {
+  if (ui.search.hidden) return;
+  const old = search.matches[search.index]?.id;
+  search.matches = searchDiagram(drawn?.diagram.graph, ui.searchInput.value);
+  const keep = search.matches.findIndex((m) => m.id === old);
+  search.index = keep >= 0 ? keep : search.matches.length ? 0 : -1;
+  paintSearch();
+}
+
+function paintSearch(): void {
+  for (const e of ui.stage.querySelectorAll(".qsfc-find, .qsfc-find-cur")) e.classList.remove("qsfc-find", "qsfc-find-cur");
+  ui.searchCount.textContent = matchLabel(search.index, search.matches.length, ui.searchInput.value);
+  ui.search.classList.toggle("none", !!ui.searchInput.value.trim() && search.matches.length === 0);
+  search.matches.forEach((m, i) => stageElement(m.id)?.classList.add(i === search.index ? "qsfc-find-cur" : "qsfc-find"));
+}
+
+/** Shows match `i`: scrolled into view, its text selected in the editor (the search box keeps the focus). */
+function showMatch(i: number): void {
+  search.index = i;
+  paintSearch();
+  const m = search.matches[i];
+  if (!m) return;
+  const target = stageElement(m.id);
+  if (target) scrollIntoCanvas(target);
+  editor.select(m.line, m.col, m.col + m.length, false);
+}
+
+function stepSearch(dir: 1 | -1): void {
+  if (!search.matches.length) return;
+  showMatch(cycleIndex(search.index, search.matches.length, dir));
+}
+
+ui.searchInput.addEventListener("input", () => {
+  search.index = -1;
+  refreshSearch();
+  if (search.matches.length) showMatch(0);
+});
+ui.searchInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") stepSearch(e.shiftKey ? -1 : 1);
+  else if (e.key === "Escape") closeSearch(true);
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
+});
+el("search-next").addEventListener("click", () => stepSearch(1));
+el("search-prev").addEventListener("click", () => stepSearch(-1));
+el("search-close").addEventListener("click", () => closeSearch(true));
+
+// ---------------------------------------------------------------------------------------------
+// Snippets (Phase 4c): Insert → Snippet; autocomplete offers them too (app/editor.ts)
+// ---------------------------------------------------------------------------------------------
+
+const SNIPPET_PLACE =
+  "A snippet goes where a step can start: put the cursor on an empty line after a transition, after the last step, or in an empty chart";
+
+function fillSnippetMenu(): void {
+  const items = SNIPPETS.map((def) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "menuitem");
+    b.tabIndex = -1;
+    b.dataset["cmd"] = "snippet";
+    b.dataset["value"] = def.id;
+    b.title = def.detail;
+    b.append(cell("span", def.label), cell("kbd", ""));
+    return b;
+  });
+  el("snippet-items").replaceChildren(...items);
+}
+
+async function insertSnippetCmd(id: string): Promise<void> {
+  const def = findSnippet(id);
+  if (!def) return;
+  if (watching) {
+    toast("The editor is read-only while watching a file", "error");
+    return;
+  }
+  if (!doc) await newChart("");
+  if (!doc) return;
+  const lines = editor.lines();
+  let line = Math.min(cursor.line, lines.length);
+  let at = line - 1;
+  const blank = (lines[at] ?? "").trim() === "";
+  if (!blank) {
+    // A line with text: the snippet goes on a new line below it.
+    lines.splice(line, 0, "");
+    at = line;
+  }
+  const ctx = snippetContext(lines, at);
+  if (!ctx) {
+    toast(SNIPPET_PLACE, "error");
+    editor.focus();
+    return;
+  }
+  const template = snippetTemplate(def, ctx, usedNames(lines, at));
+  if (!blank) {
+    const l = editor.view.state.doc.line(line);
+    editor.view.dispatch({ changes: { from: l.to, insert: "\n" } });
+    line++;
+  }
+  editor.insertSnippet(template, line);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Print / PDF view (Phase 4c): File → Print… builds a print-only layout, then window.print()
+// ---------------------------------------------------------------------------------------------
+
+/** window.print() was called by File → Print (the layout is already built). */
+let printing = false;
+
+function printCmd(): void {
+  flushCompile();
+  if (!doc || !result) {
+    toast("Open a chart first: there is nothing to print", "error");
+    return;
+  }
+  ui.printDlg.returnValue = "";
+  syncPrintGo();
+  ui.printDlg.showModal();
+  el("print-go").focus();
+}
+
+const printBox = (id: string): HTMLInputElement => el<HTMLInputElement>(id);
+function printChoice(): PrintOptions {
+  return { diagram: printBox("print-diagram").checked, tags: printBox("print-tags").checked, code: printBox("print-code").checked };
+}
+function syncPrintGo(): void {
+  const c = printChoice();
+  const go = el<HTMLButtonElement>("print-go");
+  go.disabled = !c.diagram && !c.tags && !c.code;
+  go.title = go.disabled ? "Tick at least one part" : "";
+}
+for (const id of ["print-diagram", "print-tags", "print-code"]) printBox(id).addEventListener("change", syncPrintGo);
+
+ui.printDlg.addEventListener("close", () => {
+  if (ui.printDlg.returnValue !== "print") return;
+  const choice = printChoice();
+  // After the dialog has left the screen.
+  window.setTimeout(() => {
+    if (!buildPrintView(choice)) return;
+    printing = true;
+    window.print();
+  }, 0);
+});
+
+/** Builds the print-only layout (light colors, whatever the theme). Returns the number of routines. */
+function buildPrintView(include: PrintOptions): number {
+  flushCompile();
+  const r = result;
+  if (!doc || !r) return 0;
+  const model = buildPrintModel({
+    program: r.program,
+    routines: r.routines,
+    tags: r.tags,
+    source: editor.getText(),
+    date: new Date(),
+    include,
+    diagram: (i) => {
+      const routine = r.routines[i];
+      const d = routine && diagramOf(routine);
+      return d && svgOf(d);
+    },
+  });
+  ui.printView.innerHTML = printHtml(model);
+  for (const svg of ui.printView.querySelectorAll("svg")) {
+    svg.removeAttribute("role");
+    svg.setAttribute("aria-hidden", "true");
+  }
+  // Light colors when printing: the diagrams' dark palette follows the root's classes.
+  const root = document.documentElement;
+  root.classList.remove("qsfc-dark");
+  root.classList.add("qsfc-light", "qsfc-printing");
+  return model.routines.length;
+}
+
+function clearPrintView(): void {
+  ui.printView.replaceChildren();
+  document.documentElement.classList.remove("qsfc-printing");
+  applyTheme(view.theme);
+}
+
+// The browser's own Print command (its menu) prints the same layout, everything ticked.
+window.addEventListener("beforeprint", () => {
+  if (!printing && doc && result) buildPrintView(DEFAULT_PRINT);
+});
+window.addEventListener("afterprint", () => {
+  printing = false;
+  clearPrintView();
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1610,9 +2104,11 @@ interface Menu {
   list: HTMLElement;
 }
 
+fillSnippetMenu();
 const menus: Menu[] = [
   { button: el<HTMLButtonElement>("file-btn"), list: el("file-menu") },
   { button: el<HTMLButtonElement>("view-btn"), list: el("view-menu") },
+  { button: el<HTMLButtonElement>("insert-btn"), list: el("insert-menu") },
   { button: el<HTMLButtonElement>("help-btn"), list: el("help-menu") },
 ];
 let openMenu: Menu | undefined;
@@ -1755,6 +2251,15 @@ function runCommand(item: HTMLElement): void {
     case "actions":
       setView({ showActions: !view.showActions });
       break;
+    case "overview":
+      setView({ overview: !view.overview });
+      break;
+    case "print":
+      printCmd();
+      break;
+    case "snippet":
+      void insertSnippetCmd(item.dataset["value"] ?? "");
+      break;
     case "theme":
       setView({ theme: (item.dataset["value"] as Theme | undefined) ?? "system" });
       break;
@@ -1811,11 +2316,19 @@ window.addEventListener(
     const mod = e.ctrlKey || e.metaKey;
     if (!mod || ui.tidy.open) return;
     const k = e.key.toLowerCase();
+    if (ui.printDlg.open) {
+      if (k === "p") e.preventDefault(); // already asking what to print
+      return;
+    }
     let run: (() => void) | undefined;
+    // Ctrl+F in the diagram (canvas, tabs, map or the search box) searches the diagram; in the editor, CodeMirror's search.
+    const inDiagram = ui.canvasWrap.contains(document.activeElement);
+    if (!e.altKey && !e.shiftKey && k === "f" && inDiagram && !ui.canvas.hidden) run = () => openSearch();
     if (e.altKey && !e.shiftKey && (k === "n" || e.code === "KeyN")) run = () => void newChart("");
     else if (!e.altKey && !e.shiftKey && k === "o") run = () => void openFile();
     else if (!e.altKey && k === "s") run = () => void save(e.shiftKey);
     else if (!e.altKey && !e.shiftKey && k === "e") run = () => runCommand(ui.exportBtn);
+    else if (!e.altKey && !e.shiftKey && k === "p") run = () => printCmd();
     if (!run) return;
     e.preventDefault();
     e.stopPropagation();
@@ -1827,8 +2340,11 @@ window.addEventListener(
 
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  const inEditor = ui.editorHost.contains(e.target as Node);
   if (openMenu) hideMenu(true);
-  else if (selectedProblem && !ui.editorHost.contains(e.target as Node)) selectProblem(undefined);
+  else if (!ui.search.hidden && ui.canvasWrap.contains(e.target as Node)) closeSearch(true);
+  else if (selectedTag && !inEditor) setSelectedTag(undefined);
+  else if (selectedProblem && !inEditor) selectProblem(undefined);
 });
 
 // ---------------------------------------------------------------------------------------------

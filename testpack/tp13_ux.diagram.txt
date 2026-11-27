@@ -1,0 +1,19 @@
+╔═══════════╗ ◄ from T4
+║   idle    ║─[ count := 0; ]
+╚═════╤═════╝
+      ┼ start_btn
+┌─────┴─────┐ ◄ from T6
+│ fill  10s │─[ valve [:=] 1; ]
+└─────┬─────┘
+      ┼ fill.done OR (after 3s AND level_ok)
+┌─────┴─────┐
+│   check   │─[ IF check.first THEN   // .first = .FS … ]
+└─────┬─────┘
+      ├──────────────────────────────────┐
+      ┼ check.time > 2000 AND level_ok   ┼ after 5s AND NOT level_ok
+┌─────┴─────┐                        ┌───┴───┐
+│   done    │                        │ retry │
+└─────┬─────┘                        └───┬───┘
+      ┼ after 2s                         ┼ retry.active
+      → idle (T4)                        → fill (T6)
+

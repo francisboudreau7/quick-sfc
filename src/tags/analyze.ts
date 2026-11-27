@@ -5,14 +5,18 @@
 import {
   type ActionLine,
   type ActionNode,
+  type AfterTerm,
   type Chart,
+  type IoEntry,
   type ProgramNode,
   type SourceText,
   type StepNode,
   type Sugar,
   type TagDecl,
   type TagType,
+  isBitAddress,
   key,
+  READABLE_MEMBERS,
   walk,
 } from "../model/ast.js";
 import { type Diagnostic, type Span, error, sortDiagnostics, warning } from "../model/diagnostics.js";
@@ -23,9 +27,16 @@ const STEP_MEMBERS = [
   "X", "FS", "SA", "LS", "DN", "OV", "T", "PRE", "TMax", "Count", "Reset", "PauseTimer",
   "AlarmEn", "AlarmLow", "AlarmHigh", "LimitLow", "LimitHigh", "Status",
 ];
-const MEMBER_BY_KEY = new Map(STEP_MEMBERS.map((m) => [m.toLowerCase(), m]));
+/** Readable members (SPEC §7.3, Phase 4c): `.active` `.done` `.time` `.first`. */
+const READABLE = Object.keys(READABLE_MEMBERS);
+const MEMBER_BY_KEY = new Map<string, string>([
+  ...STEP_MEMBERS.map((m): [string, string] => [m.toLowerCase(), m]),
+  ...Object.entries(READABLE_MEMBERS),
+]);
 
-const QSFC_KEYWORDS = new Set(["program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end"]);
+const QSFC_KEYWORDS = new Set([
+  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io",
+]);
 const RESERVED_RE = /^(step|tran|action)_\d+$/i;
 const MAX_TAG_NAME = 40;
 
@@ -47,6 +58,8 @@ interface Rec {
   uses: Use[];
   decls: TagDecl[];
   ev: Ev[];
+  /** The `io` line mapping this tag (SPEC §7.6), the first one when it is mapped twice (E415). */
+  io?: IoEntry;
 }
 interface Ref {
   key: string;
@@ -191,6 +204,36 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
         );
       }
     }
+  }
+
+  // ---- io block (SPEC §7.6) ---------------------------------------------------------------
+  // An I/O point makes its tag exist (an alias tag). A bit address is BOOL evidence.
+  const ioByKey = new Map<string, IoEntry>();
+  for (const e of program.io ?? []) {
+    const k = key(e.name.text);
+    const prev = ioByKey.get(k);
+    if (prev) {
+      diags.push(
+        error("E415", e.name.span, `\`${e.name.text}\` is already mapped to \`${prev.address.text}\` (line ${prev.span.line})`,
+          "keep one `io` line per tag"),
+      );
+      continue;
+    }
+    ioByKey.set(k, e);
+    const r = getRec(k);
+    r.io = e;
+    if (!isBitAddress(e.address.text)) continue;
+    const declared = declType.get(k);
+    if (declared && declared !== "BOOL") {
+      const d = r.decls.find((x) => x.type === declared);
+      diags.push(
+        error("E414", e.address.span,
+          `\`${e.name.text}\` is mapped to the bit \`${e.address.text}\` but declared as ${declared} (line ${d?.name.span.line ?? "?"})`,
+          "a bit is a BOOL: remove the type from the `tag` line, or map a word address"),
+      );
+      continue;
+    }
+    r.ev.push({ type: "BOOL", weak: false, span: e.address.span, tag: e.name.text });
   }
 
   // ---- evidence ---------------------------------------------------------------------------
@@ -481,13 +524,13 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
         } else {
           const canon = MEMBER_BY_KEY.get(first.tok.t.toLowerCase());
           if (first.kind === "bit" || !canon) {
-            const sug = first.kind === "member" ? closest(first.tok.t, STEP_MEMBERS, 2) : undefined;
+            const sug = first.kind === "member" ? closest(first.tok.t, [...STEP_MEMBERS, ...READABLE], 2) : undefined;
             diags.push(
               error(
                 "E401",
                 sp,
                 `\`${idTok.t}.${first.tok.t}\`: steps have no member \`${first.tok.t}\`${sug ? ` (did you mean \`${sug}\`?)` : ""}`,
-                sug ? undefined : `valid members: ${STEP_MEMBERS.join(", ")}`,
+                sug ? undefined : `valid members: ${STEP_MEMBERS.join(", ")}, and ${READABLE.join(", ")}`,
               ),
             );
           } else if (canon === "DN" && !(step.presetMs !== undefined)) {
@@ -640,12 +683,33 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
    * `label`: what the W402 message names, e.g. "the action of `fill`".
    * `sugar`: sugar lines of the unit (by line number), analyzed as their expansion.
    */
-  const processUnit = (lines: LineIn[], isCond: boolean, label = "the action", sugar: ReadonlyMap<number, Sugar> = new Map()): void => {
-    const sc = scan(sugar.size ? lines.map((l) => (sugar.has(l.line) ? { ...l, text: "" } : l)) : lines);
+  /**
+   * `after`: the `after 5s` terms of a condition (SPEC §4.4), analyzed as a Boolean operand
+   * (they become `step.T >= ms` on export and hold no tag).
+   */
+  const processUnit = (
+    lines: LineIn[],
+    isCond: boolean,
+    label = "the action",
+    sugar: ReadonlyMap<number, Sugar> = new Map(),
+    after: readonly AfterTerm[] = [],
+  ): void => {
+    let input = sugar.size ? lines.map((l) => (sugar.has(l.line) ? { ...l, text: "" } : l)) : lines;
+    if (after.length && input[0]) {
+      let text = input[0].text;
+      for (const a of after) text = text.slice(0, a.start) + " ".repeat(a.end - a.start) + text.slice(a.end);
+      input = [{ ...input[0], text }, ...input.slice(1)];
+    }
+    const sc = scan(input);
     if (sugar.size) {
       const synth = [...sugar].flatMap(([line, sg]) => sugarTokens(line, sg));
       // a sugar line has no tokens of its own: a stable sort by line puts its tokens in place
       sc.toks = [...sc.toks, ...synth].sort((a, b) => a.line - b.line);
+    }
+    if (after.length && input[0]) {
+      const { line, col } = input[0];
+      const synth = after.map((a): Tok => ({ k: "kw", t: "TRUE", u: "TRUE", line, col: col + a.start, end: col + a.end }));
+      sc.toks = [...sc.toks, ...synth].sort((a, b) => a.line - b.line || a.col - b.col);
     }
     const toks = sc.toks;
     const mkParser = (ts: Tok[]): Parser => new Parser(ts, sc);
@@ -790,7 +854,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       if (el.kind === "step") {
         for (const a of el.actions) processAction(el, a);
       } else if (el.kind === "transition") {
-        if (el.condition.text.length) processUnit([toLines(el.condition)], true);
+        if (el.condition.text.length) processUnit([toLines(el.condition)], true, undefined, undefined, el.after);
       }
     }
   }
@@ -858,6 +922,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
   const occurrences = (r: Rec): { name: string; span: Span; decl: boolean }[] =>
     [
       ...r.decls.map((d) => ({ name: d.name.text, span: d.name.span, decl: true })),
+      ...(r.io ? [{ name: r.io.name.text, span: r.io.name.span, decl: true }] : []),
       ...r.uses.map((u) => ({ name: u.name, span: u.span, decl: false })),
     ].sort((a, b) => cmpSpan(a.span, b.span));
 
@@ -865,8 +930,8 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     r.uses.sort((a, b) => cmpSpan(a.span, b.span));
     const occ = occurrences(r);
     const firstDecl = r.decls[0];
-    const canonical = firstDecl ? firstDecl.name.text : (r.uses[0]?.name ?? r.key);
-    const firstOcc = firstDecl ? { span: firstDecl.name.span } : occ[0];
+    const canonical = firstDecl ? firstDecl.name.text : (r.io?.name.text ?? r.uses[0]?.name ?? r.key);
+    const firstOcc = firstDecl ? { span: firstDecl.name.span } : r.io ? { span: r.io.name.span } : occ[0];
 
     if (firstOcc && (RESERVED_RE.test(canonical) || QSFC_KEYWORDS.has(r.key))) {
       flagged.add(r.key);
@@ -886,7 +951,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     // Studio naming rules (SPEC §3.4) for tags that only appear in ST; declared names are
     // already checked by the parser. Only length and underscores can fail here: the ST
     // scanner guarantees the character set.
-    if (!firstDecl && firstOcc) {
+    if (!firstDecl && !r.io && firstOcc) {
       if (canonical.length > MAX_TAG_NAME) {
         flagged.add(r.key);
         diags.push(error("E102", firstOcc.span, `name \`${canonical}\` is ${canonical.length} characters long; the maximum is ${MAX_TAG_NAME}`));
@@ -903,13 +968,14 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       seen.add(o.name);
       diags.push(warning("W401", o.span, `\`${canonical}\` and \`${o.name}\` are the same tag; the first spelling is used`, `write it as \`${canonical}\``));
     }
-    if (!r.uses.length) {
+    if (!r.uses.length && !r.io) {
       if (r.decls.length && !flagged.has(r.key)) {
         diags.push(warning("W404", (firstDecl as TagDecl).name.span, `tag \`${canonical}\` is declared but never used`));
       }
       continue;
     }
-    const description = r.decls.find((d) => d.description !== undefined)?.description;
+    // an io description wins over a `tag` line's (SPEC §7.6)
+    const description = r.io?.description ?? r.decls.find((d) => d.description !== undefined)?.description;
     const info: TagInfo = {
       name: canonical,
       type: typeOf.get(r.key) ?? "BOOL",
@@ -917,6 +983,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       uses: r.uses.map((u) => u.span),
     };
     if (description !== undefined) info.description = description;
+    if (r.io) info.address = r.io.address.text;
     infos.push(info);
   }
 
@@ -926,12 +993,12 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
   // pairs like valve_a / valve_b that are both used once.
   const allNames = sortedRecs.map((r) => ({
     key: r.key,
-    name: r.decls[0]?.name.text ?? r.uses[0]?.name ?? r.key,
+    name: r.decls[0]?.name.text ?? r.io?.name.text ?? r.uses[0]?.name ?? r.key,
     uses: r.uses.length,
-    established: r.uses.length >= 2 || r.decls.length > 0,
+    established: r.uses.length >= 2 || r.decls.length > 0 || r.io !== undefined,
   }));
   for (const r of sortedRecs) {
-    if (r.uses.length !== 1 || r.decls.length || flagged.has(r.key)) continue;
+    if (r.uses.length !== 1 || r.decls.length || r.io || flagged.has(r.key)) continue;
     const mine = allNames.find((n) => n.key === r.key) as { name: string };
     let best: { name: string; d: number; uses: number } | undefined;
     for (const o of allNames) {

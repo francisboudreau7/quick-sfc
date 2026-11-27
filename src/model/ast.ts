@@ -86,6 +86,23 @@ export interface StepNode {
   span: Span;
 }
 
+/**
+ * Readable step members (SPEC §7.3, Phase 4c): `fill.active` = `fill.X`, `.done` = `.DN`,
+ * `.time` = `.T`, `.first` = `.FS`. Keys are lower-case; the export writes the Studio member.
+ */
+export const READABLE_MEMBERS: Readonly<Record<string, string>> = { active: "X", done: "DN", time: "T", first: "FS" };
+
+/** `after 5s` in a condition (SPEC §4.4, Phase 4c): the step above has been active that long. */
+export interface AfterTerm {
+  /** The duration in ms; absent when the duration is invalid (E104/E105 reported). */
+  ms?: number;
+  /** `after 5s` in the file. */
+  span: Span;
+  /** Offsets of `after 5s` in the condition text (`condition.text`), end exclusive. */
+  start: number;
+  end: number;
+}
+
 export interface TransitionNode {
   kind: "transition";
   /**
@@ -99,6 +116,8 @@ export interface TransitionNode {
   condition: SourceText;
   /** Target of `-> target`, if any. */
   jump?: Name;
+  /** `after 5s` terms of the condition, in text order (absent when there are none). */
+  after?: AfterTerm[];
   span: Span;
 }
 
@@ -157,10 +176,30 @@ export interface StRoutineNode {
 
 export type RoutineNode = SfcRoutineNode | StRoutineNode;
 
+/** One line of an `io … end` block (SPEC §7.6): `name  address  ["description"]`. */
+export interface IoEntry {
+  name: Name;
+  /** The Logix I/O path as written (`Local:1:I.Data.0`). */
+  address: SourceText;
+  description?: string;
+  span: Span;
+}
+
+/** A bit address (`Local:1:I.Data.0`) ends with `.digits`: the tag is BOOL (SPEC §7.6). */
+export function isBitAddress(address: string): boolean {
+  return /\.\d+$/.test(address);
+}
+
 /** A whole file: one Program (SPEC §4.5). */
 export interface ProgramNode {
   /** `program name` line. */
   header?: Name;
+  /** `program name "Title"`: the Program description and the print title (SPEC §4.5). */
+  title?: string;
+  /** `course "…"` and `author "…"` header lines: for printing only, not exported (SPEC §4.5). */
+  meta?: { course?: string; author?: string };
+  /** Every line of every `io … end` block, in file order (SPEC §7.6); absent when there is none. */
+  io?: IoEntry[];
   /** File order. The first one is the main routine. */
   routines: RoutineNode[];
   /** Every `tag` line of the file (also copied into each chart's `tagDecls`). */

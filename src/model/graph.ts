@@ -50,8 +50,10 @@ export interface GTransition {
   index: number;
   name: string;
   auto: boolean;
-  /** Raw condition (not rewritten). */
+  /** Raw condition (not rewritten; `after 5s` kept as written). */
   condition: string;
+  /** The step an `after` term of the condition refers to (SPEC §4.4); set when the condition has one. */
+  afterStep?: string;
   node: TransitionNode;
 }
 
@@ -102,6 +104,8 @@ export interface TagInfo {
   /** true when the type comes from a `tag` line. */
   declared: boolean;
   description?: string;
+  /** `io` block (SPEC §7.6): the I/O address; the tag is exported as an alias tag. */
+  address?: string;
   /** Every place the tag is used in ST (not the declaration). */
   uses: Span[];
 }

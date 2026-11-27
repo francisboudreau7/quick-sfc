@@ -20,6 +20,11 @@ export type L5XRoutine =
 export interface L5XProgramOptions extends Omit<L5XOptions, "routineName"> {
   /** Default: the first routine. */
   mainRoutineName?: string;
+  /**
+   * `program name "Title"` (SPEC §4.5): the Program's `<Description>`, right after the `<Program>`
+   * start tag. UNVERIFIED in Studio (test pack tp13); same shape as a routine description.
+   */
+  programDescription?: string;
 }
 
 export interface L5XOptions {
@@ -200,8 +205,39 @@ function stLines(lines: string[]): string[] {
 
 const operand = (prefix: string, n: number) => `${prefix}_${pad(n, 3)}`;
 
+/**
+ * An I/O point of the `io` block (SPEC §7.6): an alias tag, no DataType and no Data. The shape
+ * `TagType="Alias" Radix="Decimal" AliasFor=... ExternalAccess="Read/Write"` is VERIFIED for bit
+ * aliases (L5X_GUIDE §4, reference export). UNVERIFIED: the `<Description>` inside an alias tag,
+ * and leaving out `Radix` for a word address (the alias takes the target's type).
+ */
+function aliasTag(name: string, address: string, desc: string | undefined): TagLines {
+  if (!/^[A-Za-z_][\w:.\[\]]*$/.test(address)) throw new Error(`L5X: invalid I/O address ${JSON.stringify(address)}`);
+  const radix = /\.\d+$/.test(address) ? ' Radix="Decimal"' : "";
+  const head = `<Tag Name="${name}" TagType="Alias"${radix} AliasFor="${address}" ExternalAccess="Read/Write"`;
+  return { name, lines: desc ? [`${head}>`, ...description(desc), "</Tag>"] : [`${head}/>`] };
+}
+
+/**
+ * Modules the alias tags point to, as `<Module Use="Reference">` context entries (L5X_GUIDE §3:
+ * every module an alias refers to is listed, `Local` included). Only the first part of each
+ * address is known (`Local`, `Rack1`); the module at a slot (`Local:1`) has a name of its own in
+ * the project, which qSFC can't know. UNVERIFIED (test pack tp13).
+ */
+function moduleLines(tags: TagInfo[]): string[] {
+  const names = new Map<string, string>();
+  for (const t of tags) {
+    const m = t.address?.split(":")[0];
+    if (m && !names.has(m.toLowerCase())) names.set(m.toLowerCase(), m);
+  }
+  return [...names.values()]
+    .sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0))
+    .flatMap((m) => [`<Module Use="Reference" Name="${m}">`, "</Module>"]);
+}
+
 function userTag(t: TagInfo): TagLines {
   assertName(t.name, "tag");
+  if (t.address !== undefined) return aliasTag(t.name, t.address, t.description);
   switch (t.type) {
     case "BOOL":
       return boolTag(t.name, t.description);
@@ -397,11 +433,13 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
     '<DataTypes Use="Context">',
     "</DataTypes>",
     '<Modules Use="Context">',
+    ...moduleLines(tags),
     "</Modules>",
     '<Tags Use="Context">',
     "</Tags>",
     '<Programs Use="Context">',
     `<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="${main}" Disabled="false" UseAsFolder="false">`,
+    ...description(options.programDescription),
     "<Tags>",
     ...tagLines.flatMap((t) => t.lines),
     "</Tags>",

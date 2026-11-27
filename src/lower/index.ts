@@ -16,7 +16,7 @@
 import type { BranchNode, Chart, Element, Sequence, StepNode, TransitionNode } from "../model/ast.js";
 import { actionLineText, allSteps, allTransitions, key, walk } from "../model/ast.js";
 import type { GAction, GBranch, GLink, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
-import { collectInfo, continuingLegs, stepsByKey } from "../validate/flow.js";
+import { collectInfo, continuingLegs, stepBefore, stepsByKey } from "../validate/flow.js";
 
 type Source =
   | { kind: "transition"; node: TransitionNode }
@@ -94,6 +94,12 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
 
   const info = collectInfo(chart);
   const byKey = stepsByKey(chart);
+  // `after 5s` refers to the step before the transition (SPEC §4.4); expanded at export
+  for (const g of transitions) {
+    if (!g.node.after?.length) continue;
+    const s = stepBefore(g.node, info);
+    if (s && s !== "parallel") g.afterStep = s.name.text;
+  }
 
   // ---- incoming paths per step ---------------------------------------------------
   const jumpsTo = new Map<StepNode, TransitionNode[]>();

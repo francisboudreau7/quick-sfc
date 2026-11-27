@@ -62,3 +62,12 @@ describe("small formatting", () => {
     expect(chartCounts(undefined)).toBeUndefined();
   });
 });
+
+describe("sortTags by I/O address (Phase 4c)", () => {
+  const t = (name: string, address?: string): TagInfo => ({ name, type: "BOOL", declared: false, uses: [], ...(address ? { address } : {}) });
+  const list = [t("a"), t("b", "Local:2:O.Data.3"), t("c", "Local:1:I.Data.10"), t("d", "Local:1:I.Data.2")];
+  it("numeric order, tags without an address last (first when descending)", () => {
+    expect(sortTags(list, { key: "address", dir: "asc" }).map((x) => x.name)).toEqual(["d", "c", "b", "a"]);
+    expect(sortTags(list, { key: "address", dir: "desc" }).map((x) => x.name)).toEqual(["a", "b", "c", "d"]);
+  });
+});

@@ -63,8 +63,10 @@ Each line is one of the following, chosen by its **first word**. Leading spaces 
 | First word | Line kind | Section |
 |---|---|---|
 | `program` | program header | §4.5 |
+| `course`, `author` | header lines (printing only) | §4.5 |
 | `sfc`, `st` | routine header | §4.1, §4.5 |
 | `tag` | tag override | §7.4 |
+| `io` | I/O block, up to its `end` | §7.6 |
 | `init`, `step` | step | §4.2 |
 | `--` | transition | §4.4 |
 | `select`, `parallel` | branch start | §5 |
@@ -87,7 +89,8 @@ Steps, transitions and tags all follow **Studio 5000 tag naming rules**, so that
 - at most **40 characters**
 - no `__` (two underscores in a row), and no `_` at the end
 - **case-insensitive**: `Fill` and `fill` are the same name
-- not a qSFC keyword (`program sfc st call tag init step select parallel end`)
+- not a qSFC keyword (`program sfc st call tag init step select parallel end course author io`)
+  - **Position keywords** (decided 2026-11-27): `after` (before a duration in a condition, §4.4), `on` / `set` / `reset` (sugar lines, §4.3) and the qualifiers `N S R L D P` (qualifier lines, §4.3) are keywords only in those positions. Elsewhere they are ordinary names, so a tag named `after` or `set` still works (`after := 1;`, `-- after AND x`). `after 5s` in a condition always means the time form.
 - not an ST keyword (`AND OR XOR NOT MOD TRUE FALSE IF THEN ELSIF ELSE END_IF CASE OF END_CASE FOR TO BY DO END_FOR WHILE END_WHILE REPEAT UNTIL END_REPEAT EXIT RETURN`)
 - not a generated operand name: `Step_` + digits, `Tran_` + digits, `Action_` + digits (§8.2)
 
@@ -119,6 +122,7 @@ sfc fill_and_check
 ```
 - Optional for the first routine of the file. It starts an SFC routine (§4.5) and sets its **routine name** in the L5X.
 - When the file starts with steps and no header, that first SFC routine is named after the file (invalid characters become `_`, and the result must still be a valid name).
+- Before the first routine, the file can also hold the program header with a title and the `course` / `author` lines (§4.5), `tag` lines (§7.4) and `io` blocks (§7.6).
 
 ### 4.2 Steps [P1]
 ```
@@ -204,11 +208,25 @@ Examples:
 -- TRUE -> idle
 ```
 
+**Time in a condition [Phase 4c].** `after <duration>` means "the step above has been active at least that long":
+```
+step fill
+  on valve
+-- after 5s                  // exported as fill.T >= 5000 (fill's operand, §8.4)
+-- after 5s AND level_ok     // can be combined like any Boolean operand
+```
+- The step is the one right before the transition in the flow. For the first transition of a `select` leg, it is the step before the `select`.
+- After the `end` of a `parallel` block there are several steps before the transition, so `after` is an error there (**E416**); test one leg's step instead (`-- wait_a.time >= 5000`).
+- `after` is a keyword only when a duration follows it (§3.4); the duration follows §3.5 (E104, E105).
+- On export each term becomes `step.T >= ms`, in parentheses when an operator other than `AND`, `OR`, `XOR`, `&` or a bracket is next to it (`NOT after 5s` → `NOT (Step_001.T >= 5000)`). The diagram shows the condition as written.
+
 ### 4.5 Program, routines and calls [P3.5]
 A file is one **Program** made of one or more routines. They share the program's tags.
 
 ```
-program tank                 // optional: the Program name
+program tank "Tank filling"  // optional: the Program name, and an optional title
+course "GEI-243"             // optional header lines, for printing only
+author "Francis B."
 
 st main                      // ST routine; the first routine is the main routine
   call fill_seq;             // runs the SFC routine fill_seq (exported as JSR(fill_seq,0);)
@@ -237,6 +255,8 @@ st alarms
 
 **Program header**
 - `program name` sets the Program name. It is optional and must come before the first routine (comments and blank lines may precede it). Without it, the Program takes the main routine's name (CLI `--program` overrides both).
+- **Title [Phase 4c].** `program name "Title"`: the optional string is the Program's **description** in Studio (§8.2) and the title of the printed page.
+- **Header lines [Phase 4c].** `course "…"` and `author "…"` are optional, each at most once, before the first routine (like `program`; E210 otherwise), in any order. They are only for printing (the title block, with the date at print time) and are **not exported** to the L5X. The text must be in quotes (E107).
 
 **Calls**
 - `call name;` runs routine `name` once each time it is executed. It is a statement, so it belongs in an action or an ST routine, not in a condition (E602). It is exported as Studio's `JSR(name,0);`.
@@ -423,9 +443,20 @@ Each tag gets one type, from how it is used anywhere in the file:
 - `DN`: the step timer reached the preset
 - `T`: time the step has been active, in ms
 
+**Readable members [Phase 4c].** Four members have a readable name too; both spellings are accepted anywhere a step member is (conditions, actions, ST routines), case-insensitive:
+
+| Readable | Studio | Meaning |
+|---|---|---|
+| `fill.active` | `fill.X` | the step is active |
+| `fill.done` | `fill.DN` | the step timer reached the preset |
+| `fill.time` | `fill.T` | time active, in ms |
+| `fill.first` | `fill.FS` | first scan of the step |
+
+The export writes the Studio member (`fill.done` → `Step_001.DN`, §8.4).
+
 Rules:
-- An unknown member gives E401. A step name used alone (`fill`) gives E400 with the hint "use `fill.X`".
-- `.DN` on a step without a preset gives warning W302: the timer is done immediately.
+- An unknown member gives E401 (its suggestion includes the readable names). A step name used alone (`fill`) gives E400 with the hint "use `fill.X`".
+- `.DN` (or `.done`) on a step without a preset gives warning W302: the timer is done immediately.
 
 ### 7.4 Tag overrides (optional) [P1]
 ```
@@ -443,7 +474,24 @@ tag tmr : TIMER
 ```
 
 ### 7.5 Live tag list (editor, Phase 3)
-The tag panel and the autocomplete use the same data: every tag with its type, where the type came from (inferred or declared), its description, and the lines where it is used. A tag used **once** whose name is very close to an established tag (one used at least twice, or declared) gets W400, which suggests that name. A tag used once with no such neighbour gets no warning, because in a draft most outputs are written only once.
+The tag panel and the autocomplete use the same data: every tag with its type, where the type came from (inferred or declared), its description, its I/O address (§7.6), and the lines where it is used. A tag used **once** whose name is very close to an established tag (one used at least twice, declared, or mapped in an `io` block) gets W400, which suggests that name. A tag used once with no such neighbour gets no warning, because in a draft most outputs are written only once.
+
+### 7.6 I/O mapping (`io` block) [Phase 4c]
+```
+io
+  start_btn   Local:1:I.Data.0  "Start button"
+  valve       Local:2:O.Data.3
+  level       Local:3:I.Ch0Data "Tank level"
+end
+```
+- An `io` line (alone, a comment may follow) starts the block and `end` closes it. Each line inside is `name  address  ["description"]`; blank and `//` comment lines are allowed.
+- Blocks can appear anywhere a `tag` line can (the top of the file is recommended), several times; all of them are program-wide. A block that is missing its `end` is E206; it ends at the next structure line.
+- **Every I/O point is a tag**, exported as an **alias tag** of that address (§8.2), even when the code doesn't use it (an I/O list is often a full wiring list): no W404.
+- `address` is a Logix I/O path, checked loosely: a module part with at least one `:` (`Local:1:I`, `Rack1:I`), then `.member`, `.bit` or `[index]` parts, e.g. `Local:1:I.Data.0`, `Local:2:O.Data.3`, `Local:3:I.Ch0Data`, `Rack1:I.Data[2].5`. Anything else (or no address) is **E413**.
+- **Type.** An address ending in `.digits` is a bit: the tag is BOOL (strong evidence, §7.2; a numeric use is E404). Any other address gives no type clue: the tag keeps its inferred or declared type, shown in the tag table, but the alias in the L5X has no data type (it takes the target's).
+- **With a `tag` line.** A name can also have a `tag` line (for a description, or a type for the tag table). For a bit address the type must be BOOL, otherwise **E414**; for a word address any type is accepted. The `io` description wins over the `tag` line's.
+- The same name twice in `io` lines (in one block or two) is **E415**. The name follows §3.4 and shares the one namespace (a step and an I/O point can't have the same name: E410).
+- **In Studio,** the module at the address must exist in the project (an alias to a missing module is an unresolved reference at import). Adjust the addresses to your rack.
 
 ---
 
@@ -470,6 +518,8 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 | automatic convergence (§6.4) | `<Branch BranchType="Selection" BranchFlow="Converge">` |
 | links | `<DirectedLink>` following the verified patterns (L5X_GUIDE §6.3). A jump wire that the app's diagram (default view) draws as a cross-reference is written `Show="false"`: Studio then hides the wire and shows connector labels at both ends (verified with the user's tp05 export, 2026-11-26). The app draws such a hidden wire as a dashed arrow under the transition (labelled with the target) and a dashed arrow into the target (labelled with the transition and its condition) |
 | user tags | program-scope tags of the inferred or declared type |
+| `io` point (§7.6) | alias tag, no `DataType`, no `Data`: `<Tag Name="start_btn" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.0" ExternalAccess="Read/Write"/>` (shape verified for bit aliases, L5X_GUIDE §4). With a description: `>` + `<Description>` (CDATA) + `</Tag>`. A word address (not ending in `.digits`) has no `Radix`. Each module named by an address (`Local`, `Rack1`: the part before the first `:`) is listed once in the context `<Modules>` as `<Module Use="Reference" Name="Local">` + `</Module>`; without `io` points the `<Modules>` context stays empty. **[Verify: tp13]** the description inside an alias, the word alias without Radix, and the module references (the module at a slot, e.g. `Discrete_IO` at `Local:1`, has its own name in the project, which qSFC can't know) |
+| `program name "Title"` (§4.5) | the Program's `<Description>` (CDATA), right after the `<Program ...>` start tag, before `<Tags>`. **[Verify: tp13]** (same shape as a verified routine description) |
 | X/Y | computed by the layout engine, the same one that draws the diagram in the app |
 
 IDs are numbered in the order the reference export uses: each step followed by its actions, then the transitions, then each branch followed by its legs, then the links.
@@ -485,7 +535,9 @@ Following Q7, operands keep Studio's default names. The qSFC name is kept in the
 - **[Verify]** The reference export has no element descriptions, so how Studio displays a tag description beside its step must be checked in the test pack.
 
 ### 8.4 Step-name rewrite
-In conditions and actions, every `stepname.member` is rewritten to its operand (`fill.DN` becomes `Step_001.DN`). The rewrite works on identifiers (`refill.DN` is untouched) and skips strings and comments.
+In conditions and actions, every `stepname.member` is rewritten to its operand (`fill.DN` becomes `Step_001.DN`). The rewrite works on identifiers (`refill.DN` is untouched) and skips strings and comments. In the same pass a readable member (§7.3) becomes Studio's: `fill.done` → `Step_001.DN`, `fill.active` → `Step_001.X`, `fill.time` → `Step_001.T`, `fill.first` → `Step_001.FS` (other members keep their spelling). This applies to ST routines too.
+
+Before it, each `after 5s` of a condition (§4.4) is expanded to `step.T >= 5000` with the step before the transition, so `-- after 5s AND ok` below `step fill` exports as `Step_001.T >= 5000 AND ok`.
 
 `TRUE` and `FALSE` are rewritten to `1` and `0`: Studio 5000 ST has no Boolean keywords (found in the tp02 import, 2026-11-26). qSFC keeps accepting `TRUE`/`FALSE` (IEC 61131-3), so `-- TRUE -> idle` exports as the condition `1`. Nothing else in the ST is changed.
 
@@ -503,6 +555,7 @@ Beyond the language rules, the exporter refuses to write a file when:
 - a selection convergence with legs coming from jumps (§6.4)
 - a program and its SFC routine having the same name (§8.1)
 - several routines in one program, an ST routine, `JSR(name,0);` in ST (from an ST routine and from an SFC action), and operands continuing across two SFC routines (§4.5)
+- alias tags with descriptions, the module references and the Program description (§8.2, test pack tp13)
 
 ### 8.6 Tidy (Phase 4a)
 `qsfc tidy in.L5X [-o out.L5X]` (default `in_tidy.L5X`) re-lays out every SFC routine of an L5X exported from Studio 5000 (program, routine or controller export) with the qSFC layout engine.
@@ -539,7 +592,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E104 | `5` has no unit: write `5s` or `5ms` |
 | E105 | duration `30d`: unknown unit (use ms, s, m, h) / too long (max about 24.8 days) |
 | E106 | string not closed: add `"` |
-| E107 | unexpected text `extra` after the step's duration/description |
+| E107 | unexpected text `extra` after the step's duration/description / `course` needs a text in quotes: `course "GEI-243"` |
 | E108 | `select` is a keyword and can't be used as a name |
 | E109 | text can't contain `]]>` (L5X limitation) |
 | E110 | qualifier `SL` is not supported yet (N, S, R, L, D, P are) |
@@ -555,11 +608,11 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E203 | two transitions in a row; add a step between them |
 | E204 | `\|` outside a `select` or `parallel` block |
 | E205 | `end` without a matching `select` or `parallel` |
-| E206 | `select` at line 8 is never closed: add `end` |
+| E206 | `select` at line 8 is never closed: add `end` (also an `io` block, §7.6) |
 | E207 | a branch needs at least 2 legs (separate them with `\|`) |
 | E208 | empty leg between `\|` and `end` |
 | E209 | this action line has no step above it (it follows a transition) |
-| E210 | `program` must come before the first routine, and appear only once |
+| E210 | `program` must come before the first routine, and appear only once (also `course` and `author`, §4.5) |
 | E211 | `select` must follow a step |
 | E212 | each `select` leg must start with a transition (`-- condition`) |
 | E213 | each `select` leg must end with a transition; leg 2 ends with step `reject` |
@@ -594,7 +647,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | Code | Message (example) |
 |---|---|
 | E400 | `fill` is a step; use `fill.X` (active) or another member |
-| E401 | `fill.DONE`: steps have no member `DONE` (did you mean `DN`?) |
+| E401 | `fill.DNE`: steps have no member `DNE` (did you mean `DN`?) |
 | E402 | type of `tmr` unknown (it has member `.DN`): add `tag tmr : TIMER` |
 | E403 | `a[3]` needs a declared array tag (not supported yet) |
 | E404 | `level` is used as BOOL (line 4) and as REAL (line 9): add `tag level : REAL` |
@@ -604,6 +657,10 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E408 | tag `count` declared twice with different types |
 | E409 | unknown type `TMR` (Phase 1 types: BOOL, DINT, REAL, TIMER) |
 | E410 | `pack` is both a step and a tag |
+| E413 | `Local1.I.Data.0` is not a valid I/O address / I/O point `start_btn` has no address (§7.6) |
+| E414 | `count` is mapped to the bit `Local:1:I.Data.0` but declared as DINT (line 2) |
+| E415 | `start_btn` is already mapped to `Local:1:I.Data.0` (line 3) |
+| E416 | `after` needs one step before the transition; this transition follows the `end` of a `parallel` block (§4.4) |
 | W400 | `strat_btn` is used only once; did you mean `start_btn`? |
 | W401 | `Valve` and `valve` are the same tag; the first spelling is used |
 | W402 | the action of `fill` doesn't end with `;` |
@@ -637,12 +694,16 @@ The grammar is line-based. The ordering rules (alternation, branch shapes) are c
 
 ```
 file        = { line } ;
-line        = blank | comment | program | header | tag_decl | step | action_line
-            | transition | "select" | "parallel" | "|" | "end" ;
+line        = blank | comment | program | meta | header | tag_decl | io_block | step
+            | action_line | transition | "select" | "parallel" | "|" | "end" ;
 
-program     = "program" NAME ;
+program     = "program" NAME [ STRING ] ;           (* STRING: the title, §4.5 *)
+meta        = ( "course" | "author" ) STRING ;      (* before the first routine, once each *)
 header      = ( "sfc" | "st" ) NAME ;
 tag_decl    = "tag" NAME [ ":" TYPE ] [ STRING ] ;
+io_block    = "io" { io_line | blank | comment } "end" ;
+io_line     = NAME ADDRESS [ STRING ] ;
+ADDRESS     = MODULE { ":" WORD } { "." WORD | "[" digits "]" } ;   (* at least one ":", §7.6 *)
 step        = ( "init" | "step" ) NAME [ DURATION ] [ STRING ] ;
 transition  = "--" [ NAME ":" ] CONDITION [ "->" NAME ] ;
 action_line = qualifier_line | sugar_line | ST_TEXT ;   (* any other line *)
@@ -659,6 +720,8 @@ parallel    = "parallel" leg { "|" leg } "end" ;
 leg         = sequence ;
 
 (* in CONDITION, the name part ends at "->" outside strings, or at "//" *)
+(* in CONDITION, "after" DURATION is a Boolean operand (§4.4); STEP "." MEMBER accepts
+   active | done | time | first besides the Studio members (§7.3) *)
 ```
 
 ---
@@ -715,3 +778,4 @@ These came up while writing the spec and weren't in the Phase 0 questions. I cho
 5. **Transition descriptions are not supported**; only steps take `"..."`. A string after a condition would be confusing next to ST.
 6. **Type inference falls back to BOOL** when there's no clue (§7.2).
 7. **Operands are numbered in file order** (`Step_000` is the first step written, not necessarily the initial step), so exports are stable and testable.
+8. **Phase 4c (2026-11-27).** An `io` point is a tag even when the code never uses it (no W404), and it is always exported as an alias. `io` blocks may appear several times and anywhere a `tag` line can. `after`, `on`, `set`, `reset` and the qualifiers stay usable as tag names outside their positions (§3.4); `course`, `author` and `io` are reserved like the other line keywords.

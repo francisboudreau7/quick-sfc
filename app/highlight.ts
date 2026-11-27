@@ -19,6 +19,7 @@ export type TokKind =
   | "member" // `.DN` after an identifier
   | "func" // identifier followed by `(`
   | "type" // type after `tag name :`
+  | "address" // I/O address on an `io` block line (SPEC §7.6)
   | "op"
   | "punct";
 
@@ -45,11 +46,14 @@ export const TOKEN_STYLE: Readonly<Record<TokKind, string>> = {
   member: "propertyName",
   func: "function.variableName",
   type: "typeName",
+  address: "url",
   op: "operator",
   punct: "punctuation",
 };
 
-export const QSFC_KEYWORDS = ["program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end"] as const;
+export const QSFC_KEYWORDS = [
+  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io",
+] as const;
 
 export const ST_KEYWORDS = new Set([
   "AND", "OR", "XOR", "NOT", "MOD", "TRUE", "FALSE", "IF", "THEN", "ELSIF", "ELSE", "END_IF",
@@ -202,7 +206,19 @@ function conditionEnd(s: string, from: number): number {
   return s.length;
 }
 
-export type LineKind = "blank" | "comment" | "header" | "tag" | "step" | "transition" | "branch" | "bar" | "end" | "action";
+export type LineKind =
+  | "blank"
+  | "comment"
+  | "header"
+  | "meta" // `course "…"`, `author "…"` (SPEC §4.5)
+  | "io" // `io`: starts an I/O block (SPEC §7.6)
+  | "tag"
+  | "step"
+  | "transition"
+  | "branch"
+  | "bar"
+  | "end"
+  | "action";
 
 /** What the line is, from its first word (SPEC §3.2), with the keyword's position. */
 export function lineKind(line: string): { kind: LineKind; start: number; word?: string } {
@@ -219,6 +235,14 @@ export function lineKind(line: string): { kind: LineKind; start: number; word?: 
     case "st":
       // Same rule as the parser: `st main` is a header, `st := 1;` is ST.
       if (isHeaderShape(t.slice(word!.length))) return { kind: "header", start, word };
+      return { kind: "action", start };
+    case "course":
+    case "author":
+      // Same rule as the parser: `course "x"` is a header line, `course := 1;` is ST.
+      if (isHeaderShape(t.slice(word!.length)) || /^\s*"/.test(t.slice(word!.length))) return { kind: "meta", start, word };
+      return { kind: "action", start };
+    case "io":
+      if (isHeaderShape(t.slice(word!.length))) return { kind: "io", start, word };
       return { kind: "action", start };
     case "tag":
       return { kind: "tag", start, word };
@@ -292,10 +316,60 @@ function actionLine(line: string, start: number, out: Token[]): Token[] {
   return tokenizeST(line, start, line.length, out);
 }
 
+/** Line kinds that end an `io` block that has no `end` (the parser reports E206). */
+const IO_BREAKERS: ReadonlySet<LineKind> = new Set(["header", "meta", "io", "tag", "step", "transition", "branch", "bar"]);
+
+/**
+ * Whether the line after `line` is inside an `io … end` block (SPEC §7.6), given whether `line`
+ * itself is. The editor keeps this as the state of its line tokenizer.
+ */
+export function ioStateAfter(line: string, inIo: boolean): boolean {
+  const kind = lineKind(line).kind;
+  if (kind === "io") return true;
+  if (!inIo) return false;
+  return kind !== "end" && !IO_BREAKERS.has(kind);
+}
+
+/** `name  address  ["description"]  [// comment]` inside an `io` block. */
+function ioEntry(line: string, start: number, out: Token[]): Token[] {
+  const cEnd = (() => {
+    const c = commentStart(line, start);
+    return c < 0 ? line.length : c;
+  })();
+  let i = start;
+  let n = 0;
+  while (i < cEnd) {
+    const sp = at(SPACE, line, i);
+    if (sp) {
+      i += sp.length;
+      continue;
+    }
+    if (line[i] === '"') {
+      const e = qString(line, i, cEnd);
+      out.push({ from: i, to: e, kind: "string" });
+      i = e;
+      continue;
+    }
+    let e = i;
+    while (e < cEnd && line[e] !== " " && line[e] !== "\t" && line[e] !== '"') e++;
+    out.push({ from: i, to: e, kind: n === 0 ? "def" : n === 1 ? "address" : "ident" });
+    n++;
+    i = e;
+  }
+  if (cEnd < line.length) out.push({ from: cEnd, to: line.length, kind: "comment" });
+  return out;
+}
+
+export interface LineContext {
+  /** The line is inside an `io … end` block (see `ioStateAfter`). */
+  inIo?: boolean;
+}
+
 /** Tokens of one source line (no line break). Gaps between tokens are plain text. */
-export function tokenizeLine(line: string): Token[] {
+export function tokenizeLine(line: string, ctx: LineContext = {}): Token[] {
   const out: Token[] = [];
   const { kind, start, word } = lineKind(line);
+  if (ctx.inIo && kind === "action") return ioEntry(line, start, out);
   switch (kind) {
     case "blank":
       return out;
@@ -315,7 +389,7 @@ export function tokenizeLine(line: string): Token[] {
   // Structure lines with a keyword.
   const kwEnd = start + word!.length;
   out.push({ from: start, to: kwEnd, kind: "kw" });
-  if (kind === "branch" || kind === "end") {
+  if (kind === "branch" || kind === "end" || kind === "io") {
     rest(line, kwEnd, out);
     return out;
   }
@@ -405,9 +479,9 @@ function transition(line: string, start: number, out: Token[]): void {
   const end = conditionEnd(line, i);
   const arrow = jumpArrow(line, i, end);
   if (arrow < 0) {
-    tokenizeST(line, i, end, out);
+    condition(line, i, end, out);
   } else {
-    tokenizeST(line, i, arrow, out);
+    condition(line, i, arrow, out);
     out.push({ from: arrow, to: arrow + 2, kind: "arrow" });
     let j = arrow + 2;
     while (j < end) {
@@ -428,6 +502,26 @@ function transition(line: string, start: number, out: Token[]): void {
   if (end < line.length) out.push({ from: end, to: line.length, kind: "comment" });
 }
 
+/** `after <duration>` in a condition (SPEC §4.4), as the parser reads it. */
+const AFTER = /(?<![\w.])after([ \t]+)(\d\w*)/gi;
+
+/** ST tokens of a condition, with `after 5s` as a keyword and a duration (SPEC §4.4). */
+function condition(line: string, from: number, to: number, out: Token[]): void {
+  let toks = tokenizeST(line, from, to);
+  for (const m of line.slice(0, to).matchAll(AFTER)) {
+    const kwFrom = m.index!;
+    const kw = toks.find((t) => t.from === kwFrom && t.kind === "ident");
+    if (kwFrom < from || !kw) continue; // before the condition, or inside a string or a comment
+    kw.kind = "kw";
+    const durFrom = kwFrom + 5 + m[1]!.length;
+    const durTo = durFrom + m[2]!.length;
+    const kind: TokKind = at(DURATION, line, durFrom) === m[2] ? "duration" : "number";
+    toks = [...toks.filter((t) => t.to <= durFrom || t.from >= durTo), { from: durFrom, to: durTo, kind }];
+    toks.sort((a, b) => a.from - b.from);
+  }
+  out.push(...toks);
+}
+
 /** The token that contains position `pos` (a cursor sits inside when from < pos <= to). */
 export function tokenBefore(tokens: readonly Token[], pos: number): Token | undefined {
   return tokens.find((t) => t.from < pos && pos <= t.to);
@@ -445,11 +539,13 @@ export function indentAfter(prev: string | undefined, unit = 2): number {
     case "step":
     case "branch":
     case "bar":
+    case "io":
       return width + unit;
     case "header":
       // An ST routine's body is indented like an action; an SFC routine starts at 0.
       return lineKind(prev).word?.toLowerCase() === "st" ? unit : 0;
     case "tag":
+    case "meta":
       return 0;
     case "action":
       // the lines of an action go under its qualifier line (`S`, `L 10s`)
@@ -474,7 +570,7 @@ export function indentStructure(current: string, above: readonly string[], unit 
     for (const l of above) {
       const k = lineKind(l).kind;
       if (k === "end") depth++;
-      else if (k === "branch") {
+      else if (k === "branch" || k === "io") {
         if (depth === 0) return widthOf(l);
         depth--;
       }

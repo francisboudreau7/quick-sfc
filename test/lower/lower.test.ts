@@ -62,8 +62,8 @@ describe("lower: elements", () => {
     ]);
     expect(g.steps[1]!.description).toBe("Fill the tank");
     expect(g.steps[0]!.description).toBeUndefined();
-    expect(g.steps[1]!.action).toEqual(["valve [:=] 1;"]);
-    expect(g.steps[2]!.action).toEqual([]);
+    expect(g.steps[1]!.actions.flatMap((a) => a.lines)).toEqual(["valve [:=] 1;"]);
+    expect(g.steps[2]!.actions).toEqual([]);
     expect(g.transitions.map((t) => [t.id, t.index, t.name, t.auto, t.condition])).toEqual([
       ["t0", 0, "T1", true, "start_btn AND safety_ok"],
       ["t1", 1, "T2", true, "fill.DN"],
@@ -78,7 +78,7 @@ describe("lower: elements", () => {
 
   it("keeps multi-line actions raw", () => {
     const g = build(fixture("linear.qsfc"));
-    expect(g.steps[1]!.action).toEqual(["motor := 1;", "IF level > 80 THEN", "  alarm := 1;", "END_IF;"]);
+    expect(g.steps[1]!.actions.flatMap((a) => a.lines)).toEqual(["motor := 1;", "IF level > 80 THEN", "  alarm := 1;", "END_IF;"]);
   });
 
   it("is deterministic", () => {

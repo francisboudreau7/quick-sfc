@@ -130,3 +130,10 @@ describe("go to definition (F12, Ctrl+click)", () => {
     expect(definitionAt("-- done -> idle", 12, defs)).toEqual({ line: 14, col: 6 });
   });
 });
+
+describe("elementAtLine: several actions (SPEC §4.3)", () => {
+  it("maps qualifier lines and the lines under them to their step", () => {
+    const g = compile("init a\n  x [:=] 1;\n  S\n    y := 1;\n  L 5s\n    z [:=] 1;\n-- go -> a\n").graph!;
+    for (const line of [2, 3, 4, 5, 6]) expect(elementAtLine(g, line), `line ${line}`).toBe(g.steps[0]!.id);
+  });
+});

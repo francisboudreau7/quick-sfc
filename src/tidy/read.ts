@@ -88,7 +88,9 @@ export function readSfc(content: ScanElement): SfcChart | string {
         }
       }
       const lines = actions.map((a) => scanDescendants(a, "Line").map((l) => l.text.replace(/^\r?\n|\r?\n$/g, "")));
-      // every action box shows its lines (at least one), plus a header for each action after the first
+      // every action box shows its lines (at least one), plus a header for each action after the
+      // first: the rule of the export (actionBoxLines, src/compile.ts), where the first action
+      // holds the name comment
       const shown = attr(el, "ShowActions") !== "false";
       const actionLines = shown && lines.length ? lines.reduce((n, l) => n + Math.max(1, l.length), 0) + lines.length - 1 : 0;
       chart.nodes.set(id!, {

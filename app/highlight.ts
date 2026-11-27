@@ -248,6 +248,50 @@ export function headerOf(line: string): { keyword: "program" | "sfc" | "st"; nam
   return { keyword: word!.toLowerCase() as "program" | "sfc" | "st", name };
 }
 
+/** Action qualifiers (SPEC §4.3): supported ones first; P0 P1 SL SD DS give E110 for now. */
+export const QUALIFIERS = ["N", "S", "R", "L", "D", "P", "P0", "P1", "SL", "SD", "DS"] as const;
+const QUALIFIER_SET = new Set<string>(QUALIFIERS);
+/** Same shape as the parser's (src/parse): only the qualifier, a duration, a comment. */
+const QUALIFIER_LINE = /^([A-Za-z]\w*)(?:([ \t]+)(\d\S*))?[ \t]*(\/\/.*)?$/;
+/** Output sugar keywords (SPEC §4.3). */
+export const SUGAR_KEYWORDS = ["on", "set", "reset"] as const;
+/** Same shape as the parser's: keyword, names separated by commas, optional `;`, optional comment. */
+const SUGAR_LINE = /^(on|set|reset)[ \t]+[A-Za-z_]\w*(?:[ \t]*,[ \t]*[A-Za-z_]\w*)*[ \t]*;?[ \t]*(?:\/\/.*)?$/i;
+
+/** A line starting an action (`S`, `L 10s // comment`, SPEC §4.3): the qualifier as written, upper-cased. */
+export function qualifierOf(line: string): string | undefined {
+  const t = line.trimStart();
+  const m = QUALIFIER_LINE.exec(t);
+  return m && QUALIFIER_SET.has(m[1]!.toUpperCase()) ? m[1]!.toUpperCase() : undefined;
+}
+
+/** A sugar line (`on valve, pump`): the keyword, lower-cased. */
+export function sugarOf(line: string): string | undefined {
+  const m = SUGAR_LINE.exec(line.trimStart());
+  return m ? m[1]!.toLowerCase() : undefined;
+}
+
+/** Tokens of an action line: a qualifier line, a sugar line, or ST. */
+function actionLine(line: string, start: number, out: Token[]): Token[] {
+  const t = line.slice(start);
+  const q = QUALIFIER_LINE.exec(t);
+  if (q && QUALIFIER_SET.has(q[1]!.toUpperCase())) {
+    out.push({ from: start, to: start + q[1]!.length, kind: "kw" });
+    if (q[3]) {
+      const from = start + q[1]!.length + q[2]!.length;
+      out.push({ from, to: from + q[3].length, kind: at(DURATION, q[3], 0) === q[3] ? "duration" : "number" });
+    }
+    if (q[4]) out.push({ from: line.length - q[4].length, to: line.length, kind: "comment" });
+    return out;
+  }
+  const verb = sugarOf(t);
+  if (verb) {
+    out.push({ from: start, to: start + verb.length, kind: "kw" });
+    return tokenizeST(line, start + verb.length, line.length, out);
+  }
+  return tokenizeST(line, start, line.length, out);
+}
+
 /** Tokens of one source line (no line break). Gaps between tokens are plain text. */
 export function tokenizeLine(line: string): Token[] {
   const out: Token[] = [];
@@ -259,7 +303,7 @@ export function tokenizeLine(line: string): Token[] {
       out.push({ from: start, to: line.length, kind: "comment" });
       return out;
     case "action":
-      return tokenizeST(line, start, line.length, out);
+      return actionLine(line, start, out);
     case "bar":
       out.push({ from: start, to: start + 1, kind: "kw" });
       rest(line, start + 1, out);
@@ -407,6 +451,9 @@ export function indentAfter(prev: string | undefined, unit = 2): number {
       return lineKind(prev).word?.toLowerCase() === "st" ? unit : 0;
     case "tag":
       return 0;
+    case "action":
+      // the lines of an action go under its qualifier line (`S`, `L 10s`)
+      return qualifierOf(prev) ? width + unit : width;
     default:
       return width;
   }

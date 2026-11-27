@@ -458,6 +458,8 @@ Each phase ends with something usable, and with an **import test pack** sized so
 
 **4b. Several actions per step, with qualifiers** (Q10: N, S, R, L, D, P…), before the round trip: real Studio charts use them, so the round trip would lose them otherwise.
 - Sugar (decided 2026-11-26): **output verbs** `on valve, pump` (N: `valve [:=] 1;`), `set alarm` (S), `reset alarm` (R). Removes the `[:=]` vs `:=` confusion.
+- **Status: built (2026-11-26), not committed.** As in SPEC §4.3: a line holding only `N S R L D P` (+ duration for L/D) starts an action (E110 for P0 P1 SL SD DS, E111 duration missing / not allowed, E112 empty action); `on` / `set` / `reset` sugar in any action (`set a` = `a := 1;`, `reset a` = `a := 0;`, the tags are BOOL); W402 per action; one `<Action>` per action, the name comment in the first one; stacked action rows in both SVG looks and in the ASCII view; highlighting, completion and the cheat sheet. Test pack **tp12_qualifiers**.
+- **Unverified until the tp12 import:** the L5X words `StoredUntilReset` (S), `Reset` (R), `TimeLimited` (L), `TimeDelayed` (D), `Pulse` (P) (only `NonStored` is verified, L5X_GUIDE §6.2); the action time as the `PRE` of the action tag with `PresetUsesExpr="false"`; how Studio links an R action to the stored action it resets (we write the R action with its own operand and body); whether Studio stacks several actions as we space the rows.
 
 **4c. User experience improvements** (small items, decided 2026-11-26):
 - where a tag is used: click a tag in the Tags sidebar to highlight every step and transition that uses it

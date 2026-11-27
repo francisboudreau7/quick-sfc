@@ -9,14 +9,16 @@ import { tokenizeLine, type Token } from "./highlight.js";
 
 /**
  * The `data-id` of the diagram element written on `line` (1-based): a step line or one of
- * its action lines → the step; a transition line → the transition; a `select`/`parallel`
+ * its action lines (qualifier lines too) → the step; a transition line → the transition; a `select`/`parallel`
  * line → its diverge bar; its `end` line → its converge bar.
  */
 export function elementAtLine(graph: Graph | undefined, line: number): string | undefined {
   if (!graph) return undefined;
   for (const s of graph.steps) if (s.node.span.line === line) return s.id;
   for (const t of graph.transitions) if (t.node.span.line === line) return t.id;
-  for (const s of graph.steps) if (s.node.action.some((a) => a.span.line === line)) return s.id;
+  for (const s of graph.steps) {
+    if (s.node.action.some((a) => a.span.line === line) || s.node.actions.some((a) => a.header?.line === line)) return s.id;
+  }
   for (const b of graph.branches) {
     if (!b.node) continue;
     if (b.flow === "diverge" && b.node.span.line === line) return b.id;

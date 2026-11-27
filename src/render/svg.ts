@@ -36,7 +36,7 @@
  */
 import type { GBranch, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
 import type { GridPoint, Layout } from "../layout/index.js";
-import { formatDuration } from "./ascii.js";
+import { formatDuration, qualifierLabel } from "./ascii.js";
 import {
   gapSpan,
   orderLanes,
@@ -277,15 +277,30 @@ interface StepPlan {
   h: number;
   label: Fitted;
   side?: Fitted;
+  /** The step's actions, stacked one under the other (SPEC §4.3). */
   action?: {
-    lines: Fitted[];
-    more: boolean;
-    full: string;
-    operand: string;
+    rows: ActionRow[];
+    /** Width of the qualifier cell (`N`, `L 10s`), the same for every row. */
+    cellW: number;
     w: number;
+    /** Total height of the stack. */
     h: number;
   };
   ext: Extent;
+}
+
+interface ActionRow {
+  /** Qualifier cell text: `N`, `S`, `L 10s`. */
+  label: string;
+  lines: Fitted[];
+  /** The action's lines in full (titles of cut lines). */
+  raw: string[];
+  more: boolean;
+  full: string;
+  operand: string;
+  /** Top of the row, from the top of the stack. */
+  y: number;
+  h: number;
 }
 
 interface TransPlan {
@@ -317,27 +332,37 @@ function planStep(s: GStep, M: Metrics, look: SvgLook, numbers: boolean, showAct
     const sideW = Math.max(sansWidth(side.text, M.labelSize), s.presetMs > 0 ? sansWidth(formatDuration(s.presetMs), M.captionSize) : 0);
     ext.left += 6 + sideW;
   }
-  if (showActions && s.action.length > 0) {
-    const shown = s.action.slice(0, M.maxActionLines).map((l) => fitChars(l.replace(/\s+$/, ""), M.maxCodeChars));
-    const more = s.action.length > M.maxActionLines;
-    const rows = shown.length + (more ? 1 : 0);
-    const codeW = Math.max(...shown.map((l) => monoWidth(l.text, M.codeSize)), more ? monoWidth("…", M.codeSize) : 0);
-    // Studio's action operand: the L5X writer (default nameComments) gives every step an action.
-    const op = operand("Action", s.index);
-    let aw: number;
-    let ah: number;
-    if (look === "studio") {
-      const headW = M.actionCellW + 8 + sansWidth(op, M.captionSize + 0.5) + 8;
-      aw = Math.max(headW, codeW + 2 * M.actionPad, 90);
-      ah = M.actionHeader + M.actionPad + rows * M.lineH - 2;
-    } else {
-      aw = M.actionCellW + codeW + 2 * M.actionPad;
-      ah = Math.max(h, rows * M.lineH + 2 * M.actionPad - 2);
-    }
+  if (showActions && s.actions.length > 0) {
+    const qualifierW = (label: string): number => Math.ceil(sansWidth(label, 10.5, 700)) + 8;
+    const cellW = Math.max(M.actionCellW, ...s.actions.map((x) => qualifierW(qualifierLabel(x))));
+    let aw = 0;
+    let top = 0;
+    const rows: ActionRow[] = s.actions.map((x) => {
+      const shown = x.lines.slice(0, M.maxActionLines).map((l) => fitChars(l.replace(/\s+$/, ""), M.maxCodeChars));
+      const more = x.lines.length > M.maxActionLines;
+      const count = shown.length + (more ? 1 : 0);
+      const codeW = Math.max(...shown.map((l) => monoWidth(l.text, M.codeSize)), more ? monoWidth("…", M.codeSize) : 0);
+      // Studio's action operand (the L5X writer's numbering, with its default name comments).
+      const op = operand("Action", x.index);
+      let rw: number;
+      let rh: number;
+      if (look === "studio") {
+        const headW = cellW + 8 + sansWidth(op, M.captionSize + 0.5) + 8;
+        rw = Math.max(headW, codeW + 2 * M.actionPad, 90);
+        rh = M.actionHeader + M.actionPad + count * M.lineH - 2;
+      } else {
+        rw = cellW + codeW + 2 * M.actionPad;
+        rh = Math.max(h, count * M.lineH + 2 * M.actionPad - 2);
+      }
+      aw = Math.max(aw, rw);
+      const row: ActionRow = { label: qualifierLabel(x), lines: shown, raw: x.lines, more, full: x.lines.join("\n"), operand: op, y: top, h: rh };
+      top += rh;
+      return row;
+    });
     aw = Math.ceil(aw);
-    plan.action = { lines: shown, more, full: s.action.join("\n"), operand: op, w: aw, h: ah };
+    plan.action = { rows, cellW, w: aw, h: top };
     ext.right = w / 2 + M.actionGap + aw;
-    ext.below = Math.max(ext.below, ah - h / 2);
+    ext.below = Math.max(ext.below, top - h / 2);
   }
   return plan;
 }
@@ -1109,36 +1134,42 @@ function drawAction(
 ): string {
   const a = plan.action!;
   const ax = x + plan.w / 2 + M.actionGap;
-  const parts: string[] = [];
   const linkY = look === "studio" ? y0 + Math.min(plan.h / 2, M.actionHeader / 2 + 0.5) : y0 + plan.h / 2;
   const link = `<path class="qsfc-action-link" d="M${n(x + plan.w / 2)} ${n(linkY)}H${n(ax)}"/>`;
-  parts.push(`<title>${escapeXml(a.full)}</title>`);
-  parts.push(`<rect class="qsfc-action-box" x="${n(ax)}" y="${n(y0)}" width="${n(a.w)}" height="${n(a.h)}"/>`);
-  let textX: number;
-  let textY: number;
-  if (look === "studio") {
-    const hh = M.actionHeader;
-    parts.push(`<rect class="qsfc-action-head" x="${n(ax)}" y="${n(y0)}" width="${n(a.w)}" height="${n(hh)}"/>`);
-    parts.push(`<path class="qsfc-action-sep" d="M${n(ax)} ${n(y0 + hh)}H${n(ax + a.w)}M${n(ax + M.actionCellW)} ${n(y0)}V${n(y0 + hh)}"/>`);
-    parts.push(`<text class="qsfc-qualifier" x="${n(ax + M.actionCellW / 2)}" y="${n(y0 + 12)}" text-anchor="middle">N</text>`);
-    parts.push(`<text class="qsfc-action-name" x="${n(ax + M.actionCellW + 7)}" y="${n(y0 + 12)}">${escapeXml(a.operand)}</text>`);
-    textX = ax + M.actionPad;
-    textY = y0 + hh + M.actionPad + 7;
-  } else {
-    parts.push(`<path class="qsfc-action-sep" d="M${n(ax + M.actionCellW)} ${n(y0)}V${n(y0 + a.h)}"/>`);
-    parts.push(
-      `<text class="qsfc-qualifier" x="${n(ax + M.actionCellW / 2)}" y="${n(y0 + a.h / 2 + 4)}" text-anchor="middle">N</text>`,
-    );
-    const rows = a.lines.length + (a.more ? 1 : 0);
-    textX = ax + M.actionCellW + M.actionPad;
-    textY = y0 + (a.h - rows * M.lineH) / 2 + M.lineH - 4;
-  }
-  a.lines.forEach((l, k) => {
-    parts.push(textEl("qsfc-code", textX, textY + k * M.lineH, l, plan.step.action[k] ?? ""));
+  const cw = a.cellW;
+  // One group per action, stacked from the top of the step (SPEC §4.3).
+  const groups = a.rows.map((r) => {
+    const ry = y0 + r.y;
+    const parts: string[] = [];
+    parts.push(`<title>${escapeXml(r.full)}</title>`);
+    parts.push(`<rect class="qsfc-action-box" x="${n(ax)}" y="${n(ry)}" width="${n(a.w)}" height="${n(r.h)}"/>`);
+    let textX: number;
+    let textY: number;
+    if (look === "studio") {
+      const hh = M.actionHeader;
+      parts.push(`<rect class="qsfc-action-head" x="${n(ax)}" y="${n(ry)}" width="${n(a.w)}" height="${n(hh)}"/>`);
+      parts.push(`<path class="qsfc-action-sep" d="M${n(ax)} ${n(ry + hh)}H${n(ax + a.w)}M${n(ax + cw)} ${n(ry)}V${n(ry + hh)}"/>`);
+      parts.push(`<text class="qsfc-qualifier" x="${n(ax + cw / 2)}" y="${n(ry + 12)}" text-anchor="middle">${escapeXml(r.label)}</text>`);
+      parts.push(`<text class="qsfc-action-name" x="${n(ax + cw + 7)}" y="${n(ry + 12)}">${escapeXml(r.operand)}</text>`);
+      textX = ax + M.actionPad;
+      textY = ry + hh + M.actionPad + 7;
+    } else {
+      parts.push(`<path class="qsfc-action-sep" d="M${n(ax + cw)} ${n(ry)}V${n(ry + r.h)}"/>`);
+      parts.push(
+        `<text class="qsfc-qualifier" x="${n(ax + cw / 2)}" y="${n(ry + r.h / 2 + 4)}" text-anchor="middle">${escapeXml(r.label)}</text>`,
+      );
+      const rows = r.lines.length + (r.more ? 1 : 0);
+      textX = ax + cw + M.actionPad;
+      textY = ry + (r.h - rows * M.lineH) / 2 + M.lineH - 4;
+    }
+    r.lines.forEach((l, k) => {
+      parts.push(textEl("qsfc-code", textX, textY + k * M.lineH, l, r.raw[k] ?? ""));
+    });
+    if (r.more) parts.push(`<text class="qsfc-code qsfc-more" x="${n(textX)}" y="${n(textY + r.lines.length * M.lineH)}">…</text>`);
+    return `<g class="qsfc-action">${parts.join("")}</g>`;
   });
-  if (a.more) parts.push(`<text class="qsfc-code qsfc-more" x="${n(textX)}" y="${n(textY + a.lines.length * M.lineH)}">…</text>`);
   extend(x + plan.w / 2, y0, ax + a.w, y0 + a.h);
-  return `${link}<g class="qsfc-action">${parts.join("")}</g>`;
+  return `${link}${groups.join("")}`;
 }
 
 // ---------------------------------------------------------------------------------------------

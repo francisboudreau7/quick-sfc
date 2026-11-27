@@ -1,0 +1,25 @@
+// Test pack 12: several actions per step, the qualifiers N S R L D P,
+// and the output sugar `on` / `set` / `reset` (Phase 4b).
+sfc tp12_qualifiers
+
+tag count : DINT "Parts filled"
+
+init idle
+  reset ready, done_lamp  // sugar: latch both off
+-- start_btn
+step fill 10s "Fill the tank"
+  on valve, pump          // N action (sugar): on while fill is active
+  S
+    alarm_lamp := 1;      // S action: stays on after fill, until reset
+  L 5s
+    horn [:=] 1;          // L action: horn for 5 s at most
+  D 2s
+    mixer [:=] 1;         // D action: starts 2 s after fill becomes active
+  P
+    count := count + 1;   // P action: once, when fill becomes active
+-- fill.DN OR level_high
+step done
+  set ready, done_lamp    // sugar: latch both on
+  R
+    alarm_lamp := 0;      // R action: meant to reset the S action of fill
+-- ack_btn -> idle

@@ -116,6 +116,23 @@ export const LINE_KEYWORDS: ReadonlyArray<Option> = [
   { label: "program", type: "keyword", apply: "program ", detail: "program name (before the first routine)" },
 ];
 
+/** Action qualifiers (SPEC §4.3), offered at the start of a line: a qualifier line starts an action. */
+export const QUALIFIER_OPTIONS: ReadonlyArray<Option> = [
+  { label: "N", type: "keyword", detail: "action: while the step is active", boost: -2 },
+  { label: "S", type: "keyword", detail: "action: stored, runs until reset (R)", boost: -2 },
+  { label: "R", type: "keyword", detail: "action: resets a stored action", boost: -2 },
+  { label: "L", type: "keyword", apply: "L 5s", detail: "action: time limited (L 5s)", boost: -2 },
+  { label: "D", type: "keyword", apply: "D 5s", detail: "action: time delayed (D 5s)", boost: -2 },
+  { label: "P", type: "keyword", detail: "action: pulse, once when the step becomes active", boost: -2 },
+];
+
+/** Output sugar keywords (SPEC §4.3), offered at the start of a line. */
+export const SUGAR_OPTIONS: ReadonlyArray<Option> = [
+  { label: "on", type: "keyword", apply: "on ", detail: "on a, b: a [:=] 1; b [:=] 1;", boost: 1 },
+  { label: "set", type: "keyword", apply: "set ", detail: "set a: a := 1;", boost: 1 },
+  { label: "reset", type: "keyword", apply: "reset ", detail: "reset a: a := 0;", boost: 1 },
+];
+
 const CONDITION_KEYWORDS = ["AND", "OR", "XOR", "NOT", "TRUE", "FALSE", "MOD"];
 const ACTION_KEYWORDS = [...ST_KEYWORDS, "call"];
 
@@ -219,13 +236,22 @@ export function completeLine(line: string, pos: number, info: CompletionInfo, op
   const lead = /^[ \t]*/.exec(before)![0].length;
   const first = before.slice(lead);
 
+  // `on` / `set` / `reset` names (SPEC §4.3): tags only, BOOL ones first.
+  const sugarM = /^[ \t]*(?:on|set|reset)[ \t]+(?:[A-Za-z_]\w*[ \t]*,[ \t]*)*(\w*)$/i.exec(before);
+  if (sugarM) {
+    const typed = sugarM[1]!;
+    const from = pos - typed.length;
+    const options = tagOptions(info, opts.lineNumber, from + 1).map((o) => (o.detail?.startsWith("BOOL") ? { ...o, boost: 2 } : o));
+    return { from, to: pos, options };
+  }
+
   // Start of a line: keywords, and (for action lines) tags.
   if (/^-{1,2}$/.test(first)) {
     if (line.slice(pos).trim() !== "") return null;
     return { from: lead, to: pos, options: LINE_KEYWORDS.filter((k) => k.label === "--") };
   }
   if (/^[A-Za-z_]\w*$/.test(first) || (first === "" && opts.explicit)) {
-    const options: Option[] = [...LINE_KEYWORDS];
+    const options: Option[] = [...LINE_KEYWORDS, ...SUGAR_OPTIONS, ...QUALIFIER_OPTIONS];
     if (first !== "") {
       options.push(...completeST(line, pos, info, opts, "action")!.options);
     }

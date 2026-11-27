@@ -10,7 +10,7 @@
  *   parallel diverge:    Transition -> Branch, Leg -> first Step of the leg
  *   parallel converge:   last Step of each leg -> Leg, Branch -> next Transition
  */
-import type { BranchNode, StepNode, TransitionNode, TagType } from "./ast.js";
+import type { ActionNode, BranchNode, Qualifier, StepNode, TransitionNode, TagType } from "./ast.js";
 import type { Span } from "./diagnostics.js";
 
 /** Graph ids: "s0".."sN" steps, "t0".. transitions, "b0".. branches, "b3.0" legs. */
@@ -24,9 +24,24 @@ export interface GStep {
   initial: boolean;
   presetMs: number;
   description?: string;
-  /** Dedented ST lines of the single N action; empty = no action. Raw (not rewritten). */
-  action: string[];
+  /** The step's actions in source order (SPEC §4.3); empty = no action. */
+  actions: GAction[];
   node: StepNode;
+}
+
+/** One action of a step. */
+export interface GAction {
+  qualifier: Qualifier;
+  /** L and D: the action time in milliseconds (the PRE of the action tag). */
+  timeMs?: number;
+  /** Dedented ST lines, sugar expanded (SPEC §4.3). Raw otherwise (not rewritten). */
+  lines: string[];
+  /**
+   * Operand number (Action_000...) as the L5X writer gives it with its default name comments:
+   * numbered across the program in step order, and a step without actions still takes one.
+   */
+  index: number;
+  node: ActionNode;
 }
 
 export interface GTransition {

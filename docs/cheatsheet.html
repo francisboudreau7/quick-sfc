@@ -33,7 +33,7 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <tr><td><code><span class="k">sfc</span> name</code></td><td>header: starts an SFC routine (optional for the first one)</td></tr>
 <tr><td><code><span class="k">init</span> name</code></td><td>initial step (exactly one)</td></tr>
 <tr><td><code><span class="k">step</span> name 5s <span class="s">"desc"</span></code></td><td>step; preset and description optional</td></tr>
-<tr><td><code>  valve [:=] 1;</code></td><td>action: ST lines under the step (N)</td></tr>
+<tr><td><code>  valve [:=] 1;</code></td><td>action: ST lines under the step (N; qualifiers below)</td></tr>
 <tr><td><code><span class="k">--</span> start_btn</code></td><td>transition (auto-named T1, T2…)</td></tr>
 <tr><td><code><span class="k">--</span> go: a AND b</code></td><td>named transition</td></tr>
 <tr><td><code><span class="k">--</span> done <span class="k">-&gt;</span> idle</code></td><td>jump to a step</td></tr>
@@ -57,7 +57,28 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
 <table>
 <tr><td><code>x [:=] 1;</code></td><td>non-retentive: back to 0 when the step ends</td></tr>
 <tr><td><code>x := 1;</code></td><td>retentive: stays until written again</td></tr>
+<tr><td><code><span class="k">on</span> a, b</code></td><td>sugar for <code>a [:=] 1; b [:=] 1;</code></td></tr>
+<tr><td><code><span class="k">set</span> a</code></td><td>sugar for <code>a := 1;</code></td></tr>
+<tr><td><code><span class="k">reset</span> a, b</code></td><td>sugar for <code>a := 0; b := 0;</code></td></tr>
 </table>
+<p class="sub">A sugar line is only the keyword and tag names (comma-separated), an optional <code>;</code> and comment. The tags are BOOL.</p>
+
+<h2>Actions and qualifiers</h2>
+<pre><span class="k">step</span> fill
+  <span class="k">on</span> valve          <span class="c">// N: lines before any qualifier</span>
+  <span class="k">S</span>
+    alarm := 1;
+  <span class="k">L</span> 10s
+    horn [:=] 1;</pre>
+<table>
+<tr><td><code><span class="k">N</span></code></td><td>non-stored: while the step is active</td></tr>
+<tr><td><code><span class="k">S</span></code></td><td>stored: keeps running after the step, until reset</td></tr>
+<tr><td><code><span class="k">R</span></code></td><td>resets a stored action</td></tr>
+<tr><td><code><span class="k">L</span> 10s</code></td><td>time limited: while active, at most 10 s</td></tr>
+<tr><td><code><span class="k">D</span> 2s</code></td><td>time delayed: starts after 2 s if still active</td></tr>
+<tr><td><code><span class="k">P</span></code></td><td>pulse: once, when the step becomes active</td></tr>
+</table>
+<p class="sub">A line holding only the qualifier (and its duration) starts an action; its ST goes on the lines below. L and D need a duration, the others take none.</p>
 </section>
 
 <section>

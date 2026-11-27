@@ -198,7 +198,7 @@ describe("parse: actions (SPEC §4.3)", () => {
     );
     it("shows the qualifier and the duration", () => {
       expect(e110("L 10s horn [:=] 1;")[0]!.message).toBe(
-        "action qualifiers are not supported yet: write the ST without `L 10s` (N is used)",
+        "write the qualifier `L 10s` on its own line, with the action's ST on the lines below it",
       );
     });
   });

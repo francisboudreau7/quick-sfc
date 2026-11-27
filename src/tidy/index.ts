@@ -15,7 +15,8 @@
  */
 import { studioPositions } from "../compile.js";
 import { parseXml } from "../l5x/xml.js";
-import type { Graph } from "../model/graph.js";
+import type { ActionNode } from "../model/ast.js";
+import type { GAction, Graph } from "../model/graph.js";
 import { parse } from "../parse/index.js";
 import { validate } from "../validate/index.js";
 import { lower } from "../lower/index.js";
@@ -145,8 +146,10 @@ function withTexts(graph: Graph, chart: SfcChart, toOrig: Map<string, string>, h
     steps: graph.steps.map((s) => {
       const n = chart.nodes.get(toOrig.get(s.id)!)!;
       const m = NAME_COMMENT.exec(n.text[0] ?? "");
-      const action = m ? n.text.slice(1) : n.text;
-      return { ...s, name: m ? m[1]! : n.operand, action, presetMs: hints.preset.get(n.operand.toLowerCase()) ?? 0 };
+      // Every action's lines in one N box, as before Phase 4b (only the measuring uses them).
+      const lines = m ? n.text.slice(1) : n.text;
+      const actions: GAction[] = lines.length ? [{ qualifier: "N", lines, index: s.index, node: {} as ActionNode }] : [];
+      return { ...s, name: m ? m[1]! : n.operand, actions, presetMs: hints.preset.get(n.operand.toLowerCase()) ?? 0 };
     }),
     transitions: graph.transitions.map((t) => {
       const n = chart.nodes.get(toOrig.get(t.id)!)!;

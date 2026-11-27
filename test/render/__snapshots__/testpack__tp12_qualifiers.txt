@@ -1,0 +1,13 @@
+╔═══════════╗ ◄ from T3
+║   idle    ║─[ ready := 0; done_lamp := 0; // sugar: l… ]
+╚═════╤═════╝
+      ┼ start_btn
+┌─────┴─────┐
+│ fill  10s │─[ N valve [:=] 1; pump [:=] 1; ][ S alarm_lamp := 1; ][ L 5s horn [:=] 1; ][ D 2s mixer [:=] 1; ][ P count := count + 1; ]
+└─────┬─────┘
+      ┼ fill.DN OR level_high
+┌─────┴─────┐
+│   done    │─[ N ready := 1; done_lamp := 1; ][ R alarm_lamp := 0; ]
+└─────┬─────┘
+      ┼ ack_btn
+      → idle (T3)

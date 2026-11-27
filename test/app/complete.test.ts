@@ -189,3 +189,30 @@ describe("routines (SPEC §4.5)", () => {
     expect(atR("  x := 1; ca|")?.labels).toContain("call");
   });
 });
+
+describe("actions: qualifiers and sugar (SPEC §4.3)", () => {
+  it("offers the qualifiers and the sugar keywords at the start of a line", () => {
+    const r = at("  S|");
+    for (const k of ["N", "S", "R", "L", "D", "P", "on", "set", "reset"]) expect(r?.labels).toContain(k);
+    expect(r?.options.find((o) => o.label === "L")?.apply).toBe("L 5s");
+    expect(r?.options.find((o) => o.label === "on")?.apply).toBe("on ");
+    expect(at("  |", { explicit: true })?.labels).toContain("P");
+  });
+
+  it("offers only tags after `on` / `set` / `reset`, BOOL ones first", () => {
+    const r = at("  on |");
+    expect(r?.from).toBe(5);
+    expect(r?.labels).toEqual(["start_btn", "count", "tmr", "mot"]);
+    expect(r?.options.find((o) => o.label === "start_btn")?.boost).toBe(2);
+    expect(r?.options.find((o) => o.label === "count")?.boost).toBe(1);
+    expect(at("  set m|")?.word).toBe("m");
+    expect(at("  RESET mot, st|")?.word).toBe("st");
+    expect(at("  reset mot,st|")?.labels).not.toContain("fill");
+  });
+
+  it("`set := ` is ordinary ST", () => {
+    const r = at("  set := co|");
+    expect(r?.labels).toContain("count");
+    expect(r?.labels).toContain("fill");
+  });
+});

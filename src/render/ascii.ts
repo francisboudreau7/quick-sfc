@@ -2,7 +2,8 @@
  * ASCII view (SPEC §12), drawn from the grid Layout.
  *
  * - Step: box (double box for the initial step) with the name and the preset;
- *   its action sits to the right as `─[ first line … ]`.
+ *   its action sits to the right as `─[ first line … ]`; several actions (or one that is
+ *   not N) as `─[ N first line ][ L 5s first line ]`.
  * - Transition: `┼` on the vertical line, condition to the right (`name: condition`
  *   for explicit names; auto names T1.. are not shown).
  * - Selection divergence / convergence: single horizontal line; parallel: double line.
@@ -18,6 +19,7 @@
 import type { GBranch, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
 import { key } from "../model/ast.js";
 import type { Layout } from "../layout/index.js";
+import { mask } from "../parse/text.js";
 
 /** Spaces between the text of a column and the next column's content. */
 const GAP = 3;
@@ -26,6 +28,8 @@ const GROUP_GAP = 6;
 /** Minimum distance between the lines of two neighbour columns. */
 const MIN_SEP = 6;
 const MAX_ACTION = 40;
+/** Per action, when a step has several. */
+const MAX_MULTI_ACTION = 28;
 const MIN_INNER = 5;
 
 const U = 1;
@@ -83,13 +87,36 @@ export function formatDuration(ms: number): string {
 
 const stepLabel = (s: GStep): string => (s.presetMs > 0 ? `${s.name}  ${formatDuration(s.presetMs)}` : s.name);
 
+/**
+ * First line of an action, cut to `max` characters, with ` …` when the action has more lines.
+ * `compact` (several actions side by side): without a trailing `// comment`, spaces collapsed.
+ */
+function firstLine(lines: readonly string[], max: number, compact = false): string {
+  let text = (lines[0] ?? "").trim();
+  if (compact) {
+    const { comment } = mask(text);
+    const code = comment > 0 ? text.slice(0, comment).trim() : text;
+    if (code) text = code.replace(/\s+/g, " ");
+  }
+  if (text.length > max) text = `${text.slice(0, max - 1)}…`;
+  else if (lines.length > 1) text = `${text} …`;
+  return text;
+}
+
+/** Qualifier cell of an action: `N`, `S`, `L 10s` (SPEC §4.3). */
+export function qualifierLabel(a: { qualifier: string; timeMs?: number }): string {
+  return a.timeMs !== undefined ? `${a.qualifier} ${formatDuration(a.timeMs)}` : a.qualifier;
+}
+
+/**
+ * `─[ first line … ]` for a step with one N action (no qualifier shown); with several actions,
+ * or another qualifier, one `[ Q first line ]` per action: `─[ N valve [:=] 1; ][ L 10s horn [:=] 1; ]`.
+ */
 function actionText(s: GStep): string | undefined {
-  const first = s.action[0];
-  if (first === undefined) return undefined;
-  let text = first.trim();
-  if (text.length > MAX_ACTION) text = `${text.slice(0, MAX_ACTION - 1)}…`;
-  else if (s.action.length > 1) text = `${text} …`;
-  return `─[ ${text} ]`;
+  const only = s.actions.length === 1 ? s.actions[0]! : undefined;
+  if (s.actions.length === 0) return undefined;
+  if (only?.qualifier === "N") return `─[ ${firstLine(only.lines, MAX_ACTION)} ]`;
+  return `─[ ${s.actions.map((a) => `${qualifierLabel(a)} ${firstLine(a.lines, MAX_MULTI_ACTION, true)}`).join(" ][ ")} ]`;
 }
 
 const transText = (t: GTransition): string => (t.auto ? t.condition : `${t.name}: ${t.condition}`);

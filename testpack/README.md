@@ -172,3 +172,28 @@ These check that the coordinates qSFC computes still give a readable chart in St
 ### tp11_stress_nesting: parallel inside parallel, long actions
 - A 3-leg simultaneous branch; leg 1 has a selection whose `heat_more.DN` loops back to `heat` (inside the parallel leg); leg 2 has a **parallel branch inside it** (`pump_1` | `pump_2`); leg 3 is a single step with a preset and a description.
 - `mix_a` and `pump_2` have **long action lines**: check whether their action boxes overlap the leg to their right (legs are 300 units apart). If they do, tell me roughly how wide the box is.
+
+---
+
+## tp12_qualifiers: several actions per step, qualifiers and sugar (Phase 4b, added 2026-11-26)
+
+`idle` → `start_btn` → `fill` (10 s, *Fill the tank*) → `fill.DN OR level_high` → `done` → `ack_btn` → back to `idle`.
+
+| Step | Actions, in this order (operand, qualifier in the L5X) |
+|---|---|
+| `idle` | `Action_000` **N** `NonStored`: `// idle`, `ready := 0; done_lamp := 0; // sugar: latch both off` (written `reset ready, done_lamp`) |
+| `fill` | `Action_001` **N** `NonStored`: `// fill - Fill the tank`, `valve [:=] 1; pump [:=] 1; ...` (written `on valve, pump`)<br>`Action_002` **S** `StoredUntilReset`: `alarm_lamp := 1;`<br>`Action_003` **L** `TimeLimited`, 5 s: `horn [:=] 1;`<br>`Action_004` **D** `TimeDelayed`, 2 s: `mixer [:=] 1;`<br>`Action_005` **P** `Pulse`: `count := count + 1;` |
+| `done` | `Action_006` **N** `NonStored`: `// done`, `ready := 1; done_lamp := 1; ...` (written `set ready, done_lamp`)<br>`Action_007` **R** `Reset`: `alarm_lamp := 0;` |
+
+The action time of L and D is written as the **PRE** of the action's tag (`Action_003` L5K `[0,5000,0,0]`, `Action_004` `[0,2000,0,0]`), with `PresetUsesExpr="false"` on the `<Action>`, like the step presets.
+
+Check:
+1. **Import**. If Studio refuses a qualifier word, copy the error text verbatim: only `NonStored` is verified (L5X_GUIDE §6.2); `StoredUntilReset`, `Reset`, `TimeLimited`, `TimeDelayed` and `Pulse` are our best guess.
+2. **Each action shows its qualifier**: `fill` has five action boxes (N, S, L, D, P), `done` two (N, R). Open the properties of `Action_003` and `Action_004`: is the **preset 5000 / 2000 ms** (5 s / 2 s)? If Studio shows the time somewhere else (an expression, a field of its own), tell me where.
+3. **Verify** the program: 0 errors expected.
+4. **The R action [Verify], the most important question.** In IEC 61131-3 an R action *resets another action*: the S action `alarm_lamp := 1;` of `fill` should stop when `done` becomes active. We write the R action as an ordinary action of its own (`Action_007`, with its own ST). Please tell me what Studio does with it:
+   - does it accept an R action with its own operand and body, or does it want the R action to **name the stored action** it resets (for example the same operand `Action_002`, or a field such as "Stored action")? Look at the R action's properties, and if possible create an R action by hand in Studio, export the routine and send me the L5X;
+   - in Run mode (optional): after `start_btn`, does `alarm_lamp` stay on after `fill` ends, and go off in `done`?
+5. **Layout:** the action boxes of `fill` are stacked; check that they don't run into the `fill.DN OR level_high` transition below (the row after `fill` is made taller for 5 actions).
+6. Tags: `alarm_lamp`, `done_lamp`, `horn`, `mixer`, `pump`, `ready`, `valve`, `start_btn`, `level_high`, `ack_btn` are BOOL, `count` is DINT (*Parts filled*).
+7. Optional run test: set `start_btn`. In `fill`: `valve`/`pump` on, `alarm_lamp` on, `horn` on for 5 s then off, `mixer` on after 2 s, `count` + 1 once. After 10 s `done`: `ready`/`done_lamp` on; set `ack_btn` to go back to `idle`.

@@ -261,3 +261,72 @@ describe("routines and calls (SPEC §4.5)", () => {
     expect(indentAfter("program tank")).toBe(0);
   });
 });
+
+describe("actions and qualifiers (SPEC §4.3)", () => {
+  it("a qualifier line: the qualifier is a keyword, then the duration and the comment", () => {
+    expect(toks("  S")).toEqual([["S", "kw"]]);
+    expect(toks("  l 10s // horn")).toEqual([
+      ["l", "kw"],
+      ["10s", "duration"],
+      ["// horn", "comment"],
+    ]);
+    expect(toks("D 1m30s")).toEqual([
+      ["D", "kw"],
+      ["1m30s", "duration"],
+    ]);
+    expect(toks("  SL 5s")).toEqual([
+      ["SL", "kw"],
+      ["5s", "duration"],
+    ]);
+    expect(toks("  L 5")).toEqual([
+      ["L", "kw"],
+      ["5", "number"],
+    ]);
+  });
+
+  it("a tag named like a qualifier stays ST", () => {
+    expect(toks("  S := 1;")).toEqual([
+      ["S", "ident"],
+      [":=", "op"],
+      ["1", "number"],
+      [";", "punct"],
+    ]);
+    expect(toks("  N x")[0]).toEqual(["N", "ident"]);
+  });
+
+  it("sugar lines: `on` / `set` / `reset` are keywords, the names are tags", () => {
+    expect(toks("  on valve, pump; // open")).toEqual([
+      ["on", "kw"],
+      ["valve", "ident"],
+      [",", "punct"],
+      ["pump", "ident"],
+      [";", "punct"],
+      ["// open", "comment"],
+    ]);
+    expect(toks("SET alarm")[0]).toEqual(["SET", "kw"]);
+    expect(toks("reset a, b")[0]).toEqual(["reset", "kw"]);
+  });
+
+  it("`set := 1;` (a tag named set) is ST", () => {
+    expect(toks("  set := 1;")[0]).toEqual(["set", "ident"]);
+    expect(toks("  on x := 1;")[0]).toEqual(["on", "ident"]);
+  });
+
+  it("qualifierOf / sugarOf", async () => {
+    const { qualifierOf, sugarOf } = await import("../../app/highlight.js");
+    expect(qualifierOf("  l 10s")).toBe("L");
+    expect(qualifierOf("  P // pulse")).toBe("P");
+    expect(qualifierOf("  S := 1;")).toBeUndefined();
+    expect(qualifierOf("  X")).toBeUndefined();
+    expect(sugarOf("  On a, b")).toBe("on");
+    expect(sugarOf("  set := 1;")).toBeUndefined();
+  });
+
+  it("the lines of an action go under its qualifier line", async () => {
+    const { indentAfter } = await import("../../app/highlight.js");
+    expect(indentAfter("  S")).toBe(4);
+    expect(indentAfter("  L 5s")).toBe(4);
+    expect(indentAfter("    horn [:=] 1;")).toBe(4);
+    expect(indentAfter("  on valve")).toBe(2);
+  });
+});

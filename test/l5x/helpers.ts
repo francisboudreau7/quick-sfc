@@ -1,6 +1,6 @@
-import type { Graph, GBranch, GStep, GTransition, TagInfo } from "../../src/model/graph.js";
+import type { Graph, GAction, GBranch, GStep, GTransition, TagInfo } from "../../src/model/graph.js";
 import type { L5XPositions } from "../../src/model/positions.js";
-import type { TagType } from "../../src/model/ast.js";
+import type { Qualifier, TagType } from "../../src/model/ast.js";
 
 export interface StepSpec {
   id: string;
@@ -10,7 +10,9 @@ export interface StepSpec {
   y: number;
   initial?: boolean;
   preset?: number;
+  /** Lines of a single N action (shortcut for `actions`). */
   action?: string[];
+  actions?: Array<{ qualifier: Qualifier; timeMs?: number; lines: string[] }>;
   description?: string;
 }
 
@@ -48,7 +50,9 @@ export function build(
       initial: s.initial ?? false,
       presetMs: s.preset ?? 0,
       ...(s.description !== undefined ? { description: s.description } : {}),
-      action: s.action ?? [],
+      actions: (s.actions ?? (s.action?.length ? [{ qualifier: "N" as const, lines: s.action }] : [])).map(
+        (a, k): GAction => ({ ...a, index: s.index + k, node: {} as never }),
+      ),
       node: {} as never,
     };
   });

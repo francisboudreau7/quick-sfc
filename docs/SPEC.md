@@ -137,36 +137,53 @@ step mix 1m30s "Mixing phase"
 step wait "Wait for the operator"
 ```
 
-### 4.3 Actions [P1: one action per step]
-The **action lines** of a step are all the lines between the step line and the next structure line. Together they form the step's single action: qualifier **N** (*non-stored*: it runs while the step is active).
+### 4.3 Actions [P1; several actions and qualifiers: Phase 4b]
+The **action lines** of a step are all the lines between the step line and the next structure line. They form one or more actions.
 
 ```
 step fill 5s
-  valve [:=] 1;
-  IF level > 80 THEN
-    alarm := 1;
-  END_IF;
+  valve [:=] 1;          // N action: the lines before any qualifier line
+  S
+    alarm_lamp := 1;     // S action
+  L 10s
+    horn [:=] 1;         // L action, time limit 10 s
+  P
+    count := count + 1;  // P action (pulse: once, when the step becomes active)
 ```
 
-- The text is **Structured Text, copied as is**. The only change is the step-name rewrite in §8.4.
-- The common leading indentation of the block is removed, and relative indentation is kept.
-- Blank lines inside the block are kept. Blank lines at the start and end are dropped.
+- The text is **Structured Text, copied as is**. The only change is the step-name rewrite in §8.4 (and the sugar below).
+- The common leading indentation of each action is removed, and relative indentation is kept. Blank lines inside an action are kept; blank lines at its start and end are dropped.
 - A step with no action lines has no action.
 - Studio 5000 assignment forms are both allowed:
-  - `x [:=] 1;` is a **non-retentive** assignment: `x` goes back to 0 when the step ends. Use it for "output on while the step is active".
+  - `x [:=] 1;` is a **non-retentive** assignment: `x` goes back to 0 when the action stops. Use it for "output on while the step is active".
   - `x := 1;` is a **retentive** assignment: `x` stays 1 until something else writes it.
 
-**[Later]** Several actions per step, with IEC qualifiers:
-```
-step reject
-  N      pusher [:=] 1;
-  L 10s  horn [:=] 1;
-  S      count := count + 1;
-  N {
-    IF x THEN y := 1; END_IF;
-  }
-```
-In Phase 1, a line that starts with a qualifier (`N S R L D P P0 P1 SD DS SL`) followed by a duration, `{`, or something that can't follow a tag name in ST gives **E110** ("action qualifiers are not supported yet"). A line like `S := 1;`, where `S` is a tag, is still a normal ST line.
+**Qualifiers [Phase 4b].** A line that holds **only** a qualifier, optionally followed by a duration (and a comment), starts a new action; the lines below it belong to that action until the next qualifier line or structure line. Indentation is cosmetic, as everywhere in qSFC. The lines before the first qualifier line form an **N** action.
+
+| Qualifier | Meaning (IEC 61131-3) | Duration |
+|---|---|---|
+| `N` | non-stored: runs while the step is active | not allowed |
+| `S` | stored: keeps running after the step, until reset | not allowed |
+| `R` | reset a stored action | not allowed |
+| `L` | time limited: runs while the step is active, at most the duration | **required** |
+| `D` | time delayed: starts after the duration, if the step is still active | **required** |
+| `P` | pulse: runs once when the step becomes active | not allowed |
+
+- `P0`, `P1`, `SL`, `SD`, `DS` come with the round trip (Phase 4d); today they give **E110**.
+- A line like `S := 1;` (a tag named `S`) is still ST: only a line holding nothing but the qualifier (and its duration) starts an action.
+- Errors: **E111** a duration is missing (L, D) or not allowed (N, S, R, P); **E112** an empty action (a qualifier line with no ST under it).
+- **[Verify]** The L5X names of S, R, L, D, P (L5X_GUIDE §6: only `NonStored` is verified), how Studio links an R action to the stored action it resets, and the action time (`PRE` of the action tag). Test pack tp12.
+
+**Output sugar [Phase 4b].** Three short forms for the most common action lines; each line expands to plain ST on export (and in the diagram):
+
+| Write | Means | Exported as |
+|---|---|---|
+| `on valve, pump` | outputs on while the action runs | `valve [:=] 1; pump [:=] 1;` |
+| `set alarm` | latch the tag on | `alarm := 1;` |
+| `reset alarm, horn` | latch the tags off | `alarm := 0; horn := 0;` |
+
+- A sugar line is the keyword, then one or more tag names separated by commas, then optionally `;` and a comment. Anything else on the line makes it ordinary ST (so a tag named `on` or `set` still works in `set := 1;`).
+- The tags are BOOL (type inference, §7).
 
 ### 4.4 Transitions [P1]
 ```
@@ -447,7 +464,7 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 |---|---|
 | step | `<Step>`, operand `Step_000`, `Step_001`, … in file order, plus an `SFC_STEP` tag with `PRE` = preset in ms |
 | `init` | `InitialStep="true"` |
-| action | one `<Action Qualifier="NonStored">`, operand `Action_000`, …, plus an `SFC_ACTION` tag. Each source line becomes one `<Line>` |
+| action | one `<Action>` per action in source order, `Qualifier` = `NonStored` (N; verified), `StoredUntilReset` (S), `Reset` (R), `TimeLimited` (L), `TimeDelayed` (D), `Pulse` (P) [Verify: tp12], `PresetUsesExpr="false"`; operands `Action_000`, … across the program, plus an `SFC_ACTION` tag whose `PRE` is the L/D duration in ms. Each source line becomes one `<Line>` (sugar lines expanded, §4.3) |
 | transition | `<Transition>`, operand `Tran_000`, …, plus a BOOL tag. The condition is one `<Line>` |
 | select / parallel | `<Branch BranchType="Selection" / "Simultaneous">` diverge + converge, one `<Leg>` per leg; `Priority="Default"` on the selection diverge only |
 | automatic convergence (§6.4) | `<Branch BranchType="Selection" BranchFlow="Converge">` |
@@ -455,16 +472,16 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 | user tags | program-scope tags of the inferred or declared type |
 | X/Y | computed by the layout engine, the same one that draws the diagram in the app |
 
-IDs are numbered in the order the reference export uses: each step followed by its action, then the transitions, then each branch followed by its legs, then the links.
+IDs are numbered in the order the reference export uses: each step followed by its actions, then the transitions, then each branch followed by its legs, then the links.
 
 ### 8.3 Names and descriptions
 Following Q7, operands keep Studio's default names. The qSFC name is kept in the **description of the element's tag** (`Step_001` gets the description `fill`), which Studio shows beside the step.
 - With a `"description"`, the tag description is `fill` + new line + `Fill the tank`.
 - Transitions get their name, including auto-names (`T3`), in the same way.
 - This is what lets the Phase 4 import recover the names.
-- **Name comment.** Every step's action starts with a comment line holding its name: `// fill`, or `// fill - Fill the tank` with a description. A step without an action gets an action containing only that line. The Phase 4 import removes this first line again.
+- **Name comment.** Every step's first action starts with a comment line holding its name: `// fill`, or `// fill - Fill the tank` with a description (whatever the qualifier of that action). A step without an action gets an N action containing only that line. The Phase 4 import removes this first line again.
 - **Decided after the tp01 imports (2026-11-26):** Studio draws a tag description as a box over the action box (steps) or over the condition (transitions). The export keeps the names in the tag descriptions but writes `HideDesc="true"` on every step and transition, the way Studio itself stores a hidden description (verified by importing tp01_hidden into a clean project). So the chart shows no boxes, the `// name` comment shows the step name, and the Tags list and the Phase 4 import still have every name, transitions included.
-- Rows after a step grow with its action's line count, so the action box doesn't run into the next element.
+- Rows after a step grow with its action boxes' line count (every action's lines, the name comment, and one header line per action after the first), so the boxes don't run into the next element.
 - **[Verify]** The reference export has no element descriptions, so how Studio displays a tag description beside its step must be checked in the test pack.
 
 ### 8.4 Step-name rewrite
@@ -525,7 +542,9 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E107 | unexpected text `extra` after the step's duration/description |
 | E108 | `select` is a keyword and can't be used as a name |
 | E109 | text can't contain `]]>` (L5X limitation) |
-| E110 | action qualifiers are not supported yet: write the ST without `L 10s` (N is used) |
+| E110 | qualifier `SL` is not supported yet (N, S, R, L, D, P are) |
+| E111 | qualifier `L` needs a duration: `L 10s` / qualifier `S` takes no duration |
+| E112 | the `S` action of step `fill` is empty |
 
 **Structure (E2xx)**
 | Code | Message (example) |
@@ -626,7 +645,9 @@ header      = ( "sfc" | "st" ) NAME ;
 tag_decl    = "tag" NAME [ ":" TYPE ] [ STRING ] ;
 step        = ( "init" | "step" ) NAME [ DURATION ] [ STRING ] ;
 transition  = "--" [ NAME ":" ] CONDITION [ "->" NAME ] ;
-action_line = ST_TEXT ;                    (* any other line *)
+action_line = qualifier_line | sugar_line | ST_TEXT ;   (* any other line *)
+qualifier_line = QUALIFIER [ DURATION ] ;  (* N S R L D P, §4.3 *)
+sugar_line  = ( "on" | "set" | "reset" ) NAME { "," NAME } [ ";" ] ;
 
 (* structure built from the lines *)
 chart       = chain { chain } ;

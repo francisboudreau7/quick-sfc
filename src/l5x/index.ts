@@ -2,6 +2,7 @@
  * L5X writer (Studio 5000, Program-level export) and self-check.
  * Serialization follows l5xgen.py / L5X_GUIDE.md, verified by real imports.
  */
+import type { Qualifier } from "../model/ast.js";
 import type { Graph, GStep, TagInfo } from "../model/graph.js";
 import type { L5XPositions } from "../model/positions.js";
 import { descendants, parseXml, textOf, XmlError, type XmlElement } from "./xml.js";
@@ -52,6 +53,20 @@ export function stepNameComment(name: string, description?: string): string {
   const desc = description?.replace(/\s*\r?\n\s*/g, " ").trim();
   return desc ? `// ${name} - ${desc}` : `// ${name}`;
 }
+
+/**
+ * The L5X word of each action qualifier (L5X_GUIDE §6.2), the one table used by the writer and
+ * by Tidy. NonStored is VERIFIED (real imports). The others are UNVERIFIED: the guide's best
+ * guess, checked by test pack tp12 (SPEC §4.3 [Verify]).
+ */
+export const QUALIFIER_NAMES: Readonly<Record<Qualifier, string>> = {
+  N: "NonStored",
+  S: "StoredUntilReset", // UNVERIFIED
+  R: "Reset", // UNVERIFIED
+  L: "TimeLimited", // UNVERIFIED
+  D: "TimeDelayed", // UNVERIFIED
+  P: "Pulse", // UNVERIFIED
+};
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -162,17 +177,18 @@ function sfcStepTag(name: string, pre: number, desc?: string): TagLines {
   return baseTag(name, "SFC_STEP", data(`[0,${pre},0,0,0,0,0]`, structure("SFC_STEP", members)), desc, null);
 }
 
-function sfcActionTag(name: string): TagLines {
+/** `pre`: the action time (L and D) in ms; L5K is `[Status, PRE, T, Count]` (L5X_GUIDE §6). */
+function sfcActionTag(name: string, pre = 0): TagLines {
   const members: Member[] = [
     ["Status", "DINT", "16#0000_0000", "Hex"],
     ["A", "BOOL", 0, null],
     ["Q", "BOOL", 0, null],
     ["PauseTimer", "BOOL", 0, null],
-    ["PRE", "DINT", 0, "Decimal"],
+    ["PRE", "DINT", pre, "Decimal"],
     ["T", "DINT", 0, "Decimal"],
     ["Count", "DINT", 0, "Decimal"],
   ];
-  return baseTag(name, "SFC_ACTION", data("[0,0,0,0]", structure("SFC_ACTION", members)), undefined, null);
+  return baseTag(name, "SFC_ACTION", data(`[0,${pre},0,0]`, structure("SFC_ACTION", members)), undefined, null);
 }
 
 function stLines(lines: string[]): string[] {
@@ -258,22 +274,32 @@ function sfcRoutine(
     const head =
       `<Step ID="${sid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 40}" DescY="${y - 20}" DescWidth="0" ` +
       `InitialStep="${s.initial ? "true" : "false"}" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true"`;
-    const actionLines = nameComments ? [stepNameComment(s.name, s.description), ...s.action] : s.action;
-    if (actionLines.length === 0) {
+    // The name comment is the first line of the first action, whatever its qualifier; a step
+    // without actions gets an N action holding only the comment.
+    const actions = s.actions.map((a) => ({ qualifier: a.qualifier, timeMs: a.timeMs, lines: a.lines }));
+    if (nameComments) {
+      const comment = stepNameComment(s.name, s.description);
+      if (actions[0]) actions[0] = { ...actions[0], lines: [comment, ...actions[0].lines] };
+      else actions.push({ qualifier: "N", timeMs: undefined, lines: [comment] });
+    }
+    if (actions.length === 0) {
       routine.push(head + "/>");
       continue;
     }
     routine.push(head + ">");
-    const aop = operand("Action", c.actionNo++);
-    tagLines.push(sfcActionTag(aop));
-    routine.push(
-      `<Action ID="${nextId++}" Operand="${aop}" Qualifier="NonStored" IsBoolean="false" PresetUsesExpr="false">`,
-      "<Body>",
-      ...stLines(actionLines),
-      "</Body>",
-      "</Action>",
-      "</Step>",
-    );
+    // One <Action> per action in source order, each ID right after the previous one (L5X_GUIDE §6.3).
+    for (const a of actions) {
+      const aop = operand("Action", c.actionNo++);
+      tagLines.push(sfcActionTag(aop, a.timeMs ?? 0));
+      routine.push(
+        `<Action ID="${nextId++}" Operand="${aop}" Qualifier="${QUALIFIER_NAMES[a.qualifier]}" IsBoolean="false" PresetUsesExpr="false">`,
+        "<Body>",
+        ...stLines(a.lines),
+        "</Body>",
+        "</Action>",
+      );
+    }
+    routine.push("</Step>");
   }
 
   for (const t of graph.transitions) {

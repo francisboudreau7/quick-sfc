@@ -3,13 +3,13 @@
  */
 import { key, type Chart, type ProgramNode, type RoutineNode } from "./model/ast.js";
 import { hasErrors, sortDiagnostics, error, type Diagnostic } from "./model/diagnostics.js";
-import type { Graph, TagInfo } from "./model/graph.js";
+import type { Graph, GStep, TagInfo } from "./model/graph.js";
 import type { L5XPositions } from "./model/positions.js";
 import { parse } from "./parse/index.js";
 import { validateProgram } from "./validate/index.js";
 import { routineLabel } from "./validate/program.js";
 import { analyzeTags, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
-import { lower } from "./lower/index.js";
+import { actionOperands, lower } from "./lower/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
 import { hiddenJumpLinks } from "./render/svg.js";
@@ -74,16 +74,15 @@ export function compile(source: string, options: CompileOptions = {}): CompileRe
   };
   if (hasErrors(diagnostics)) return result;
 
-  const base = { steps: 0, transitions: 0 };
+  const base = { steps: 0, transitions: 0, actions: 0 };
   for (const r of routines) {
     if (r.node.kind !== "sfc") continue;
     r.graph = lower(r.node.chart, base);
     r.layout = computeLayout(r.graph, r.node.chart);
-    // action box as exported: the name comment line plus the action (SPEC §8.3)
-    const actionLines = new Map(r.graph.steps.map((s) => [s.id, s.action.length + 1] as const));
-    r.positions = l5xPositions(r.layout, actionLines);
+    r.positions = l5xPositions(r.layout, actionLineCounts(r.graph));
     base.steps += r.graph.steps.length;
     base.transitions += r.graph.transitions.length;
+    base.actions += actionOperands(r.graph);
   }
   const first = routines.find((r) => r.kind === "sfc");
   if (first?.graph) {
@@ -197,10 +196,21 @@ function sfcForL5X(
   positions: L5XPositions,
   operands: Map<string, string>,
 ): L5XRoutine {
-  // action box as exported: the name comment line plus the action (SPEC §8.3)
-  const actionLines = new Map(graph.steps.map((s) => [s.id, s.action.length + 1] as const));
-  const placed = studioPositions(graph, layout, actionLines, positions);
+  const placed = studioPositions(graph, layout, actionLineCounts(graph), positions);
   return { kind: "sfc", name, graph: rewriteGraph(graph, operands), positions: placed.positions, hiddenLinks: placed.hiddenLinks };
+}
+
+/**
+ * Lines of a step's action boxes as exported (SPEC §8.3): the name comment line, every line of
+ * every action, and one header line for each action after the first (Studio stacks the boxes).
+ * Tidy counts a Studio file the same way (src/tidy/read.ts).
+ */
+export function actionBoxLines(s: Pick<GStep, "actions">): number {
+  return 1 + s.actions.reduce((n, a) => n + a.lines.length, 0) + Math.max(0, s.actions.length - 1);
+}
+
+function actionLineCounts(graph: Graph): Map<string, number> {
+  return new Map(graph.steps.map((s) => [s.id, actionBoxLines(s)] as const));
 }
 
 /**
@@ -252,7 +262,7 @@ function rewriteLines(lines: string[], operands: Map<string, string>): string[] 
 function rewriteGraph(graph: Graph, operands: Map<string, string>): Graph {
   return {
     ...graph,
-    steps: graph.steps.map((s) => ({ ...s, action: rewriteLines(s.action, operands) })),
+    steps: graph.steps.map((s) => ({ ...s, actions: s.actions.map((a) => ({ ...a, lines: rewriteLines(a.lines, operands) })) })),
     transitions: graph.transitions.map((t) => ({ ...t, condition: rewriteSt(t.condition, operands) })),
   };
 }

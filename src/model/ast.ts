@@ -23,6 +23,48 @@ export interface SourceText {
   span: Span;
 }
 
+/** IEC 61131-3 action qualifiers supported today (SPEC §4.3). */
+export type Qualifier = "N" | "S" | "R" | "L" | "D" | "P";
+
+/** Output sugar (SPEC §4.3): `on a, b`, `set a`, `reset a, b`. */
+export interface Sugar {
+  verb: "on" | "set" | "reset";
+  /** At least one name; each span points at the name in the file. */
+  names: Name[];
+  /** Trailing `// comment` as written, if any (kept in the expansion). */
+  comment?: string;
+}
+
+/** An action line: ST as written (after dedent). For a sugar line, `text` is still the raw line. */
+export interface ActionLine extends SourceText {
+  sugar?: Sugar;
+}
+
+/** One action of a step (SPEC §4.3). */
+export interface ActionNode {
+  qualifier: Qualifier;
+  /** L and D: the duration written on the qualifier line, in milliseconds. */
+  timeMs?: number;
+  /**
+   * Lines after dedent (each action on its own): leading and trailing blank lines removed,
+   * inner blank lines kept (text ""). Never empty (an empty action is E112).
+   */
+  lines: ActionLine[];
+  /** The qualifier line (`S`, `L 10s`); absent for the N action formed by the lines before any qualifier line. */
+  header?: Span;
+  /** The qualifier line, else the first line of the action. */
+  span: Span;
+}
+
+/** ST text of an action line: the line itself, or the expansion of a sugar line (SPEC §4.3). */
+export function actionLineText(line: ActionLine): string {
+  const s = line.sugar;
+  if (!s) return line.text;
+  const op = s.verb === "on" ? "[:=] 1" : s.verb === "set" ? ":= 1" : ":= 0";
+  const st = s.names.map((n) => `${n.text} ${op};`).join(" ");
+  return s.comment ? `${st} ${s.comment}` : st;
+}
+
 export interface StepNode {
   kind: "step";
   initial: boolean;
@@ -31,13 +73,15 @@ export interface StepNode {
   presetMs?: number;
   /** Text of the "..." string, unescaped. */
   description?: string;
+  /** The step's actions in source order (SPEC §4.3). Empty array = no action. */
+  actions: ActionNode[];
   /**
-   * Action lines after dedent (SPEC §4.3): one entry per source line, leading and
-   * trailing blank lines removed, inner blank lines kept (text ""). Empty array = no action.
-   * Each span points at the first character of the dedented text in the file
-   * (for a blank line: column 1 of that line).
+   * Every line of every action, in source order (qualifier lines excluded): the same as
+   * `actions.flatMap((a) => a.lines)`. One entry per source line after dedent, inner blank
+   * lines kept (text ""). Each span points at the first character of the dedented text in
+   * the file (for a blank line: column 1 of that line).
    */
-  action: SourceText[];
+  action: ActionLine[];
   /** Span of the step line (keyword to end of line). */
   span: Span;
 }

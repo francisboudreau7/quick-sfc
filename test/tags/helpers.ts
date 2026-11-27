@@ -71,6 +71,7 @@ export function built(o: Opts): Built {
         initial: !!e.init,
         name: { text: e.step, span: { line, col: e.init ? 6 : 6 } },
         ...(e.presetMs !== undefined ? { presetMs: e.presetMs } : {}),
+        actions: action.length ? [{ qualifier: "N", lines: action, span: action[0]!.span }] : [],
         action,
         span: { line, col: 1 },
       });

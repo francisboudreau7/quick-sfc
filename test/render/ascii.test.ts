@@ -19,7 +19,9 @@ describe.each(charts)("ASCII view: $name", ({ name, source }) => {
     for (const s of graph.steps) {
       const preset = s.presetMs > 0 ? `  ${formatDuration(s.presetMs)}` : "";
       expect(text, s.name).toMatch(new RegExp(`[│║] +${escape(s.name + preset)} +[│║]`));
-      if (s.action.length > 0) has(`─[ ${s.action[0]!.trim().slice(0, 39)}`, "action");
+      const only = s.actions.length === 1 && s.actions[0]!.qualifier === "N" ? s.actions[0]! : undefined;
+      if (only) has(`─[ ${only.lines[0]!.trim().slice(0, 39)}`, "action");
+      else if (s.actions.length > 0) has(`─[ ${s.actions[0]!.qualifier}`, "actions");
     }
     for (const t of graph.transitions) {
       has(t.auto ? `┼ ${t.condition}` : `┼ ${t.name}: ${t.condition}`, "transition");

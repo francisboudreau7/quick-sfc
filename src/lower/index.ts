@@ -14,8 +14,8 @@
  * (the explicit select's converge, or an automatic one with `target`).
  */
 import type { BranchNode, Chart, Element, Sequence, StepNode, TransitionNode } from "../model/ast.js";
-import { allSteps, allTransitions, key, walk } from "../model/ast.js";
-import type { GBranch, GLink, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
+import { actionLineText, allSteps, allTransitions, key, walk } from "../model/ast.js";
+import type { GAction, GBranch, GLink, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
 import { collectInfo, continuingLegs, stepsByKey } from "../validate/flow.js";
 
 type Source =
@@ -46,6 +46,13 @@ interface BranchPlan {
 export interface OperandBase {
   steps: number;
   transitions: number;
+  /** Action operands (Action_000...): every step takes at least one (the name comment). Default 0. */
+  actions?: number;
+}
+
+/** Action operands a lowered routine takes (with the L5X writer's default name comments). */
+export function actionOperands(graph: Graph): number {
+  return graph.steps.reduce((n, s) => n + Math.max(1, s.actions.length), 0);
 }
 
 export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions: 0 }): Graph {
@@ -55,7 +62,15 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
   const transId = new Map<TransitionNode, GraphId>();
   const transIndex = new Map<TransitionNode, number>();
 
+  let actionNo = base.actions ?? 0;
   const steps: GStep[] = stepNodes.map((s, index) => {
+    const first = actionNo;
+    actionNo += Math.max(1, s.actions.length);
+    const actions = s.actions.map((a, k): GAction => {
+      const g: GAction = { qualifier: a.qualifier, lines: a.lines.map(actionLineText), index: first + k, node: a };
+      if (a.timeMs !== undefined) g.timeMs = a.timeMs;
+      return g;
+    });
     const id = `s${index}`;
     stepId.set(s, id);
     const g: GStep = {
@@ -64,7 +79,7 @@ export function lower(chart: Chart, base: OperandBase = { steps: 0, transitions:
       name: s.name.text,
       initial: s.initial,
       presetMs: s.presetMs ?? 0,
-      action: s.action.map((a) => a.text),
+      actions,
       node: s,
     };
     if (s.description !== undefined) g.description = s.description;

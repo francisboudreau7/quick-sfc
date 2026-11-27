@@ -2,7 +2,19 @@
  * Tag analysis (SPEC §7, §9.2 E400-E410, W302, W400-W404): scans every action and condition,
  * creates tags, infers their types and reports ST slips.
  */
-import { type Chart, type ProgramNode, type SourceText, type TagDecl, type TagType, key, walk } from "../model/ast.js";
+import {
+  type ActionLine,
+  type ActionNode,
+  type Chart,
+  type ProgramNode,
+  type SourceText,
+  type StepNode,
+  type Sugar,
+  type TagDecl,
+  type TagType,
+  key,
+  walk,
+} from "../model/ast.js";
 import { type Diagnostic, type Span, error, sortDiagnostics, warning } from "../model/diagnostics.js";
 import type { TagInfo } from "../model/graph.js";
 import { type LineIn, type Scan, type Tok, scan } from "./lexer.js";
@@ -603,9 +615,38 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     }
   };
 
-  /** `label`: what the W402 message names, e.g. "the action of `fill`". */
-  const processUnit = (lines: LineIn[], isCond: boolean, label = "the action"): void => {
-    const sc = scan(lines);
+  /**
+   * Tokens of a sugar line (SPEC §4.3): `name [:=] 1 ;` / `name := 1 ;` / `name := 0 ;` per
+   * name. The name tokens sit on the names; the others are empty, at the end of each name.
+   */
+  const sugarTokens = (line: number, sg: Sugar): Tok[] => {
+    const out: Tok[] = [];
+    const op = sg.verb === "on" ? "[:=]" : ":=";
+    const v = sg.verb === "reset" ? 0 : 1;
+    for (const nm of sg.names) {
+      const col = nm.span.col;
+      const end = nm.span.endCol ?? col + nm.text.length;
+      out.push(
+        { k: "id", t: nm.text, u: nm.text.toUpperCase(), line, col, end },
+        { k: "op", t: op, u: op, line, col: end, end },
+        { k: "num", t: String(v), u: String(v), line, col: end, end, real: false, val: v },
+        { k: "p", t: ";", u: ";", line, col: end, end },
+      );
+    }
+    return out;
+  };
+
+  /**
+   * `label`: what the W402 message names, e.g. "the action of `fill`".
+   * `sugar`: sugar lines of the unit (by line number), analyzed as their expansion.
+   */
+  const processUnit = (lines: LineIn[], isCond: boolean, label = "the action", sugar: ReadonlyMap<number, Sugar> = new Map()): void => {
+    const sc = scan(sugar.size ? lines.map((l) => (sugar.has(l.line) ? { ...l, text: "" } : l)) : lines);
+    if (sugar.size) {
+      const synth = [...sugar].flatMap(([line, sg]) => sugarTokens(line, sg));
+      // a sugar line has no tokens of its own: a stable sort by line puts its tokens in place
+      sc.toks = [...sc.toks, ...synth].sort((a, b) => a.line - b.line);
+    }
     const toks = sc.toks;
     const mkParser = (ts: Tok[]): Parser => new Parser(ts, sc);
 
@@ -719,6 +760,25 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
 
   const toLines = (st: SourceText): LineIn => ({ text: st.text, line: st.span.line, col: st.span.col });
 
+  /** W402 names the qualifier when the step has several actions or a non-N one (SPEC §4.3). */
+  const actionLabel = (step: StepNode, a: ActionNode): string =>
+    step.actions.length === 1 && a.qualifier === "N"
+      ? `the action of \`${step.name.text}\``
+      : `the ${a.qualifier} action of \`${step.name.text}\``;
+
+  const processAction = (step: StepNode, a: ActionNode): void => {
+    const sugar = new Map<number, Sugar>();
+    for (const l of a.lines as ActionLine[]) if (l.sugar) sugar.set(l.span.line, l.sugar);
+    processUnit(a.lines.map(toLines), false, actionLabel(step, a), sugar);
+    // sugar tags are BOOL (SPEC §4.3); a name that is not a tag (a step: E400) gets none
+    for (const sg of sugar.values()) {
+      for (const nm of sg.names) {
+        const k = key(nm.text);
+        if (recs.has(k) && !stepsByKey.has(k)) evid({ key: k, name: nm.text, span: nm.span }, "BOOL");
+      }
+    }
+  };
+
   for (const r of program.routines) {
     if (r.kind === "st") {
       currentRoutine = r.name.text;
@@ -728,7 +788,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     currentRoutine = r.name?.text ?? "";
     for (const el of walk(r.chart.body)) {
       if (el.kind === "step") {
-        if (el.action.length) processUnit(el.action.map(toLines), false, `the action of \`${el.name.text}\``);
+        for (const a of el.actions) processAction(el, a);
       } else if (el.kind === "transition") {
         if (el.condition.text.length) processUnit([toLines(el.condition)], true);
       }

@@ -4,14 +4,18 @@
  * line-level E2xx codes: E204 E205 E206 E209 E210 E219).
  */
 import type {
+  ActionLine,
+  ActionNode,
   BranchNode,
   Chart,
   Name,
   ProgramNode,
+  Qualifier,
   Sequence,
   SourceText,
   StepNode,
   StRoutineNode,
+  Sugar,
   TagDecl,
   TagType,
   TransitionNode,
@@ -49,12 +53,45 @@ export function parse(source: string): ParseResult {
 
 const TAG_TYPES: readonly TagType[] = ["BOOL", "DINT", "REAL", "TIMER"];
 const QUALIFIERS = new Set(["n", "s", "r", "l", "d", "p", "p0", "p1", "sd", "ds", "sl"]);
+/** Supported today (SPEC §4.3); the others give E110. */
+const SUPPORTED: ReadonlySet<string> = new Set(["N", "S", "R", "L", "D", "P"]);
+/** Qualifiers that need a duration (E111). */
+const TIMED: ReadonlySet<string> = new Set(["L", "D"]);
+/** A qualifier line: only the qualifier, optionally a duration, optionally a comment (SPEC §4.3). */
+const QUALIFIER_LINE_RE = /^([A-Za-z]\w*)(?:[ \t]+(\d\S*))?[ \t]*(?:\/\/.*)?$/;
+/** A sugar line: keyword, names separated by commas, optional `;`, optional comment (SPEC §4.3). */
+const SUGAR_RE = /^(on|set|reset)[ \t]+([A-Za-z_]\w*(?:[ \t]*,[ \t]*[A-Za-z_]\w*)*)[ \t]*;?[ \t]*(\/\/.*)?$/i;
+
+/** A qualifier line, read when it is buffered. */
+interface QualifierLine {
+  qualifier: Qualifier;
+  timeMs?: number;
+  span: Span;
+  /** P0, P1, SL, SD, DS (E110): its lines are kept as an N action, and no E112. */
+  unsupported?: boolean;
+}
+
+/** The sugar of an action line (SPEC §4.3), or undefined when the line is ordinary ST. */
+export function readSugar(line: SourceText): Sugar | undefined {
+  const m = SUGAR_RE.exec(line.text);
+  if (!m) return undefined;
+  const verb = m[1]!.toLowerCase() as Sugar["verb"];
+  const listStart = line.text.indexOf(m[2]!, m[1]!.length);
+  const names = [...m[2]!.matchAll(/[A-Za-z_]\w*/g)].map((w) => {
+    const col = line.span.col + listStart + w.index!;
+    return { text: w[0], span: { line: line.span.line, col, endLine: line.span.line, endCol: col + w[0].length } };
+  });
+  const sugar: Sugar = { verb, names };
+  if (m[3]) sugar.comment = m[3].trimEnd();
+  return sugar;
+}
 const TRANSITION_NAME_RE = /^\s*([A-Za-z_]\w*)\s*:(?!=)/;
 
 interface BufferedLine {
   line: number;
   raw: string;
-  kind: "st" | "blank" | "comment";
+  kind: "st" | "blank" | "comment" | "qualifier";
+  qualifier?: QualifierLine;
 }
 
 interface Frame {
@@ -242,7 +279,9 @@ class Parser {
         return;
       default:
         if (this.owner) {
-          this.buffer.push({ line: n, raw, kind: "st" });
+          const qualifier = this.qualifierLine(n, indent, t);
+          if (qualifier) this.buffer.push({ line: n, raw, kind: "qualifier", qualifier });
+          else this.buffer.push({ line: n, raw, kind: "st" });
         } else if (!this.orphanReported) {
           this.orphanReported = true;
           this.diags.push(
@@ -439,7 +478,7 @@ class Parser {
       name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
       this.diags.push(...checkName(name.text, name.span, { reserved: true }));
     }
-    const step: StepNode = { kind: "step", initial, name, action: [], span };
+    const step: StepNode = { kind: "step", initial, name, actions: [], action: [], span };
     this.current.push(step);
     this.owner = step;
     this.buffer = [];
@@ -476,36 +515,105 @@ class Parser {
     }
   }
 
-  /** Close the action block of the current step (SPEC §4.3). */
+  /**
+   * A line holding only a qualifier (and a duration, and a comment) starts an action
+   * (SPEC §4.3). Reports E110 (unsupported qualifier) and E111 (duration missing or not allowed).
+   */
+  private qualifierLine(n: number, indent: number, t: string): QualifierLine | undefined {
+    const m = QUALIFIER_LINE_RE.exec(t);
+    if (!m || !QUALIFIERS.has(m[1]!.toLowerCase())) return undefined;
+    const written = m[1]!.toUpperCase();
+    const span = lineSpan(n, indent, indent + m[1]!.length);
+    if (!SUPPORTED.has(written)) {
+      this.diags.push(error("E110", span, `qualifier \`${written}\` is not supported yet (N, S, R, L, D, P are)`));
+      return { qualifier: "N", span, unsupported: true };
+    }
+    const q: QualifierLine = { qualifier: written as Qualifier, span };
+    const dur = m[2];
+    const durSpan = (): Span => {
+      const ds = indent + t.indexOf(dur!, m[1]!.length);
+      return lineSpan(n, ds, ds + dur!.length);
+    };
+    if (TIMED.has(written)) {
+      if (dur === undefined) {
+        this.diags.push(error("E111", span, `qualifier \`${written}\` needs a duration: \`${written} 10s\``));
+      } else {
+        const ms = parseDuration(dur, durSpan(), this.diags);
+        if (ms !== undefined) q.timeMs = ms;
+      }
+    } else if (dur !== undefined) {
+      this.diags.push(error("E111", durSpan(), `qualifier \`${written}\` takes no duration`, "only L and D take a duration"));
+    }
+    return q;
+  }
+
+  /** Close the action block of the current step: split it into actions (SPEC §4.3). */
   private flush(): void {
     const owner = this.owner;
     if (!owner) return;
     const buf = this.buffer;
     this.buffer = [];
-    const action = dedent(buf);
-    owner.action = action;
-    const kinds = new Map(buf.map((b) => [b.line, b.kind]));
-    for (const a of action) {
-      const kind = kinds.get(a.span.line);
-      if (kind === "blank") continue;
-      checkCdata(a.text, a.span, this.diags);
-      this.scanIdentifiers(a.text);
-      if (kind === "st") this.checkQualifier(a);
+    const groups: Array<{ head?: QualifierLine; lines: BufferedLine[] }> = [{ lines: [] }];
+    for (const b of buf) {
+      if (b.qualifier) groups.push({ head: b.qualifier, lines: [] });
+      else groups[groups.length - 1]!.lines.push(b);
     }
+    const actions: ActionNode[] = [];
+    for (const g of groups) {
+      const lines: ActionLine[] = dedent(g.lines);
+      const kinds = new Map(g.lines.map((b) => [b.line, b.kind]));
+      for (const a of lines) {
+        const kind = kinds.get(a.span.line);
+        if (kind === "blank") continue;
+        checkCdata(a.text, a.span, this.diags);
+        this.scanIdentifiers(a.text);
+        if (kind !== "st") continue;
+        const sugar = readSugar(a);
+        if (sugar) a.sugar = sugar;
+        else this.checkInlineQualifier(a);
+      }
+      const h = g.head;
+      if (!h) {
+        if (lines.length) actions.push({ qualifier: "N", lines, span: lines[0]!.span });
+        continue;
+      }
+      if (lines.length === 0) {
+        if (!h.unsupported) {
+          const who = owner.name.text ? ` of step \`${owner.name.text}\`` : "";
+          this.diags.push(
+            error("E112", h.span, `the \`${h.qualifier}\` action${who} is empty`, "write its ST on the lines below the qualifier"),
+          );
+        }
+        continue;
+      }
+      const node: ActionNode = { qualifier: h.qualifier, lines, header: h.span, span: h.span };
+      if (h.timeMs !== undefined) node.timeMs = h.timeMs;
+      actions.push(node);
+    }
+    owner.actions = actions;
+    owner.action = actions.flatMap((a) => a.lines);
   }
 
-  /** E110: IEC action qualifiers are [Later] (SPEC §4.3). */
-  private checkQualifier(a: SourceText): void {
+  /**
+   * E110: a qualifier with ST on the same line (`L 10s horn [:=] 1;`, `S x := 1;`): the
+   * qualifier goes on its own line (SPEC §4.3). `S := 1;` (a tag named S) is ST.
+   */
+  private checkInlineQualifier(a: SourceText): void {
     const m = /^([A-Za-z_]\w*)/.exec(a.text);
     if (!m || !QUALIFIERS.has(m[1]!.toLowerCase())) return;
     const rest = a.text.slice(m[1]!.length).trimStart();
     if (rest === "" || rest.startsWith("//")) return;
     if (/^[:\[.(=<>]/.test(rest)) return; // := [:=] . [ ( = < > : can follow a tag name
+    const written = m[1]!.toUpperCase();
+    const span = { line: a.span.line, col: a.span.col, endLine: a.span.line, endCol: a.span.col + m[1]!.length };
+    if (!SUPPORTED.has(written)) {
+      this.diags.push(error("E110", span, `qualifier \`${written}\` is not supported yet (N, S, R, L, D, P are)`));
+      return;
+    }
     const dur = /^\d+[A-Za-z]+/.exec(rest);
-    const shown = dur ? `${m[1]} ${dur[0]}` : m[1]!;
+    const shown = dur ? `${written} ${dur[0]}` : written;
     this.diags.push(
-      error("E110", { line: a.span.line, col: a.span.col, endLine: a.span.line, endCol: a.span.col + m[1]!.length },
-        `action qualifiers are not supported yet: write the ST without \`${shown}\` (N is used)`),
+      error("E110", span, `write the qualifier \`${shown}\` on its own line, with the action's ST on the lines below it`),
     );
   }
 

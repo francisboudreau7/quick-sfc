@@ -19,10 +19,11 @@ import type {
   StRoutineNode,
   Sugar,
   TagDecl,
+  UsesEntry,
   TagType,
   TransitionNode,
 } from "../model/ast.js";
-import { key } from "../model/ast.js";
+import { IO_ADDRESS_RE, key, TAG_PATH_RE } from "../model/ast.js";
 import { error, sortDiagnostics, type Diagnostic, type Span } from "../model/diagnostics.js";
 import { checkName, NAME_RE } from "./names.js";
 import { checkCdata, contentEnd, isWs, mask, parseDuration, readString, skipWs } from "./text.js";
@@ -88,16 +89,12 @@ export function readSugar(line: SourceText): Sugar | undefined {
   return sugar;
 }
 const TRANSITION_NAME_RE = /^\s*([A-Za-z_]\w*)\s*:(?!=)/;
-/**
- * A Logix I/O path for the `io` block (SPEC §7.6), checked loosely: a module part with at
- * least one `:` (`Local:1:I`, `Rack1:I`), then `.member`, `.bit` or `[index]` parts.
- */
-export const IO_ADDRESS_RE = /^[A-Za-z_]\w*(?::\w+)+(?:\.\w+|\[\d+\])*$/;
+export { IO_ADDRESS_RE } from "../model/ast.js";
 /** `after <duration>` in a condition (SPEC §4.4): `after` not after a dot or a name character. */
 const AFTER_RE = /(?<![\w.])after[ \t]+(\d\w*)/gi;
 /** First words that end an `io` block that is missing its `end` (E206). */
 const IO_BREAKERS: ReadonlySet<string> = new Set([
-  "program", "sfc", "st", "tag", "init", "step", "select", "parallel", "course", "author", "io",
+  "program", "sfc", "st", "tag", "init", "step", "select", "parallel", "course", "author", "io", "uses", "controller",
 ]);
 
 interface BufferedLine {
@@ -180,7 +177,9 @@ class Parser {
   private readonly unnamed: TransitionNode[] = [];
   private readonly used = new Set<string>();
   /** The open `io` block (SPEC §7.6), if any. */
-  private ioBlock: { span: Span } | null = null;
+  private ioBlock: { span: Span; scope?: "controller" } | null = null;
+  /** The open `controller` block (SPEC §7.7), if any. */
+  private ctrlBlock: { span: Span } | null = null;
 
   constructor(source: string) {
     this.lines = source.split(/\r?\n/);
@@ -209,7 +208,18 @@ class Parser {
     });
     this.closeRoutine();
     this.closeIo();
+    this.closeController();
     this.assignAutoNames();
+  }
+
+  /** E206 for a `controller` block without `end`. */
+  private closeController(): void {
+    if (!this.ctrlBlock) return;
+    this.closeIo();
+    this.diags.push(
+      error("E206", this.ctrlBlock.span, `\`controller\` at line ${this.ctrlBlock.span.line} is never closed: add \`end\``),
+    );
+    this.ctrlBlock = null;
   }
 
   /** E206 for an `io` block without `end` (at the end of the file, or before a structure line). */
@@ -246,6 +256,11 @@ class Parser {
     // `st := 1;` is ST, `st main` is a header
     const headerShape = rest.trim() === "" || /^\s+(?![:=])\S/.test(rest) || /^\s*\/\//.test(rest);
     if (this.ioBlock && this.ioLine(n, raw, indent, t, word, headerShape)) return;
+    if (this.ctrlBlock && this.controllerLine(n, raw, indent, t, word, headerShape)) return;
+    if (word === "controller" && headerShape) {
+      this.controllerStart(n, raw, indent);
+      return;
+    }
     if (word === "io" && headerShape) {
       if (!this.st) this.structure("an `io` block");
       this.ioStart(n, raw, indent);
@@ -257,6 +272,10 @@ class Parser {
     }
     if (word === "program" && headerShape) {
       this.programHeader(n, raw, indent);
+      return;
+    }
+    if (word === "uses" && headerShape) {
+      this.usesLine(n, raw, indent);
       return;
     }
     if ((word === "sfc" || word === "st") && headerShape) {
@@ -402,6 +421,53 @@ class Parser {
     }
   }
 
+  /**
+   * `uses INIT, PRODUCTION_NORMALE, MainRoutine (main)` (SPEC §4.5): routines of the program that
+   * aren't in the file. Before the first routine; several lines add up.
+   */
+  private usesLine(n: number, raw: string, indent: number): void {
+    const end = contentEnd(raw);
+    const span = lineSpan(n, indent, end);
+    if (this.program.routines.length > 0) {
+      this.diags.push(error("E210", span, "the `uses` line must come before the first routine"));
+    }
+    const list = (this.program.uses ??= []);
+    let i = skipWs(raw, indent + 4, end);
+    if (i >= end) {
+      this.diags.push(error("E101", span, "`uses` needs routine names: `uses INIT, MainRoutine (main)`"));
+      return;
+    }
+    while (i < end) {
+      const start = i;
+      while (i < end && /\w/.test(raw[i]!)) i++;
+      if (start === i) {
+        this.diags.push(error("E107", lineSpan(n, i, end), `unexpected text \`${raw.slice(i, end)}\` in the \`uses\` line`,
+          "write routine names separated by commas: `uses INIT, MainRoutine (main)`"));
+        return;
+      }
+      const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
+      this.diags.push(...checkName(name.text, name.span, { reserved: true, keywordName: true }));
+      this.used.add(key(name.text));
+      const entry: UsesEntry = { name, main: false };
+      i = skipWs(raw, i, end);
+      const m = /^\(\s*main\s*\)/i.exec(raw.slice(i, end));
+      if (m) {
+        const mainSpan = lineSpan(n, i, i + m[0].length);
+        const other = list.find((u) => u.main);
+        if (other) this.diags.push(error("E210", mainSpan, `the main routine is already \`${other.name.text}\` (line ${other.name.span.line})`));
+        else entry.main = true;
+        i = skipWs(raw, i + m[0].length, end);
+      }
+      list.push(entry);
+      if (raw[i] === ",") i = skipWs(raw, i + 1, end);
+      else if (i < end) {
+        this.diags.push(error("E107", lineSpan(n, i, end), `unexpected text \`${raw.slice(i, end)}\` in the \`uses\` line`,
+          "separate the routine names with commas"));
+        return;
+      }
+    }
+  }
+
   /** `course "…"` / `author "…"` (SPEC §4.5): before the first routine, once each; printing only. */
   private metaLine(n: number, raw: string, indent: number, word: "course" | "author"): void {
     const end = contentEnd(raw);
@@ -434,9 +500,78 @@ class Parser {
 
   // ---- io block (SPEC §7.6) ---------------------------------------------------------
 
-  private ioStart(n: number, raw: string, indent: number): void {
+  // ---- controller block (SPEC §7.7) ---------------------------------------------------
+
+  private controllerStart(n: number, raw: string, indent: number): void {
+    const span = lineSpan(n, indent, indent + 10);
+    if (this.program.routines.length > 0) {
+      this.diags.push(error("E210", span, "the `controller` block must come before the first routine"));
+    }
+    this.extraText(n, raw, indent + 10, contentEnd(raw), "`controller`");
+    this.ctrlBlock = { span };
+  }
+
+  /**
+   * A line inside the `controller` block: `tag` lines, an `io` block, `sfc tags …`, `end`.
+   * Returns false when the line ends the block (missing `end`: E206), so the caller reads it.
+   */
+  private controllerLine(n: number, raw: string, indent: number, t: string, word: string | undefined, headerShape: boolean): boolean {
+    if (t.trim() === "" || t.startsWith("//")) return true;
+    if (word === "end") {
+      this.ctrlBlock = null;
+      this.extraText(n, raw, indent + 3, contentEnd(raw), "`end`");
+      return true;
+    }
+    if (word === "tag") {
+      this.tag(n, raw, indent, "controller");
+      return true;
+    }
+    if (word === "io" && headerShape) {
+      this.ioStart(n, raw, indent, "controller");
+      return true;
+    }
+    if (word === "sfc" && /^\s+tags\b/i.test(t.slice(3))) {
+      this.sfcTags(n, raw, indent);
+      return true;
+    }
+    if (t.startsWith("--") || t.startsWith("|") || (word !== undefined && IO_BREAKERS.has(word) && headerShape)) {
+      this.closeController();
+      return false;
+    }
+    this.diags.push(
+      error("E223", lineSpan(n, indent, contentEnd(raw)), "only `tag` lines, an `io` block and `sfc tags` go in the `controller` block",
+        "close the block with `end` first"),
+    );
+    return true;
+  }
+
+  /** `sfc tags s26, s27, tr29` (SPEC §7.7): elements whose operand tags are controller tags. */
+  private sfcTags(n: number, raw: string, indent: number): void {
+    const end = contentEnd(raw);
+    let i = skipWs(raw, raw.toLowerCase().indexOf("tags", indent + 3) + 4, end);
+    const list = (this.program.controllerElements ??= []);
+    while (i < end) {
+      const start = i;
+      while (i < end && /\w/.test(raw[i]!)) i++;
+      if (start === i) {
+        this.diags.push(error("E107", lineSpan(n, i, end), `unexpected text \`${raw.slice(i, end)}\` in \`sfc tags\``,
+          "write step and transition names separated by commas: `sfc tags fill, tr4`"));
+        return;
+      }
+      list.push({ text: raw.slice(start, i), span: lineSpan(n, start, i) });
+      i = skipWs(raw, i, end);
+      if (raw[i] === ",") i = skipWs(raw, i + 1, end);
+      else if (i < end) {
+        this.diags.push(error("E107", lineSpan(n, i, end), `unexpected text \`${raw.slice(i, end)}\` in \`sfc tags\``,
+          "separate the names with commas"));
+        return;
+      }
+    }
+  }
+
+  private ioStart(n: number, raw: string, indent: number, scope?: "controller"): void {
     this.extraText(n, raw, indent + 2, contentEnd(raw), "`io`");
-    this.ioBlock = { span: lineSpan(n, indent, indent + 2) };
+    this.ioBlock = scope ? { span: lineSpan(n, indent, indent + 2), scope } : { span: lineSpan(n, indent, indent + 2) };
     if (!this.program.io) this.program.io = [];
   }
 
@@ -474,13 +609,14 @@ class Parser {
       this.diags.push(
         error("E413", name.span, `I/O point \`${name.text}\` has no address`, `write it after the name, e.g.  ${name.text}  Local:1:I.Data.0`),
       );
-    } else if (!IO_ADDRESS_RE.test(address.text)) {
+    } else if (!IO_ADDRESS_RE.test(address.text) && !TAG_PATH_RE.test(address.text)) {
       this.diags.push(
         error("E413", address.span, `\`${address.text}\` is not a valid I/O address`,
-          "write a Logix I/O path, e.g. Local:1:I.Data.0 (input bit) or Local:2:O.Data.3 (output bit)"),
+          "write a Logix I/O path, e.g. Local:1:I.Data.0 (input bit), or a tag member, e.g. Step_017.Count"),
       );
     }
     const entry: IoEntry = { name, address, span };
+    if (this.ioBlock?.scope) entry.scope = this.ioBlock.scope;
     i = skipWs(raw, i, end);
     if (raw[i] === '"') {
       const d = this.description(n, raw, i, end);
@@ -559,7 +695,7 @@ class Parser {
 
   // ---- tag ----------------------------------------------------------------
 
-  private tag(n: number, raw: string, indent: number): void {
+  private tag(n: number, raw: string, indent: number, scope?: "controller"): void {
     const end = contentEnd(raw);
     const span = lineSpan(n, indent, end);
     let i = skipWs(raw, indent + 3, end);
@@ -572,6 +708,7 @@ class Parser {
     const name: Name = { text: raw.slice(start, i), span: lineSpan(n, start, i) };
     this.diags.push(...checkName(name.text, name.span));
     const decl: TagDecl = { name, span };
+    if (scope) decl.scope = scope;
     i = skipWs(raw, i, end);
     if (raw[i] === ":") {
       i = skipWs(raw, i + 1, end);

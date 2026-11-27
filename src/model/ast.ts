@@ -92,6 +92,26 @@ export interface StepNode {
  */
 export const READABLE_MEMBERS: Readonly<Record<string, string>> = { active: "X", done: "DN", time: "T", first: "FS" };
 
+const STEP_PIN = /^s(0|[1-9]\d*)$/i;
+const TRANS_PIN = /^tr(0|[1-9]\d*)$/i;
+
+/** The operand number a name pins (`s3` -> 3 for a step, `tr3` -> 3 for a named transition), if any (SPEC §8.2). */
+export function pinnedOperand(kind: "step" | "transition", name: string): number | undefined {
+  const m = (kind === "step" ? STEP_PIN : TRANS_PIN).exec(name);
+  return m ? Number(m[1]) : undefined;
+}
+
+export type OperandKind = "step" | "transition" | "action";
+const OPERAND_NAME = /^(step|tran|action)_(\d+)$/i;
+
+/** `Step_017` -> {kind: "step", number: 17}: a Studio operand name (SPEC §8.2), if it is one. */
+export function operandName(name: string): { kind: OperandKind; number: number } | undefined {
+  const m = OPERAND_NAME.exec(name);
+  if (!m) return undefined;
+  const w = m[1]!.toLowerCase();
+  return { kind: w === "step" ? "step" : w === "tran" ? "transition" : "action", number: Number(m[2]) };
+}
+
 /** `after 5s` in a condition (SPEC §4.4, Phase 4c): the step above has been active that long. */
 export interface AfterTerm {
   /** The duration in ms; absent when the duration is invalid (E104/E105 reported). */
@@ -145,6 +165,8 @@ export interface TagDecl {
   initial?: number;
   /** Where the value is written (`= 5`, `3s`), for messages. */
   valueSpan?: Span;
+  /** Written in the `controller` block (SPEC §7.7): a controller-scope tag. */
+  scope?: "controller";
   span: Span;
 }
 
@@ -181,13 +203,30 @@ export interface StRoutineNode {
 export type RoutineNode = SfcRoutineNode | StRoutineNode;
 
 /** One line of an `io … end` block (SPEC §7.6): `name  address  ["description"]`. */
+/** A routine named on a `uses` line (SPEC §4.5): in the program, but not in this file. */
+export interface UsesEntry {
+  name: Name;
+  /** `(main)`: the program's main routine. */
+  main: boolean;
+}
+
 export interface IoEntry {
   name: Name;
+  /** In an `io` block inside the `controller` block (SPEC §7.7). */
+  scope?: "controller";
   /** The Logix I/O path as written (`Local:1:I.Data.0`). */
   address: SourceText;
   description?: string;
   span: Span;
 }
+
+/**
+ * A Logix I/O path for the `io` block (SPEC §7.6), checked loosely: a module part with at
+ * least one `:` (`Local:1:I`, `Rack1:I`), then `.member`, `.bit` or `[index]` parts.
+ */
+export const IO_ADDRESS_RE = /^[A-Za-z_]\w*(?::\w+)+(?:\.\w+|\[\d+\])*$/;
+/** An alias of a tag member in the `io` block (`ejections  Step_017.Count`, SPEC §7.6). */
+export const TAG_PATH_RE = /^[A-Za-z_]\w*(?:\.\w+|\[\d+\])+$/;
 
 /** A bit address (`Local:1:I.Data.0`) ends with `.digits`: the tag is BOOL (SPEC §7.6). */
 export function isBitAddress(address: string): boolean {
@@ -202,6 +241,16 @@ export interface ProgramNode {
   title?: string;
   /** `course "…"` and `author "…"` header lines: for printing only, not exported (SPEC §4.5). */
   meta?: { course?: string; author?: string };
+  /**
+   * `uses INIT, MainRoutine (main)`: routines of the program that aren't in the file (SPEC §4.5).
+   * `JSR`, `SFR` and `SFP` may name them; absent when there is none.
+   */
+  uses?: UsesEntry[];
+  /**
+   * `sfc tags s26, tr29` in the `controller` block (SPEC §7.7): steps and transitions whose
+   * operand tags (and the step's action tags) are controller tags. Absent when there is none.
+   */
+  controllerElements?: Name[];
   /** Every line of every `io … end` block, in file order (SPEC §7.6); absent when there is none. */
   io?: IoEntry[];
   /** File order. The first one is the main routine. */

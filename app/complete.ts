@@ -122,6 +122,8 @@ export const LINE_KEYWORDS: ReadonlyArray<Option> = [
   { label: "st", type: "keyword", apply: "st ", detail: "st name: starts an ST routine" },
   { label: "program", type: "keyword", apply: "program ", detail: "program name [\"title\"] (before the first routine)" },
   { label: "io", type: "keyword", detail: "io … end: name  Local:1:I.Data.0  [\"description\"] (alias tags)" },
+  { label: "controller", type: "keyword", detail: "controller … end: tag lines, an io block, sfc tags (controller-scope tags)" },
+  { label: "uses", type: "keyword", apply: "uses ", detail: "uses INIT, MainRoutine (main): routines not in this file" },
   { label: "course", type: "keyword", apply: "course \"", detail: "course \"…\": printed in the title block" },
   { label: "author", type: "keyword", apply: "author \"", detail: "author \"…\": printed in the title block" },
 ];

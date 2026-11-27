@@ -22,8 +22,8 @@ import { hasErrors } from "../model/diagnostics.js";
 import type { Graph } from "../model/graph.js";
 import { parseXml } from "../l5x/xml.js";
 import { QUALIFIER_NAMES, stepNameComment } from "../l5x/index.js";
-import { pinnedOperand } from "../lower/index.js";
-import { IO_ADDRESS_RE } from "../parse/index.js";
+import { operandName, pinnedOperand } from "../model/ast.js";
+import { IO_ADDRESS_RE, TAG_PATH_RE } from "../model/ast.js";
 import { checkName } from "../parse/names.js";
 import { formatDuration } from "../render/ascii.js";
 import { renameIdentifiers } from "../tags/rewrite.js";
@@ -60,6 +60,8 @@ export interface ImportResult {
   notes: ImportNote[];
   /** Errors left in `source` (shown in the editor; 0 normally). */
   errors: number;
+  /** Steps and transitions whose tags are controller tags in the file (SPEC §7.7), moved or not. */
+  controllerSfcTags: number;
   /** Set when the file itself can't be read. */
   error?: string;
 }
@@ -67,6 +69,11 @@ export interface ImportResult {
 export interface ImportOptions {
   /** Program to import (case-insensitive). Default: the exported Program (Use="Target"), else the first. */
   program?: string;
+  /**
+   * Step and transition tags that are controller tags in the file become program tags (no
+   * `sfc tags` line, SPEC §7.7). Default false: the import mirrors the L5X.
+   */
+  sfcTagsAtProgram?: boolean;
 }
 
 // ---- reading -----------------------------------------------------------------------------------
@@ -81,6 +88,8 @@ interface L5XTag {
   members: Map<string, string>;
   /** Array or nested data that qSFC can't describe. */
   complex: boolean;
+  /** A controller tag (the `<Controller><Tags>` of the file, SPEC §7.7). */
+  controller?: boolean;
 }
 
 const lineText = (el: ScanElement): string => el.text.replace(/^\r?\n|\r?\n$/g, "");
@@ -168,7 +177,7 @@ type Part = SfcPart | StPart;
 
 export function importL5X(xml: string, options: ImportOptions = {}): ImportResult {
   const empty = (error: string, programs: string[] = []): ImportResult => ({
-    source: "", program: "", programs, routines: [], notes: [], errors: 0, error,
+    source: "", program: "", programs, routines: [], notes: [], errors: 0, controllerSfcTags: 0, error,
   });
   try {
     parseXml(xml);
@@ -190,19 +199,37 @@ export function importL5X(xml: string, options: ImportOptions = {}): ImportResul
     (wanted === undefined ? (programEls.find((p) => attr(p, "Use") === "Target") ?? programEls[0]) : undefined);
   if (!program) return empty(`the file has no program named ${options.program}`, programs);
   try {
-    return { ...importProgram(program), programs };
+    const content = root.children.find((c) => c.name === "RSLogix5000Content");
+    const controllerEl = content?.children.find((c) => c.name === "Controller");
+    const controllerTags = readTags(controllerEl?.children.find((c) => c.name === "Tags"));
+    const whole = content !== undefined && attr(content, "TargetType") === "Controller";
+    return { ...importProgram(program, controllerTags, whole, options), programs };
   } catch (e) {
     return empty(`internal error: ${(e as Error).message}`, programs);
   }
 }
 
-function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
+/**
+ * `controllerTags`: the file's controller tags (SPEC §7.7). `whole`: a controller export, whose
+ * controller tags are not limited to the ones the program uses.
+ */
+function importProgram(
+  program: ScanElement,
+  controllerTags: L5XTag[],
+  whole: boolean,
+  options: ImportOptions,
+): Omit<ImportResult, "programs"> {
   const programName = attr(program, "Name") ?? "program";
   const notes: ImportNote[] = [];
   const warn = (text: string, routine?: string) => notes.push(routine ? { level: "warning", routine, text } : { level: "warning", text });
   const info = (text: string, routine?: string) => notes.push(routine ? { level: "info", routine, text } : { level: "info", text });
 
-  const tags = readTags(program.children.find((c) => c.name === "Tags"));
+  const programTags = readTags(program.children.find((c) => c.name === "Tags"));
+  // a program tag hides a controller tag of the same name inside the program (Studio 5000)
+  const programKeys = new Set(programTags.map((t) => key(t.name)));
+  const shadowed = controllerTags.filter((t) => programKeys.has(key(t.name))).map((t) => t.name);
+  if (shadowed.length) info(`controller tag${shadowed.length > 1 ? "s" : ""} ${shadowed.slice(0, 4).join(", ")}${shadowed.length > 4 ? "…" : ""} also exist${shadowed.length > 1 ? "" : "s"} as program tag${shadowed.length > 1 ? "s" : ""}: the program one is kept`);
+  const tags = [...programTags, ...controllerTags.filter((t) => !programKeys.has(key(t.name))).map((t) => ({ ...t, controller: true }))];
   const tagByKey = new Map(tags.map((t) => [key(t.name), t] as const));
 
   // ---- routines: main first, then document order
@@ -218,9 +245,14 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     const skip = (reason: string) => {
       report.push({ name, type, imported: false, reason });
       skipped.set(key(name), type);
-      warn(`routine ${name} not imported: ${reason}`, name);
+      warn(`routine ${name} not imported: ${reason}; named on the \`uses\` line`, name);
     };
-    if (type === "ST") {
+    if (attr(r, "Use") === "Reference") {
+      // a routine export lists the routines its code names, without their content
+      report.push({ name, type, imported: false, reason: "not in this export (only named by the code)" });
+      skipped.set(key(name), type);
+      info(`routine ${name} is not in this export (only named by the code): named on the \`uses\` line`, name);
+    } else if (type === "ST") {
       const lines = stLines(r.children.find((c) => c.name === "STContent"));
       while (lines.length && !lines[lines.length - 1]!.trim()) lines.pop();
       parts.push({ kind: "st", name, lines });
@@ -244,10 +276,11 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     }
   }
   if (!parts.length) {
-    return { source: "", program: programName, routines: report, notes, errors: 0, error: "the program has no SFC or ST routine that can be imported" };
+    return { source: "", program: programName, routines: report, notes, errors: 0, controllerSfcTags: 0, error: "the program has no SFC or ST routine that can be imported" };
   }
-  if (mainName && key(parts[0]!.name) !== key(mainName)) {
-    warn(`the main routine ${mainName} was not imported, so ${parts[0]!.name} becomes the main routine (the first routine of the file)`);
+  const usesNames = ordered.map((r) => attr(r, "Name") ?? "").filter((n) => skipped.has(key(n)));
+  if (mainName && key(parts[0]!.name) !== key(mainName) && !skipped.has(key(mainName))) {
+    warn(`the main routine ${mainName} is not in the file, so ${parts[0]!.name} becomes the main routine (the first routine of the file)`);
   }
 
   // ---- elements and names
@@ -268,7 +301,9 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     }
   });
   const isSfcTag = (t: L5XTag) =>
-    sfcOperands.has(key(t.name)) || ["SFC_STEP", "SFC_ACTION", "SFC_STOP"].includes(t.dataType.toUpperCase());
+    sfcOperands.has(key(t.name)) ||
+    operandName(t.name) !== undefined ||
+    ["SFC_STEP", "SFC_ACTION", "SFC_STOP"].includes(t.dataType.toUpperCase());
   for (const t of tags) if (!isSfcTag(t)) taken.add(key(t.name));
   const take = (name: string): boolean => {
     if (!validName(name) || taken.has(key(name))) return false;
@@ -289,7 +324,7 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     if (take(candidate)) {
       el.name = candidate;
       if (rest.length && el.node.kind !== "transition") el.description = rest.join(" ").trim();
-    } else if (el.node.kind !== "transition") el.description = desc.replace(/\n/g, " ");
+    } else if (el.node.kind !== "transition") el.description = desc.replace(/\s*\n\s*/g, " ").trim();
   }
   // 2. the step's name comment
   for (const el of steps) {
@@ -330,18 +365,45 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     el.name = n !== undefined && take(`tr${n}`) ? `tr${n}` : fresh("tr");
     el.given = true;
   }
+  // elements whose tags are controller tags (SPEC §7.7) are listed on `sfc tags`: they need a name
+  const atController = (el: Element) => !options.sfcTagsAtProgram && el.node.kind !== "stop" && tagByKey.get(key(el.node.operand))?.controller === true;
+  for (const el of transitions) {
+    if (el.name !== undefined || !atController(el)) continue;
+    const n = opNumber(el.node.operand, "Tran");
+    el.name = n !== undefined && take(`tr${n}`) ? `tr${n}` : fresh("tr");
+    el.given = true;
+  }
+
+  // operands of routines that aren't in the file (SPEC §7.3): kept as written, numbers reserved
   const knownOperands = new Set([...elements.map((e) => key(e.node.operand))]);
   const strays = new Set<string>();
-  for (const m of code.matchAll(/(?<![\w.])((?:Step|Tran|Action)_\d+)(?!\w)/gi)) if (!knownOperands.has(key(m[1]!))) strays.add(m[1]!);
+  const reserved = { step: new Set<number>(), transition: new Set<number>() };
+  for (const m of code.matchAll(/(?<![\w.])((?:Step|Tran|Action)_\d+)(?!\w)/gi)) {
+    if (knownOperands.has(key(m[1]!))) continue;
+    strays.add(m[1]!);
+    const op = operandName(m[1]!);
+    if (op && op.kind !== "action") reserved[op.kind].add(op.number);
+  }
   if (strays.size) {
-    warn(`the code refers to ${[...strays].slice(0, 4).join(", ")}${strays.size > 4 ? "…" : ""}, which ${strays.size > 1 ? "are not elements" : "is not an element"} of the imported charts: qSFC reports it as a reserved name (E405), rename it in the editor`);
+    info(`the code refers to ${[...strays].slice(0, 4).join(", ")}${strays.size > 4 ? "…" : ""}, ${strays.size > 1 ? "elements" : "an element"} of routines that aren't in the file: kept as written (their numbers aren't given to the imported elements)`);
   }
 
   // ---- operands: pin unnamed transitions whose number would change (SPEC §8.2)
   const order = skeletonOrder(parts, byUid);
   const pinPass = (): boolean => {
-    const nums = numbering(order);
+    const nums = numbering(order, reserved);
     let changed = false;
+    // a step named from its tag description whose operand would change becomes s<N>, the name
+    // going back into the description: the operand matters more (HMIs, other routines)
+    for (const el of order.steps) {
+      const want = opNumber(el.node.operand, "Step");
+      if (el.node.kind !== "step" || el.name === undefined || el.plain || want === undefined || nums.get(el) === want) continue;
+      if (pinnedOperand("step", el.name) !== undefined || !take(`s${want}`)) continue;
+      el.description = el.description ? `${el.name} ${el.description}` : el.name;
+      el.name = `s${want}`;
+      el.plain = true;
+      changed = true;
+    }
     for (const el of order.transitions) {
       const want = opNumber(el.node.operand, "Tran");
       if (el.name !== undefined || want === undefined || nums.get(el) === want) continue;
@@ -354,7 +416,7 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     return changed;
   };
   for (let i = 0; i < 50 && pinPass(); i++);
-  const nums = numbering(order);
+  const nums = numbering(order, reserved);
   const moved: string[] = [];
   const blocked: string[] = [];
   for (const el of order.transitions) {
@@ -390,20 +452,30 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     }
   }
 
-  // ---- tags, io
-  const tagLines: string[] = [];
-  const io: Array<[string, string, string]> = [];
+  // ---- tags, io (program and controller scope, SPEC §7.7)
+  const scoped = { program: { tagLines: [] as string[], io: [] as Array<[string, string, string]> }, controller: { tagLines: [] as string[], io: [] as Array<[string, string, string]> } };
   const values: string[] = [];
   const unusedSfc: string[] = [];
   const renamedCode = renameIdentifiers(code, rename);
+  const aliasBases = new Set(tags.flatMap((t) => (t.alias !== undefined ? [key(/^\w+/.exec(t.alias)?.[0] ?? "")] : [])));
+  let unusedController = 0;
   for (const t of tags) {
     if (isSfcTag(t)) {
-      if (!sfcOperands.has(key(t.name))) unusedSfc.push(t.name);
+      if (!sfcOperands.has(key(t.name)) && !t.controller) unusedSfc.push(t.name);
       continue;
     }
+    // a controller export holds every controller tag: keep the ones the program uses
+    if (t.controller && whole && !ident(t.name).test(renamedCode) && !aliasBases.has(key(t.name))) {
+      unusedController++;
+      continue;
+    }
+    // with the element tags moved to the program, an alias of one moves too (a controller tag
+    // can't alias a program tag)
+    const aliasOfElement = t.alias !== undefined && knownOperands.has(key(/^\w+/.exec(t.alias)?.[0] ?? ""));
+    const { tagLines, io } = t.controller && !(options.sfcTagsAtProgram && aliasOfElement) ? scoped.controller : scoped.program;
     if (t.alias !== undefined) {
-      if (IO_ADDRESS_RE.test(t.alias)) io.push([t.name, t.alias, t.description ? quote(t.description) : ""]);
-      else warn(`alias tag ${t.name} (for ${t.alias}) not kept: qSFC aliases only I/O addresses`);
+      if (IO_ADDRESS_RE.test(t.alias) || TAG_PATH_RE.test(t.alias)) io.push([t.name, renameIdentifiers(t.alias, rename), t.description ? quote(t.description) : ""]);
+      else warn(`alias tag ${t.name} (for ${t.alias}) not kept: qSFC aliases I/O addresses and tag members`);
       continue;
     }
     const type = t.dataType.toUpperCase();
@@ -418,18 +490,31 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
     if (!Number.isFinite(num) || (type === "TIMER" && (!Number.isInteger(num) || num < 0))) values.push(`${t.name} = ${raw}`);
     else if (num !== 0) value = type === "TIMER" ? ` ${formatDuration(num)}` : ` = ${type === "BOOL" ? (num ? 1 : 0) : raw}`;
     const used = ident(t.name).test(renamedCode);
-    if (type === "BOOL" && !t.description && !value && used) {
-      // created by its use (SPEC §7.1)
+    if (type === "BOOL" && !t.description && !value && used && !t.controller) {
+      // created by its use (SPEC §7.1); a controller tag is always declared, for its scope
     } else tagLines.push(`tag ${t.name} : ${type}${value}${t.description ? ` ${quote(t.description)}` : ""}`);
   }
   if (values.length) warn(`values not kept: ${values.join(", ")}`);
-  const w1 = Math.max(0, ...io.map((x) => x[0].length));
-  const w2 = Math.max(0, ...io.map((x) => x[1].length));
-  const ioLines = io.map(([n, a, d]) => (d ? `  ${n.padEnd(w1)}  ${a.padEnd(w2)}  ${d}` : `  ${n.padEnd(w1)}  ${a}`));
+  const ioBlock = (io: Array<[string, string, string]>, indent: string): string[] => {
+    const w1 = Math.max(0, ...io.map((x) => x[0].length));
+    const w2 = Math.max(0, ...io.map((x) => x[1].length));
+    return io.map(([n, a, d]) => (d ? `${indent}${n.padEnd(w1)}  ${a.padEnd(w2)}  ${d}` : `${indent}${n.padEnd(w1)}  ${a}`));
+  };
+  const sfcTags = elements.filter((e) => e.name !== undefined && atController(e)).map((e) => e.name!);
+  if (sfcTags.length) info(`${sfcTags.length} step and transition tag${sfcTags.length > 1 ? "s are" : " is"} at controller scope in Studio: listed on the controller block's \`sfc tags\` line, so the export keeps ${sfcTags.length > 1 ? "them" : "it"} there`);
+  if (unusedController) info(`${unusedController} controller tag${unusedController > 1 ? "s" : ""} not used by this program left out`);
   if (unusedSfc.length) info(`${unusedSfc.length} step or action tag${unusedSfc.length > 1 ? "s" : ""} not used by any chart (${unusedSfc.slice(0, 3).join(", ")}${unusedSfc.length > 3 ? "…" : ""}) left out`);
 
   // ---- writing, with sugar checked against the plain text
-  const header: Header = { programName, description: descriptionOf(program), tagLines, ioLines };
+  const header: Header = {
+    programName,
+    description: descriptionOf(program),
+    uses: usesNames,
+    mainName,
+    tagLines: scoped.program.tagLines,
+    ioLines: ioBlock(scoped.program.io, "  "),
+    controller: { tagLines: scoped.controller.tagLines.map((l) => `  ${l}`), ioLines: ioBlock(scoped.controller.io, "    "), sfcTags },
+  };
   const ctx: GenContext = { parts, byUid, rename, tagByKey, skipped, header, notes: [] };
   const plain = generate(ctx, "all");
   const plainCompiled = compile(plain.source);
@@ -458,7 +543,8 @@ function importProgram(program: ScanElement): Omit<ImportResult, "programs"> {
   if (errors.length) {
     warn(`${errors.length} error${errors.length > 1 ? "s" : ""} left in the imported text (first: line ${errors[0]!.span.line}, ${errors[0]!.message}); fix ${errors.length > 1 ? "them" : "it"} in the editor`);
   }
-  return { source, program: programName, routines: report, notes, errors: errors.length };
+  const controllerSfcTags = elements.filter((e) => e.node.kind !== "stop" && tagByKey.get(key(e.node.operand))?.controller === true).length;
+  return { source, program: programName, routines: report, notes, errors: errors.length, controllerSfcTags };
 }
 
 function dedupe(notes: ImportNote[]): ImportNote[] {
@@ -499,11 +585,14 @@ function skeletonOrder(parts: Part[], byUid: Map<string, Element>): { steps: Ele
 }
 
 /** Operand numbers as the export gives them (assignOperands in src/lower), Stops left out. */
-function numbering(order: { steps: Element[]; transitions: Element[] }): Map<Element, number> {
+function numbering(
+  order: { steps: Element[]; transitions: Element[] },
+  reserved: Record<"step" | "transition", ReadonlySet<number>>,
+): Map<Element, number> {
   const out = new Map<Element, number>();
   const run = (list: Element[], kind: "step" | "transition") => {
     const pin = (e: Element) => (e.name === undefined ? undefined : pinnedOperand(kind, e.name));
-    const pinned = new Set(list.map(pin).filter((n): n is number => n !== undefined));
+    const pinned = new Set([...reserved[kind], ...list.map(pin).filter((n): n is number => n !== undefined)]);
     let next = 0;
     for (const e of list) {
       const p = pin(e);
@@ -532,6 +621,11 @@ function synthetic(chart: SfcChart): Map<string, string> {
 interface Header {
   programName: string;
   description: string | undefined;
+  /** Routines not imported (SPEC §4.5 `uses`), in file order. */
+  uses: string[];
+  /** The `controller` block (SPEC §7.7): indented tag and io lines, `sfc tags` names. */
+  controller: { tagLines: string[]; ioLines: string[]; sfcTags: string[] };
+  mainName: string;
   tagLines: string[];
   ioLines: string[];
 }
@@ -570,9 +664,25 @@ function generate(ctx: GenContext, plain: "all" | Set<string>): Generated {
   const sugarOn = (who: string) => plain !== "all" && !plain.has(who);
   const { header, parts } = ctx;
 
+  const ctl = header.controller;
+  if (ctl.tagLines.length || ctl.ioLines.length || ctl.sfcTags.length) {
+    push("controller");
+    for (const l of ctl.tagLines) push(l);
+    if (ctl.ioLines.length) {
+      push("  io");
+      for (const l of ctl.ioLines) push(l);
+      push("  end");
+    }
+    if (ctl.sfcTags.length) push(`  sfc tags ${ctl.sfcTags.join(", ")}`);
+    push("end");
+    push("");
+  }
   const first = parts[0]!.name;
   if (key(header.programName) !== key(first) || header.description) {
     push(`program ${header.programName}${header.description ? ` ${quote(header.description)}` : ""}`);
+  }
+  if (header.uses.length) {
+    push(`uses ${header.uses.map((n) => (key(n) === key(header.mainName) ? `${n} (main)` : n)).join(", ")}`);
   }
   if (header.tagLines.length) {
     if (out.length) push("");
@@ -679,14 +789,9 @@ function writeStep(ctx: GenContext, e: Element, kw: string, ind: string, sugar: 
   });
 }
 
-/** One ST line: operands → names, JSR to routines not imported commented out, then sugar. */
+/** One ST line: operands → names, then sugar. A JSR to a routine not imported stays (`uses`). */
 function codeLine(ctx: GenContext, raw: string, sugar: boolean, notes: ImportNote[], routine: string): string {
-  let line = renameIdentifiers(raw, ctx.rename);
-  const jsr = /\bJSR\s*\(\s*([A-Za-z_]\w*)/i.exec(line.replace(/\/\/.*$/, ""));
-  if (jsr && ctx.skipped.has(key(jsr[1]!))) {
-    notes.push({ level: "warning", routine, text: `JSR to ${jsr[1]} (${ctx.skipped.get(key(jsr[1]!))} routine, not imported) commented out` });
-    return `// ${line.trim()}  (not imported: ${jsr[1]})`;
-  }
+  const line = renameIdentifiers(raw, ctx.rename);
   if (!sugar) return line;
   const indent = /^\s*/.exec(line)![0];
   const rest = line.slice(indent.length);

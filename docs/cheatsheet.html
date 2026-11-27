@@ -56,6 +56,18 @@ ul { margin:4px 0; padding-left:18px; } li { margin:2px 0; }
   valve      Local:2:O.Data.3
 <span class="k">end</span></pre>
 <p class="sub">Each line becomes an alias tag. A bit address (<code>.0</code>) makes the tag BOOL. The module must exist in the Studio project.</p>
+<p class="sub">An alias of a tag member works too: <code>ejections  Step_017.Count</code>.</p>
+
+<h2>Controller tags and other routines</h2>
+<pre><span class="k">controller</span>
+  <span class="k">tag</span> stop : BOOL = 1
+  <span class="k">io</span>
+    e_stop  Local:1:I.Data.15
+  <span class="k">end</span>
+  <span class="k">sfc tags</span> fill, tr4
+<span class="k">end</span>
+<span class="k">uses</span> INIT, MainRoutine (main)</pre>
+<p class="sub"><code>controller</code>: tags exported at controller scope; <code>sfc tags</code>: steps and transitions whose tags are controller tags. <code>uses</code>: routines of the program not in this file (JSR, SFR, SFP may name them). <code>Step_017.DN</code> in code is a step of another routine. <code>SFR(seq, idle);</code> and <code>SFP(seq, Pause);</code> are accepted.</p>
 
 <h2>Durations</h2>
 <p><code>500ms</code> <code>5s</code> <code>2m</code> <code>1h</code> <code>1m30s</code> — a unit is required.</p>

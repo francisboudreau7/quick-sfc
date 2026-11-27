@@ -18,8 +18,17 @@ export type L5XRoutine =
   | { kind: "st"; name: string; lines: string[] };
 
 export interface L5XProgramOptions extends Omit<L5XOptions, "routineName"> {
-  /** Default: the first routine. */
+  /** Default: the first routine. May be one of `outsideRoutines`. */
   mainRoutineName?: string;
+  /** Routines of the program that aren't written (`uses`, SPEC §4.5). */
+  outsideRoutines?: readonly string[];
+  /** Action operand numbers used by other routines (`Action_005.Q` in the code): skipped. */
+  reservedActions?: ReadonlySet<number>;
+  /**
+   * Steps and transitions (qSFC names, lower case) whose tags are controller tags (`sfc tags`,
+   * SPEC §7.7); a step's action tags go with it.
+   */
+  controllerElements?: ReadonlySet<string>;
   /**
    * `program name "Title"` (SPEC §4.5): the Program's `<Description>`, right after the `<Program>`
    * start tag. UNVERIFIED in Studio (test pack tp13); same shape as a routine description.
@@ -129,7 +138,11 @@ function structure(type: string, members: Member[]): string[] {
 interface TagLines {
   name: string;
   lines: string[];
+  /** A controller tag (SPEC §7.7): written in the controller's context `<Tags>`. */
+  controller?: boolean;
 }
+
+const atController = (t: TagLines, yes: boolean | undefined): TagLines => (yes ? { ...t, controller: true } : t);
 
 function baseTag(name: string, type: string, body: string[], desc: string | undefined, radix: string | null): TagLines {
   const radixAttr = radix ? ` Radix="${radix}"` : "";
@@ -242,7 +255,8 @@ function aliasTag(name: string, address: string, desc: string | undefined): TagL
 function moduleLines(tags: TagInfo[]): string[] {
   const names = new Map<string, string>();
   for (const t of tags) {
-    const m = t.address?.split(":")[0];
+    // an I/O path (`Local:1:I.Data.0`); an alias of a tag member (`Step_017.Count`) names no module
+    const m = t.address?.includes(":") ? t.address.split(":")[0] : undefined;
     if (m && !names.has(m.toLowerCase())) names.set(m.toLowerCase(), m);
   }
   return [...names.values()]
@@ -281,6 +295,8 @@ interface Counters {
   tagLines: TagLines[];
   /** Action operands are numbered across the whole program. */
   actionNo: number;
+  reservedActions: ReadonlySet<number>;
+  controllerElements: ReadonlySet<string>;
   describe: boolean;
   nameComments: boolean;
   hide: boolean;
@@ -321,7 +337,8 @@ function sfcRoutine(
     const { x, y } = pos(s.id);
     // Studio draws a tag description as a box over the action box and ignores HideDesc
     // (tp01 import, 2026-11-26): with name comments, the name lives only in the comment.
-    tagLines.push(sfcStepTag(op, s.presetMs, withDesc ? stepDescription(s) : undefined));
+    const ctl = c.controllerElements.has(s.name.toLowerCase());
+    tagLines.push(atController(sfcStepTag(op, s.presetMs, withDesc ? stepDescription(s) : undefined), ctl));
     const head =
       `<Step ID="${sid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 40}" DescY="${y - 20}" DescWidth="0" ` +
       `InitialStep="${s.initial ? "true" : "false"}" PresetUsesExpr="false" LimitHighUsesExpr="false" LimitLowUsesExpr="false" ShowActions="true"`;
@@ -340,8 +357,9 @@ function sfcRoutine(
     routine.push(head + ">");
     // One <Action> per action in source order, each ID right after the previous one (L5X_GUIDE §6.3).
     for (const a of actions) {
+      while (c.reservedActions.has(c.actionNo)) c.actionNo++;
       const aop = operand("Action", c.actionNo++);
-      tagLines.push(sfcActionTag(aop, a.timeMs ?? 0));
+      tagLines.push(atController(sfcActionTag(aop, a.timeMs ?? 0), ctl));
       routine.push(
         `<Action ID="${nextId++}" Operand="${aop}" Qualifier="${QUALIFIER_NAMES[a.qualifier]}" IsBoolean="false" PresetUsesExpr="false">`,
         "<Body>",
@@ -358,7 +376,7 @@ function sfcRoutine(
     const tid = allocate(t.id);
     const { x, y } = pos(t.id);
     // No description box for transitions either: it covers the condition text (tp01 import).
-    tagLines.push(boolTag(op, withDesc ? t.name : undefined));
+    tagLines.push(atController(boolTag(op, withDesc ? t.name : undefined), !t.auto && c.controllerElements.has(t.name.toLowerCase())));
     routine.push(
       `<Transition ID="${tid}" X="${x}" Y="${y}" Operand="${op}" HideDesc="${hideAttr}" DescX="${x + 60}" DescY="${y - 20}" DescWidth="0">`,
       "<Condition>",
@@ -413,11 +431,14 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
     if (routineKeys.has(k)) throw new Error(`L5X: duplicate routine name ${r.name}`);
     routineKeys.add(k);
   }
-  if (!routineKeys.has(main.toLowerCase())) throw new Error(`L5X: main routine ${main} is not in the program`);
+  const outside = new Set((options.outsideRoutines ?? []).map((n) => n.toLowerCase()));
+  if (!routineKeys.has(main.toLowerCase()) && !outside.has(main.toLowerCase())) throw new Error(`L5X: main routine ${main} is not in the program`);
 
   const counters: Counters = {
     tagLines: [],
     actionNo: 0,
+    reservedActions: options.reservedActions ?? new Set(),
+    controllerElements: options.controllerElements ?? new Set(),
     describe: options.describeElements ?? true,
     nameComments: options.nameComments ?? true,
     hide: options.hideDescriptions ?? options.nameComments ?? true,
@@ -427,7 +448,7 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
   );
   const tagLines = counters.tagLines;
 
-  for (const t of tags) tagLines.push(userTag(t));
+  for (const t of tags) tagLines.push(atController(userTag(t), t.scope === "controller"));
   const seen = new Set<string>();
   for (const t of tagLines) {
     const k = t.name.toLowerCase();
@@ -451,12 +472,13 @@ export function writeProgramL5X(routines: L5XRoutine[], tags: TagInfo[], options
     ...moduleLines(tags),
     "</Modules>",
     '<Tags Use="Context">',
+    ...tagLines.filter((t) => t.controller).flatMap((t) => t.lines),
     "</Tags>",
     '<Programs Use="Context">',
     `<Program Use="Target" Name="${programName}" TestEdits="false" MainRoutineName="${main}" Disabled="false" UseAsFolder="false">`,
     ...description(options.programDescription),
     "<Tags>",
-    ...tagLines.flatMap((t) => t.lines),
+    ...tagLines.filter((t) => !t.controller).flatMap((t) => t.lines),
     "</Tags>",
     "<Routines>",
     ...routineLines,

@@ -14,7 +14,8 @@
  * (the explicit select's converge, or an automatic one with `target`).
  */
 import type { BranchNode, Chart, Element, Sequence, StepNode, TransitionNode } from "../model/ast.js";
-import { actionLineText, allSteps, allTransitions, key, walk } from "../model/ast.js";
+import { actionLineText, allSteps, allTransitions, key, pinnedOperand, walk } from "../model/ast.js";
+export { pinnedOperand } from "../model/ast.js";
 import type { GAction, GBranch, GLink, Graph, GraphId, GStep, GTransition } from "../model/graph.js";
 import { collectInfo, continuingLegs, stepBefore, stepsByKey } from "../validate/flow.js";
 
@@ -53,23 +54,18 @@ export interface OperandBase {
   transitionOperands?: readonly number[];
 }
 
-const STEP_PIN = /^s(0|[1-9]\d*)$/i;
-const TRANS_PIN = /^tr(0|[1-9]\d*)$/i;
-
-/** The operand number a name pins (`s3` -> 3 for a step, `tr3` -> 3 for a named transition), if any. */
-export function pinnedOperand(kind: "step" | "transition", name: string): number | undefined {
-  const m = (kind === "step" ? STEP_PIN : TRANS_PIN).exec(name);
-  return m ? Number(m[1]) : undefined;
-}
-
 /**
  * Operand numbers across the program (SPEC §8.2): a step named `s<N>` is Step_<N> and a named
  * transition `tr<N>` is Tran_<N>; every other step / transition takes the next free number in file
- * order, skipping the pinned ones. Auto-named transitions (`T1`) never pin.
+ * order, skipping the pinned ones and the `reserved` ones (operands of other routines named in the
+ * code, `Step_017.DN`). Auto-named transitions (`T1`) never pin.
  */
-export function assignOperands(charts: readonly Chart[]): Array<{ steps: number[]; transitions: number[] }> {
-  const number = (lists: Array<Array<number | undefined>>): number[][] => {
-    const pinned = new Set(lists.flat().filter((n): n is number => n !== undefined));
+export function assignOperands(
+  charts: readonly Chart[],
+  reserved: { steps?: ReadonlySet<number>; transitions?: ReadonlySet<number> } = {},
+): Array<{ steps: number[]; transitions: number[] }> {
+  const number = (lists: Array<Array<number | undefined>>, taken: ReadonlySet<number> = new Set()): number[][] => {
+    const pinned = new Set([...taken, ...lists.flat().filter((n): n is number => n !== undefined)]);
     let next = 0;
     return lists.map((list) =>
       list.map((pin) => {
@@ -79,8 +75,11 @@ export function assignOperands(charts: readonly Chart[]): Array<{ steps: number[
       }),
     );
   };
-  const steps = number(charts.map((c) => allSteps(c).map((s) => pinnedOperand("step", s.name.text))));
-  const trans = number(charts.map((c) => allTransitions(c).map((t) => (t.auto ? undefined : pinnedOperand("transition", t.name.text)))));
+  const steps = number(charts.map((c) => allSteps(c).map((s) => pinnedOperand("step", s.name.text))), reserved.steps);
+  const trans = number(
+    charts.map((c) => allTransitions(c).map((t) => (t.auto ? undefined : pinnedOperand("transition", t.name.text)))),
+    reserved.transitions,
+  );
   return charts.map((_, i) => ({ steps: steps[i]!, transitions: trans[i]! }));
 }
 

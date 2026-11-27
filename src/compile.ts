@@ -1,14 +1,24 @@
 /**
  * Glue between the pipeline stages (docs/ARCHITECTURE.md). Pure: no file I/O.
  */
-import { key, type Chart, type ProgramNode, type RoutineNode } from "./model/ast.js";
+import { IO_ADDRESS_RE, key, type Chart, type ProgramNode, type RoutineNode } from "./model/ast.js";
 import { hasErrors, sortDiagnostics, error, type Diagnostic } from "./model/diagnostics.js";
 import type { Graph, GStep, TagInfo } from "./model/graph.js";
 import type { L5XPositions } from "./model/positions.js";
 import { parse } from "./parse/index.js";
 import { validateProgram } from "./validate/index.js";
 import { routineLabel } from "./validate/program.js";
-import { analyzeTags, rewriteAfter, rewriteBoolLiterals, rewriteCalls, rewriteStepRefs, type CallRef } from "./tags/index.js";
+import {
+  analyzeTags,
+  reservedOperands,
+  rewriteAfter,
+  rewriteBoolLiterals,
+  rewriteCalls,
+  rewriteSfrSteps,
+  rewriteStepRefs,
+  type CallRef,
+  type OutsideRef,
+} from "./tags/index.js";
 import { actionOperands, assignOperands, lower } from "./lower/index.js";
 import { layout as computeLayout, l5xPositions, type Layout } from "./layout/index.js";
 import { renderAscii } from "./render/ascii.js";
@@ -43,6 +53,8 @@ export interface CompileResult {
   diagnostics: Diagnostic[];
   tags: TagInfo[];
   calls: CallRef[];
+  /** Operands of other routines named in the code (`Step_017.DN`, SPEC §7.3). */
+  outside: OutsideRef[];
   routines: CompiledRoutine[];
   /** First SFC routine's graph, layout and positions: present only when there are no errors. */
   graph?: Graph;
@@ -70,13 +82,18 @@ export function compile(source: string, options: CompileOptions = {}): CompileRe
     diagnostics: sortDiagnostics(diagnostics),
     tags: tagResult.tags,
     calls: tagResult.calls,
+    outside: tagResult.outside,
     routines,
   };
   if (hasErrors(diagnostics)) return result;
 
   const base = { steps: 0, transitions: 0, actions: 0 };
   const sfcs = routines.filter((r) => r.node.kind === "sfc");
-  const operands = assignOperands(sfcs.map((r) => (r.node as Extract<RoutineNode, { kind: "sfc" }>).chart));
+  const reserved = reservedOperands(tagResult.outside);
+  const operands = assignOperands(
+    sfcs.map((r) => (r.node as Extract<RoutineNode, { kind: "sfc" }>).chart),
+    { steps: reserved.step, transitions: reserved.transition },
+  );
   for (const r of routines) {
     if (r.node.kind !== "sfc") continue;
     const ops = operands[sfcs.indexOf(r)]!;
@@ -108,6 +125,7 @@ function describeRoutines(program: ProgramNode, calls: CallRef[], source: string
   for (let i = 0; i + 1 < out.length; i++) out[i]!.lines.to = Math.max(out[i]!.lines.from, out[i + 1]!.lines.from - 1);
   const byLabel = new Map(out.map((r) => [key(routineLabel(r.node)), r]));
   for (const c of calls) {
+    if (c.via === "sfr" || c.via === "sfp") continue;
     const target = byKey.get(key(c.name));
     const from = byLabel.get(key(c.from));
     if (!target || !from) continue;
@@ -186,10 +204,25 @@ export function exportL5X(source: string, options: ExportOptions): ExportResult 
       : sfcForL5X(r.name, r.graph!, r.layout!, r.positions!, operands),
   );
   const l5xOptions: L5XProgramOptions = { programName: program };
+  const uses = result.program.uses ?? [];
+  if (uses.length) l5xOptions.outsideRoutines = uses.map((u) => u.name.text);
+  const outsideMain = uses.find((u) => u.main);
+  if (outsideMain) l5xOptions.mainRoutineName = outsideMain.name.text;
+  const ctl = result.program.controllerElements ?? [];
+  if (ctl.length) l5xOptions.controllerElements = new Set(ctl.map((n) => n.text.toLowerCase()));
+  const reservedActions = reservedOperands(result.outside).action;
+  if (reservedActions.size) l5xOptions.reservedActions = reservedActions;
   if (result.program.title !== undefined) l5xOptions.programDescription = result.program.title;
   if (options.softwareRevision !== undefined) l5xOptions.softwareRevision = options.softwareRevision;
   if (options.exportDate !== undefined) l5xOptions.exportDate = options.exportDate;
-  const text = writeProgramL5X(routines, result.tags, l5xOptions);
+  // an alias of a step member (`ejections  s17.Count`) points to the step's operand (SPEC §7.6)
+  const tags = result.tags.map((t) => {
+    if (t.address === undefined || IO_ADDRESS_RE.test(t.address)) return t;
+    const base = /^\w+/.exec(t.address)![0];
+    const op = operands.get(key(base));
+    return op ? { ...t, address: op + t.address.slice(base.length) } : t;
+  });
+  const text = writeProgramL5X(routines, tags, l5xOptions);
   return { text, diagnostics };
 }
 
@@ -255,7 +288,7 @@ function operandMap(routines: CompiledRoutine[]): Map<string, string> {
  * member → Studio's (`fill.done` → `Step_001.DN`, SPEC §8.4), `TRUE`/`FALSE` → `1`/`0` (SPEC §8.4).
  */
 function rewriteSt(text: string, operands: Map<string, string>): string {
-  return rewriteBoolLiterals(rewriteStepRefs(rewriteCalls(text), operands));
+  return rewriteBoolLiterals(rewriteSfrSteps(rewriteStepRefs(rewriteCalls(text), operands), operands));
 }
 
 /** Rewrites a block of ST lines as one text, so a `(* ... *)` comment spanning lines is skipped. */

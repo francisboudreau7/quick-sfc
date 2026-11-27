@@ -2,7 +2,7 @@
  * Problems panel logic without the DOM: ordering, counts, and which diagram element
  * (or tag) a diagnostic points at. Unit-tested in test/app.
  */
-import type { Diagnostic } from "../src/model/diagnostics.js";
+import { formatDiagnostic, type Diagnostic } from "../src/model/diagnostics.js";
 import type { Graph, TagInfo } from "../src/model/graph.js";
 import { elementAtLine } from "./nav.js";
 
@@ -33,6 +33,14 @@ export function countProblems(diags: readonly Diagnostic[]): ProblemCounts {
 /** "12:3" */
 export function problemLocation(d: Diagnostic): string {
   return `${d.span.line}:${d.span.col}`;
+}
+
+/**
+ * The text "Copy" puts on the clipboard, as the CLI prints it:
+ * `tank.qsfc:12:3: error E405: … \n  hint: …`; several problems one after the other.
+ */
+export function problemsText(diags: readonly Diagnostic[], file: string): string {
+  return diags.map((d) => formatDiagnostic(d, file)).join("\n");
 }
 
 /** Stable key for one diagnostic in a list (selection survives re-render). */

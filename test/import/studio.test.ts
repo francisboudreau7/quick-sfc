@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { exportL5X } from "../../src/compile.js";
 import { importL5X } from "../../src/import/index.js";
 import { readSfc, type SfcChart } from "../../src/tidy/read.js";
-import { scanDescendants, scanXml } from "../../src/tidy/scan.js";
+import { attr, scanDescendants, scanXml } from "../../src/tidy/scan.js";
 
 /** The chart's wires, by operand (steps) and condition (transitions), sorted. */
 function wires(xml: string): string[] {
@@ -53,5 +53,89 @@ describe("a chart drawn in Studio (legacy/tests/MainProgram.L5X)", () => {
     expect(ops(out)).toEqual(ops(xml));
     expect(r.source).toContain("-- tr4: s4.DN");
     expect(r.notes.filter((n) => n.level === "warning")).toEqual([]);
+  });
+});
+
+/** Wires of every SFC routine, by routine name. */
+function allWires(xml: string): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const r of scanDescendants(scanXml(xml), "Routine")) {
+    const content = r.children.find((c) => c.name === "SFCContent");
+    if (!content) continue;
+    const c = readSfc(content) as SfcChart;
+    const label = (id: string): string => {
+      const n = c.nodes.get(id);
+      if (n) return n.operand;
+      const b = c.branches.get(id) ?? c.branches.get(c.legOf.get(id)!);
+      return b ? `${b.type}-${b.flow}` : id;
+    };
+    out.set(attr(r, "Name") ?? "", c.links.map((l) => `${label(l.from)} > ${label(l.to)}`).sort());
+  }
+  return out;
+}
+
+/** Tag names in the controller's context <Tags>, lower case. */
+function controllerTags(xml: string): string[] {
+  const block = /<Controller[^>]*>[\s\S]*?<Tags Use="Context">([\s\S]*?)<\/Tags>/.exec(xml)![1]!;
+  return [...block.matchAll(/<Tag Name="(\w+)"/g)].map((m) => m[1]!.toLowerCase()).sort();
+}
+
+describe("STATION2: a program with controller tags, ladder routines and SFR/SFP (Phase 4d+)", () => {
+  const xml = readFileSync("legacy/tests/STATION2_MainProgram.L5X", "utf8");
+  const r = importL5X(xml);
+  const out = exportL5X(r.source, { fileName: "MainProgram.qsfc" });
+
+  it("imports and checks without errors; the ladder routines are on the uses line, MainRoutine is main", () => {
+    expect(r.errors).toBe(0);
+    expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(r.source).toMatch(/^uses MainRoutine \(main\), analog, ARRET_URGENCE, AUTO_MAN, front_montant_boutons, InTouch$/m);
+    expect(r.source).toContain("SFR(PRODUCTION_NORMALE,s0);");
+    expect(out.text).toContain('MainRoutineName="MainRoutine"');
+  });
+
+  it("reads the controller tags: values, presets, aliases (also of a step member)", () => {
+    expect(r.source).toMatch(/^controller\n {2}tag /m);
+    expect(r.source).toMatch(/^ {2}tag stop : BOOL = 1$/m);
+    expect(r.source).toMatch(/^ {4}ejections +s17\.Count$/m);
+    expect(r.source).toMatch(/^init s42 200ms$/m);
+    // the presets are in the controller's Step tags: s42.DN is no longer "TRUE immediately"
+    expect(out.diagnostics.filter((d) => d.code === "W302").map((d) => d.message)).not.toContain(
+      "`s42.DN` is used but `s42` has no preset, so it is TRUE immediately",
+    );
+  });
+
+  it("exports the same wires and operands, and the same controller tags (but the FBD types)", () => {
+    expect(allWires(out.text!)).toEqual(allWires(xml));
+    const fbd = new Set(["lim_07", "lim_08", "lim_09", "scl_04"]);
+    const original = controllerTags(xml).filter((n) => !fbd.has(n) && !/^(step|tran|action)_/.test(n));
+    const now = controllerTags(out.text!);
+    expect(original.filter((n) => !now.includes(n))).toEqual([]);
+    const elements = (list: string[]) => list.filter((n) => /^(step|tran)_/.test(n));
+    const charted = new Set([...out.text!.matchAll(/Operand="((?:Step|Tran)_\d+)"/g)].map((m) => m[1]!.toLowerCase()));
+    expect(elements(now)).toEqual(elements(controllerTags(xml)).filter((n) => charted.has(n)));
+  });
+
+  it("sfcTagsAtProgram moves the element tags to the program", () => {
+    const moved = importL5X(xml, { sfcTagsAtProgram: true });
+    expect(moved.source).not.toContain("sfc tags");
+    const t = exportL5X(moved.source, { fileName: "MainProgram.qsfc" }).text!;
+    expect(controllerTags(t).filter((n) => /^(step|tran|action)_/.test(n))).toEqual([]);
+  });
+});
+
+describe("STATION2: a routine export (GEMMA.L5X)", () => {
+  const xml = readFileSync("legacy/tests/STATION2_GEMMA.L5X", "utf8");
+  const r = importL5X(xml);
+
+  it("imports without errors or warnings: other routines on uses, their steps kept as operands", () => {
+    expect(r.errors).toBe(0);
+    expect(r.notes.filter((n) => n.level === "warning")).toEqual([]);
+    expect(r.source).toMatch(/^uses flash_ER, INIT, PRODUCTION_NORMALE$/m);
+    expect(r.source).toContain("SFR(PRODUCTION_NORMALE,Step_000);");
+    expect(r.source).toContain("Step_001.T > 5000");
+    expect(r.source).toContain("ejections>=3 and Step_017.DN");
+    const out = exportL5X(r.source, { fileName: "GEMMA.qsfc" });
+    expect(out.diagnostics).toEqual([]);
+    expect(allWires(out.text!)).toEqual(allWires(xml));
   });
 });

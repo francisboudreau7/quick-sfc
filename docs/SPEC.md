@@ -63,6 +63,8 @@ Each line is one of the following, chosen by its **first word**. Leading spaces 
 | First word | Line kind | Section |
 |---|---|---|
 | `program` | program header | §4.5 |
+| `uses` | routines of the program that aren't in the file | §4.5 |
+| `controller` | controller tags, up to its `end` | §7.7 |
 | `course`, `author` | header lines (printing only) | §4.5 |
 | `sfc`, `st` | routine header | §4.1, §4.5 |
 | `tag` | tag override | §7.4 |
@@ -260,12 +262,27 @@ st alarms
 - **Title [Phase 4c].** `program name "Title"`: the optional string is the Program's **description** in Studio (§8.2) and the title of the printed page.
 - **Header lines [Phase 4c].** `course "…"` and `author "…"` are optional, each at most once, before the first routine (like `program`; E210 otherwise), in any order. They are only for printing (the title block, with the date at print time) and are **not exported** to the L5X. The text must be in quotes (E107).
 
+**Routines outside the file: `uses` [Phase 4d+]**
+```
+uses INIT, PRODUCTION_NORMALE, MainRoutine (main)
+```
+- Names the routines of the Program that this file doesn't hold: a ladder routine (until Phase 5), an FBD routine, or a routine left out of a Studio routine export. Before the first routine (E210); several `uses` lines add up; a name can't also be a routine of the file (E309).
+- `JSR`, `call`, `SFR` and `SFP` may name them; any other unknown routine is still E600.
+- `(main)` after one name: that routine is the Program's main routine (`MainRoutineName` in the L5X), so the first routine of the file is not. One `(main)` at most (E210).
+- While the file has a `uses` line, W600 (routine never called) and W404 (tag declared but unused) are off, and an unused `tag` line is still exported: the routines outside may call the file's routines and use its tags.
+- **[Verify]** importing in Studio a program L5X whose main routine or called routines are not in it (the routines must already be in the project).
+
 **Calls**
 - `call name;` runs routine `name` once each time it is executed. It is a statement, so it belongs in an action or an ST routine, not in a condition (E602). It is exported as Studio's `JSR(name,0);`.
 - Studio's own `JSR(name, 0);` is also accepted; its first argument is checked the same way.
 - The routine must exist (E600). Calling the main routine (W602) or a routine calling itself (W601) is a warning; so is a routine that nothing calls and that isn't the main routine (W600).
 - **[Later]** Parameters (`call name(in1, in2)`), ladder routines (PLAN Phase 5).
 - A JSR in an SFC action runs while the step is active (qualifier N). When the step goes inactive, the called routine is no longer scanned and keeps its state.
+
+**SFC instructions [Phase 4d+]**
+- `SFR(routine, step);` (reset an SFC to a step) and `SFP(routine, Execute);` / `SFP(routine, Pause);` (pause or resume it) are Studio ST and pass through. Their first argument is a routine, not a tag; they are not calls (no W600 / W602 effect).
+- The routine must be an SFC routine (E603 for an ST routine; E600 when it doesn't exist and isn't on a `uses` line).
+- SFR's step is a step of that routine, by its name when the routine is in the file (exported as its operand: `SFR(seq, idle)` → `SFR(seq, Step_004)`), else by its operand (`SFR(PRODUCTION_NORMALE, Step_000)`). SFP's second argument is `Execute` or `Pause`. Anything else is E604.
 
 ---
 
@@ -460,6 +477,8 @@ Rules:
 - An unknown member gives E401 (its suggestion includes the readable names). A step name used alone (`fill`) gives E400 with the hint "use `fill.X`".
 - `.DN` (or `.done`) on a step without a preset gives warning W302: the timer is done immediately.
 
+**Elements of other routines [Phase 4d+].** An operand name in the code, `Step_<N>`, `Tran_<N>` or `Action_<N>`, that is not an element of the file is a step, transition or action of a routine that isn't in the file (`Step_017.DN`, `Step_016.Count := 0;`). It is not a tag of the file and is not exported as one; it must exist in the destination project. A step's members are checked as above (E401; alone: E400), an action's are `Status A Q PauseTimer PRE T Count`, a transition is a BOOL without members. Its number is **reserved**: no element of the file gets it (§8.2). Naming an element of the file this way (`Step_003` when the file has a step `s3`) is E405: write its name.
+
 ### 7.4 Tag overrides (optional) [P1; values: Phase 4d]
 ```
 tag name [: TYPE [value]] ["description"]
@@ -497,9 +516,28 @@ end
 - **Type.** An address ending in `.digits` is a bit: the tag is BOOL (strong evidence, §7.2; a numeric use is E404). Any other address gives no type clue: the tag keeps its inferred or declared type, shown in the tag table, but the alias in the L5X has no data type (it takes the target's).
 - **With a `tag` line.** A name can also have a `tag` line (for a description, or a type for the tag table). For a bit address the type must be BOOL, otherwise **E414**; for a word address any type is accepted. The `io` description wins over the `tag` line's.
 - The same name twice in `io` lines (in one block or two) is **E415**. The name follows §3.4 and shares the one namespace (a step and an I/O point can't have the same name: E410).
+- **Alias of a tag member [Phase 4d+].** The address may also be a tag member (`ejections  Step_017.Count`, `bit3  status.3`): it starts with a tag, a step of the file (exported as its operand: `s17.Count` → `Step_017.Count`) or an operand of another routine (§7.3); anything else is E413. Such an alias names no module.
 - **In Studio,** the module at the address must exist in the project (an alias to a missing module is an unresolved reference at import). Adjust the addresses to your rack.
 
 ---
+
+### 7.7 Controller tags (`controller` block) [Phase 4d+]
+```
+controller
+  tag stop : BOOL = 1
+  tag auto : BOOL = 1 "Automatic mode"
+  io
+    e_stop     Local:1:I.Data.15
+    ejections  Step_017.Count
+  end
+  sfc tags s26, s27, tr29
+end
+```
+- Tags declared here are **controller-scope** tags in Studio; every other tag is a program tag. The block holds `tag` lines (§7.4), `io` blocks (§7.6), `sfc tags` lines, blank and comment lines (anything else: E223), and ends with `end` (E206 without it). It comes before the first routine (E210); the import writes it at the top of the file.
+- A tag lives at one scope: a name declared both here and as a program tag is E418. A controller alias can't point to a program tag (E418): Studio doesn't allow it.
+- A tag line here is exported even when the code doesn't use it (another program may).
+- `sfc tags` lists steps and named transitions whose operand tags are controller tags (a step's action tags go with it); other element tags are program tags, as Studio creates them today. A name that is not a step or transition of the file is E419. The import writes this line so that a project whose SFC tags are controller tags keeps them there; it can also move them to the program (CLI `--sfc-tags-at-program`, the import dialog's check box).
+- **Export:** controller tags are written in the controller's context `<Tags Use="Context">` with the same shapes as program tags. **[Verify]** that Studio creates them (or uses the existing ones) when it imports the program.
 
 ## 8. Export to L5X (Studio 5000) [P1]
 
@@ -516,14 +554,14 @@ Follows the verified format in [L5X_GUIDE.md](../../L5X_GUIDE.md):
 ### 8.2 Elements
 | qSFC | L5X |
 |---|---|
-| step | `<Step>`, operand `Step_000`, `Step_001`, … in file order, plus an `SFC_STEP` tag with `PRE` = preset in ms. **Pins [Phase 4d]:** a step named `s<N>` (`s3`; `s0`, no leading zero) is `Step_<N>` (`Step_003`), and the other steps take the free numbers in file order, skipping the pinned ones. That is how an imported Studio chart (§8.7) keeps its operands |
+| step | `<Step>`, operand `Step_000`, `Step_001`, … in file order, plus an `SFC_STEP` tag with `PRE` = preset in ms. **Pins [Phase 4d]:** a step named `s<N>` (`s3`; `s0`, no leading zero) is `Step_<N>` (`Step_003`), and the other steps take the free numbers in file order, skipping the pinned ones and the numbers of other routines' elements named in the code (§7.3; same for transitions and actions). That is how an imported Studio chart (§8.7) keeps its operands |
 | `init` | `InitialStep="true"` |
 | action | one `<Action>` per action in source order, `Qualifier` = `NonStored` (N; verified), `StoredUntilReset` (S), `Reset` (R), `TimeLimited` (L), `TimeDelayed` (D), `Pulse` (P) [Verify: tp12], `PresetUsesExpr="false"`; operands `Action_000`, … across the program, plus an `SFC_ACTION` tag whose `PRE` is the L/D duration in ms. Each source line becomes one `<Line>` (sugar lines expanded, §4.3) |
 | transition | `<Transition>`, operand `Tran_000`, …, plus a BOOL tag. The condition is one `<Line>`. A transition named `tr<N>:` is `Tran_<N>` (pin, as for steps; `t<N>` is an ordinary name, so timers `T1`, `T2`… don't clash); auto names (`T1`) never pin |
 | select / parallel | `<Branch BranchType="Selection" / "Simultaneous">` diverge + converge, one `<Leg>` per leg; `Priority="Default"` on the selection diverge only |
 | automatic convergence (§6.4) | `<Branch BranchType="Selection" BranchFlow="Converge">` |
 | links | `<DirectedLink>` following the verified patterns (L5X_GUIDE §6.3). A jump wire that the app's diagram (default view) draws as a cross-reference is written `Show="false"`: Studio then hides the wire and shows connector labels at both ends (verified with the user's tp05 export, 2026-11-26). The app draws such a hidden wire as a dashed arrow under the transition (labelled with the target) and a dashed arrow into the target (labelled with the transition and its condition) |
-| user tags | program-scope tags of the inferred or declared type |
+| user tags | program-scope tags of the inferred or declared type; controller tags (§7.7) in the controller's context `<Tags>` |
 | `io` point (§7.6) | alias tag, no `DataType`, no `Data`: `<Tag Name="start_btn" TagType="Alias" Radix="Decimal" AliasFor="Local:1:I.Data.0" ExternalAccess="Read/Write"/>` (shape verified for bit aliases, L5X_GUIDE §4). With a description: `>` + `<Description>` (CDATA) + `</Tag>`. A word address (not ending in `.digits`) has no `Radix`. Each module named by an address (`Local`, `Rack1`: the part before the first `:`) is listed once in the context `<Modules>` as `<Module Use="Reference" Name="Local">` + `</Module>`; without `io` points the `<Modules>` context stays empty. **[Verify: tp13]** the description inside an alias, the word alias without Radix, and the module references (the module at a slot, e.g. `Discrete_IO` at `Local:1`, has its own name in the project, which qSFC can't know) |
 | `program name "Title"` (§4.5) | the Program's `<Description>` (CDATA), right after the `<Program ...>` start tag, before `<Tags>`. **[Verify: tp13]** (same shape as a verified routine description) |
 | X/Y | computed by the layout engine, the same one that draws the diagram in the app |
@@ -576,12 +614,14 @@ Beyond the language rules, the exporter refuses to write a file when:
 ### 8.7 Import (Phase 4d)
 `qsfc import in.L5X [-o out.qsfc] [--program NAME]` (default `in.qsfc`), and in the app File → **Open an L5X…** (or drop a `.L5X` on the window; the dialog can hand the file to Tidy instead), turns one Program of a Studio 5000 export back into qSFC. A file with several programs (a controller export) imports the exported one (`Use="Target"`), else the first; `--program` or the dialog's list picks another.
 
-- **Routines:** SFC and ST routines, the main routine first. Ladder (RLL), FBD and others are not imported (ladder: Phase 5); a `JSR` to one of them is commented out. When the main routine is not imported, the first imported routine becomes the main one on export (a note says so).
+- **Routines:** SFC and ST routines, the main routine first. Ladder (RLL), FBD and others are not imported (ladder: Phase 5), nor the routines a routine export only names (`Use="Reference"`): they go on a `uses` line (§4.5), with `(main)` for the main routine, and the code calling them stays as written.
 - **Structure:** each chart is rebuilt as Tidy does (§8.6: same search, same check that the links come out exactly as in the file). A chart that can't be rebuilt is not imported, with Tidy's reason.
 - **Names:** the first line of the step's tag description (what the export writes, §8.3), else the step's `// name - description` comment, else a plain name from the operand: `Step_003` → `s3`, which pins `Step_003` again on export (§8.2). Stops become `stop<N>`. Transitions take the name in their tag description, except auto names (`T3`), which come back unnamed. An unnamed transition whose operand would change on export is named `tr<N>:` to keep it, and so is one the code refers to (`Tran_005.…`). Operands that still change (a name already taken, a named step) are listed in a note. Action operands are renumbered.
 - **Text:** conditions and actions keep Studio's ST, with operands replaced by names (`Step_003.DN` → `s3.DN`); several condition lines are joined, a trailing `;` is dropped, a lone `1`/`0` condition is written `TRUE`/`FALSE`. Sugar (`on`, `set`, `reset`, `call`, `after`) comes back **only where it matches exactly** what the export writes (`a [:=] 1; b [:=] 1;` → `on a, b`; `x := 1;` with a BOOL `x` → `set x`; `JSR(name,0);` → `call name;`; `s1.T >= 3000` right after `s1` → `after 3s`): the import compiles both versions and keeps the plain text wherever the sugar would not export the same way. Studio spellings such as `F:=1;` stay as written.
 - **Qualifiers and times:** N S R L D P with the L/D time from the action tag; another qualifier is written as N with a `// Studio qualifier: …` comment.
-- **Tags:** `tag` lines for DINT, REAL, TIMER and described BOOL tags, with their values (§7.4); a BOOL used by the code with no description and no value is left to automatic creation. Alias tags of I/O addresses become an `io` block. Step and action tags not used by any chart are left out (info note).
+- **Tags:** `tag` lines for DINT, REAL, TIMER and described BOOL tags, with their values (§7.4); a BOOL used by the code with no description and no value is left to automatic creation. Alias tags of I/O addresses and of tag members become an `io` block. Step and action tags not used by any chart are left out (info note), and so are tags named like operands (`Tran_005`: elements of routines not imported).
+- **Controller tags [Phase 4d+]:** the controller's context `<Tags>` of the file are read too (presets of controller step tags, values, aliases, descriptions) and written in the `controller` block (§7.7), always declared (for their scope). A program tag with the same name wins. From a whole-controller export, only the controller tags the program uses. Steps and transitions whose tags are controller tags are listed on `sfc tags` (an unnamed one gets a `tr<N>` name for it), unless the option moves them to the program.
+- **Operands of other routines** in the code (`Step_017.DN`) stay as written (§7.3), and their numbers are skipped when the import checks which operands the export would change. A step named from its tag description whose operand would change is named `s<N>` instead, the description keeping the text.
 - **Program:** `program name "description"` when the name differs from the main routine's or the program has a description.
 - **What can't be kept** is listed in the report and as a comment block at the top of the file, never dropped silently: text boxes (written as `//` comments above the element they are attached to, or at the top of the routine), Stop elements (a step that ends the chain), step alarms and limits, preset expressions, Boolean actions, other tag types (INT, COUNTER, UDTs, arrays: their type is inferred again), aliases that are not I/O addresses, values that can't be written, other routine types.
 - **Round trip:** exporting a qSFC file, importing it and exporting again gives the same L5X byte for byte (every test pack file and fixture, `test/import/roundtrip.test.ts`); a chart drawn in Studio comes back with the same wires and step operands (`legacy/tests/MainProgram.L5X`).
@@ -644,6 +684,7 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E220 | inside a branch, a jump must be the last transition of a `select` leg |
 | E221 | at least one leg of this `select` must continue (it is inside another branch, so the flow can't stop here) |
 | E222 | `step` lines belong to an `sfc` routine; `main` is an `st` routine |
+| E223 | only `tag` lines, an `io` block and `sfc tags` go in the `controller` block (§7.7) |
 
 **Chart rules (E3xx / W3xx)**
 | Code | Message (example) |
@@ -676,10 +717,12 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E408 | tag `count` declared twice with different types |
 | E409 | unknown type `TMR` (Phase 1 types: BOOL, DINT, REAL, TIMER) |
 | E410 | `pack` is both a step and a tag |
-| E413 | `Local1.I.Data.0` is not a valid I/O address / I/O point `start_btn` has no address (§7.6) |
+| E413 | `Local:1:I.Data.` is not a valid I/O address / I/O point `start_btn` has no address / `Local1.I.Data.0`: `Local1` is not a tag, a step or an I/O module (§7.6) |
 | E414 | `count` is mapped to the bit `Local:1:I.Data.0` but declared as DINT (line 2) |
 | E415 | `start_btn` is already mapped to `Local:1:I.Data.0` (line 3) |
 | E416 | `after` needs one step before the transition; this transition follows the `end` of a `parallel` block (§4.4) |
+| E418 | `x` is declared in the `controller` block here and as a program tag at line 4 / `ejections` is a controller tag: it can't alias `b`, a program tag (§7.7) |
+| E419 | `zz` is not a step or a named transition of this file (`sfc tags`, §7.7) |
 | E417 | `1.5` is not a DINT value; a value needs the tag's type first; an I/O point can't have a value (§7.4) |
 | W400 | `strat_btn` is used only once; did you mean `start_btn`? |
 | W401 | `Valve` and `valve` are the same tag; the first spelling is used |
@@ -693,6 +736,8 @@ fill.qsfc:12:5: error E202: two steps in a row: 'fill' (line 10) and 'check'
 | E600 | `call fil_seq`: there is no routine `fil_seq`; did you mean `fill_seq`? |
 | E601 | write `call routine_name;` |
 | E602 | `call` is a statement: it can't be used in a condition |
+| E603 | `SFR` needs an SFC routine; `calc` is an ST routine (§4.5) |
+| E604 | `a` is not a step of `seq` / `Ext` is not in this file: name its step by its operand / the second argument of `SFP` is `Execute` or `Pause` |
 | W600 | routine `alarms` is never called (only the main routine runs by itself) |
 | W601 | routine `alarms` calls itself |
 | W602 | `main` is the main routine: Studio already runs it every scan |
@@ -714,17 +759,21 @@ The grammar is line-based. The ordering rules (alternation, branch shapes) are c
 
 ```
 file        = { line } ;
-line        = blank | comment | program | meta | header | tag_decl | io_block | step
+line        = blank | comment | program | uses | controller | meta | header | tag_decl | io_block | step
             | action_line | transition | "select" | "parallel" | "|" | "end" ;
 
 program     = "program" NAME [ STRING ] ;           (* STRING: the title, §4.5 *)
 meta        = ( "course" | "author" ) STRING ;      (* before the first routine, once each *)
+uses        = "uses" NAME [ "(main)" ] { "," NAME [ "(main)" ] } ;   (* §4.5 *)
+controller  = "controller" { tag_decl | io_block | sfc_tags | blank | comment } "end" ;   (* §7.7 *)
+sfc_tags    = "sfc" "tags" NAME { "," NAME } ;
 header      = ( "sfc" | "st" ) NAME ;
 tag_decl    = "tag" NAME [ ":" TYPE [ value ] ] [ STRING ] ;
 value       = "=" VALUE | DURATION ;                  (* DURATION: TIMER preset, §7.4 *)
 io_block    = "io" { io_line | blank | comment } "end" ;
 io_line     = NAME ADDRESS [ STRING ] ;
 ADDRESS     = MODULE { ":" WORD } { "." WORD | "[" digits "]" } ;   (* at least one ":", §7.6 *)
+            | NAME ( "." WORD | "[" digits "]" ) { "." WORD | "[" digits "]" } ;   (* a tag member *)
 step        = ( "init" | "step" ) NAME [ DURATION ] [ STRING ] ;
 transition  = "--" [ NAME ":" ] CONDITION [ "->" NAME ] ;
 action_line = qualifier_line | sugar_line | ST_TEXT ;   (* any other line *)
@@ -800,3 +849,4 @@ These came up while writing the spec and weren't in the Phase 0 questions. I cho
 6. **Type inference falls back to BOOL** when there's no clue (§7.2).
 7. **Operands are numbered in file order** (`Step_000` is the first step written, not necessarily the initial step), so exports are stable and testable.
 8. **Phase 4c (2026-11-27).** An `io` point is a tag even when the code never uses it (no W404), and it is always exported as an alias. `io` blocks may appear several times and anywhere a `tag` line can. `after`, `on`, `set`, `reset` and the qualifiers stay usable as tag names outside their positions (§3.4); `course`, `author` and `io` are reserved like the other line keywords.
+9. **Phase 4d+ (2026-11-27).** The import mirrors the L5X: controller tags go in a `controller` block at the top of the file, SFC tags at controller scope are listed on `sfc tags` (moving them to the program is an option), routines not imported are named on a `uses` line and the code calling them is kept. Operand names in the code are elements of other routines, with reserved numbers.

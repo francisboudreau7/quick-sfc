@@ -254,3 +254,19 @@ Check:
 3. **Timers:** `T2` has PRE 3000, `T7` PRE 1250 and so on; `Bonsens` starts at 1, `X` at 1 (tag values, **new L5X shape for qSFC**, copied from your own export's format).
 4. **Verify** the program: 0 errors.
 5. Optional: run it as you ran the original; it should behave the same.
+
+## tp15_controller: controller tags, SFC tags at controller scope, SFR / SFP (Phase 4d+, added 2026-11-27)
+
+`tp15_controller.qsfc` has a `controller` block (SPEC §7.7): two tags with values, an `io` block with two I/O aliases and `fills`, an alias of the step member `fill.Count`, and `sfc tags idle, fill, go`. The ST main routine calls the SFC routines `cycle` and `seq`; `cycle` uses `SFR(seq, wait)` and `SFP(seq, Execute / Pause)`.
+
+In the `.L5X`, the controller tags (`stop_req`, `cycles_max`, `start_btn`, `lamp`, `fills`) and the tags of `idle`, `fill`, `go` (`Step_000`, `Step_001`, `Tran_000` and their actions) are in the controller's context `<Tags Use="Context">`; every other tag is a program tag. `SFR(seq, wait)` is written `SFR(seq, Step_003)`.
+
+**Before importing:** use a project with a `Local:1` discrete I/O module (like STATION2). If tags with these names already exist at controller scope, the Import dialog offers to use them.
+
+Check:
+1. **Import** the program: does the Import dialog list the controller tags and create them? (**new for qSFC**: context tags)
+2. **Scope:** in Controller Tags, `stop_req` (value 1), `cycles_max` (3), the aliases `start_btn`, `lamp` and `fills` (→ `Step_001.Count`), and `Step_000`, `Step_001`, `Tran_000`, `Action_000`, `Action_001`; in the program's tags, `Step_002`, `Step_003`, `Step_004`, the other `Tran_` and `Action_` tags.
+3. **Verify** the program: 0 errors (SFR / SFP accepted, `fills` resolves).
+4. Optional run: `seq` runs `wait` → `work` every 1.5 s; press `start_btn`: `cycle` goes to `fill` (`lamp` on, `seq` keeps running), after 3 fills with `stop_req` set it pauses `seq` and returns to `idle`, which resets `seq` to `wait`.
+
+Optional, with your STATION2 project: `legacy/tests/STATION2_MainProgram.L5X` imported in qSFC and exported again (File → Open an L5X…, then Export L5X) keeps every SFC routine, operand and controller tag, but its main routine and the ladder routines are only named (`uses`): import it as a **new** program in a copy of the project to see how Studio handles a program L5X without them (it is the open question before routine-level export).

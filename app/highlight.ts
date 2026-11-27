@@ -52,7 +52,7 @@ export const TOKEN_STYLE: Readonly<Record<TokKind, string>> = {
 };
 
 export const QSFC_KEYWORDS = [
-  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io",
+  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io", "uses", "controller",
 ] as const;
 
 export const ST_KEYWORDS = new Set([
@@ -233,8 +233,18 @@ export function lineKind(line: string): { kind: LineKind; start: number; word?: 
     case "program":
     case "sfc":
     case "st":
+      // `sfc tags a, b` in the controller block (SPEC §7.7) is a list, not a routine header
+      if (word!.toLowerCase() === "sfc" && /^[ \t]+tags\b/i.test(t.slice(3))) return { kind: "tag", start, word };
       // Same rule as the parser: `st main` is a header, `st := 1;` is ST.
       if (isHeaderShape(t.slice(word!.length))) return { kind: "header", start, word };
+      return { kind: "action", start };
+    case "uses":
+      // `uses INIT, MainRoutine (main)` (SPEC §4.5)
+      if (isHeaderShape(t.slice(word!.length))) return { kind: "meta", start, word };
+      return { kind: "action", start };
+    case "controller":
+      // `controller … end` (SPEC §7.7): a block like `io`, holding tag lines and an io block
+      if (isHeaderShape(t.slice(word!.length))) return { kind: "io", start, word };
       return { kind: "action", start };
     case "course":
     case "author":

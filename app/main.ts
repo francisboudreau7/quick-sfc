@@ -40,7 +40,7 @@ import {
   stLinesText,
   treeLines,
 } from "./routines.js";
-import { countProblems, orderProblems, problemKey, problemLocation, problemTag, problemTarget } from "./problems.js";
+import { countProblems, orderProblems, problemKey, problemLocation, problemsText, problemTag, problemTarget } from "./problems.js";
 import {
   dragFraction,
   dragProblems,
@@ -124,6 +124,7 @@ const ui = {
   tagBody: el("tag-body"),
   problems: el("problems"),
   problemsToggle: el<HTMLButtonElement>("problems-toggle"),
+  problemsCopy: el<HTMLButtonElement>("problems-copy"),
   problemList: el("problem-list"),
   problemCount: el("problem-count"),
   statusFile: el("status-file"),
@@ -155,6 +156,9 @@ const ui = {
   impFile: el("imp-file"),
   impProgramWrap: el("imp-program-wrap"),
   impProgram: el<HTMLSelectElement>("imp-program"),
+  impMoveWrap: el("imp-move-wrap"),
+  impMove: el<HTMLInputElement>("imp-move"),
+  impMoveText: el("imp-move-text"),
   impBody: el("imp-body"),
   impStudio: el("imp-studio"),
   impStudioSub: el("imp-studio-sub"),
@@ -1000,6 +1004,7 @@ async function openImport(file: File, returnFocus: HTMLElement | null = document
     toast(`Could not read ${file.name}: ${(e as Error).message}`, "error");
     return;
   }
+  ui.impMove.checked = false;
   const result = importL5X(original);
   const problem = importProblem(file.name, result);
   if (problem) {
@@ -1023,7 +1028,7 @@ function firstSfc(result: ImportResult): number {
 function chooseImportProgram(name: string): void {
   const s = impState;
   if (!s) return;
-  const result = importL5X(s.original, { program: name });
+  const result = importL5X(s.original, { program: name, sfcTagsAtProgram: ui.impMove.checked });
   if (result.error) {
     toast(`${s.fileName}: ${result.error}`, "error");
     return;
@@ -1034,11 +1039,17 @@ function chooseImportProgram(name: string): void {
 }
 
 ui.impProgram.addEventListener("change", () => chooseImportProgram(ui.impProgram.value));
+// SPEC §7.7: the import mirrors the L5X; this moves controller-scope step tags to the program
+ui.impMove.addEventListener("change", () => impState && chooseImportProgram(impState.result.program));
 
 function renderImport(): void {
   const s = impState;
   if (!s) return;
   const r = s.result;
+  ui.impMoveWrap.hidden = r.controllerSfcTags === 0;
+  ui.impMoveText.textContent = `Make the ${plural(r.controllerSfcTags, "controller-scope step tag")} program tags`;
+  ui.impMoveWrap.title =
+    "In Studio these step and transition tags are controller tags. Checked: they become program tags (the usual place). Unchecked: the file lists them on `sfc tags`, so the export keeps them at controller scope.";
   ui.impBody.replaceChildren(
     ...r.routines.map((x, i) => {
       const tr = document.createElement("tr");
@@ -1618,6 +1629,7 @@ function renderProblems(): void {
   ui.problemCount.textContent = String(diags.length);
   const { errors } = countProblems(diags);
   ui.problemCount.className = `count${errors ? " err" : diags.length ? " warn" : ""}`;
+  ui.problemsCopy.hidden = diags.length === 0;
   if (diags.length === 0) {
     const li = cell("li", doc ? "No problems in this chart." : "No chart open.", "problem-empty");
     ui.problemList.replaceChildren(li);
@@ -1646,7 +1658,19 @@ function renderProblems(): void {
       selectProblem(k);
       editor.goTo(d.span.line, d.span.col, true);
     });
-    li.append(b);
+    // I1 (Phase 4d+): the text of a problem can be copied (Ctrl+C on it, or its Copy button)
+    b.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        void copyProblems([d]);
+      }
+    });
+    const copy = cell("button", "Copy", "problem-copy") as HTMLButtonElement;
+    copy.type = "button";
+    copy.title = "Copy this problem as text";
+    copy.setAttribute("aria-label", `Copy ${d.code} as text`);
+    copy.addEventListener("click", () => void copyProblems([d]));
+    li.append(b, copy);
     return li;
   });
   ui.problemList.replaceChildren(...items);
@@ -1698,6 +1722,33 @@ function setProblemsOpen(open: boolean): void {
 }
 
 ui.problemsToggle.addEventListener("click", () => setView({ problemsOpen: !view.problemsOpen }));
+ui.problemsCopy.addEventListener("click", () => void copyProblems(orderProblems(diagnostics)));
+
+/** Copies problems as the CLI prints them (`file:line:col: error E405: …`). */
+async function copyProblems(diags: readonly Diagnostic[]): Promise<void> {
+  if (!diags.length) return;
+  const text = problemsText(diags, doc?.file.name ?? "chart.qsfc");
+  const done = () => toast(diags.length === 1 ? `Copied ${diags[0]!.code}` : `Copied ${plural(diags.length, "problem")}`);
+  try {
+    await navigator.clipboard.writeText(text);
+    done();
+    return;
+  } catch {
+    // no async clipboard (some file:// pages, older browsers): the selection-based copy below
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+  const back = document.activeElement as HTMLElement | null;
+  document.body.append(area);
+  area.select();
+  const ok = document.execCommand("copy");
+  area.remove();
+  back?.focus();
+  if (ok) done();
+  else toast("Could not copy: the browser blocked the clipboard", "error");
+}
 
 function selectProblem(k: string | undefined): void {
   selectedProblem = k;

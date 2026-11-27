@@ -112,6 +112,8 @@ export interface TagInfo {
   address?: string;
   /** Initial value from the `tag` line (SPEC §7.4): BOOL 0/1, DINT, REAL, TIMER preset in ms. */
   initial?: number;
+  /** Declared in the `controller` block (SPEC §7.7): exported as a controller tag. */
+  scope?: "controller";
   /** Every place the tag is used in ST (not the declaration). */
   uses: Span[];
 }

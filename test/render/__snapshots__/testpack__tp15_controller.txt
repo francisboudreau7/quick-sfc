@@ -1,0 +1,13 @@
+╔═══════════╗ ◄ from T2
+║   idle    ║─[ SFR(seq, wait); ]
+╚═════╤═════╝
+      ┼ go: start_btn
+┌─────┴─────┐
+│ fill  2s  │─[ lamp [:=] 1; … ]
+└─────┬─────┘
+      ┼ fill.DN and fills >= cycles_max
+┌─────┴─────┐
+│ pause_seq │─[ SFP(seq, Pause); ]
+└─────┬─────┘
+      ┼ stop_req
+      → idle (T2)

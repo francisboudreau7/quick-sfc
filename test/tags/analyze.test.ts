@@ -292,14 +292,15 @@ describe("E404 type conflicts", () => {
 });
 
 describe("E405 / E410 reserved names and namespace", () => {
-  it("E405 for generated operand names, in uses and declarations", () => {
-    const r = act(["Step_003 := 1;", "action_12 := 1;"], { tagDecls: [{ name: "Tran_001", type: "BOOL" }] });
-    const d = byCode(r, "E405");
-    expect(d.map((x) => x.message)).toEqual([
-      "`Tran_001` is a reserved name (used for generated operands)",
-      "`Step_003` is a reserved name (used for generated operands)",
-      "`action_12` is a reserved name (used for generated operands)",
-    ]);
+  it("E405 for generated operand names in declarations", () => {
+    const r = act(["x := 1;"], { tagDecls: [{ name: "Tran_001", type: "BOOL" }] });
+    expect(byCode(r, "E405").map((x) => x.message)).toEqual(["`Tran_001` is a reserved name (used for generated operands)"]);
+  });
+  it("operand names in code are elements of other routines (SPEC §7.3): not tags, members checked", () => {
+    const r = act(["Step_003 := 1;", "action_12 := 1;", "x := Step_017.DN AND Action_002.Q AND Tran_004;", "Step_016.Count := 0;", "y := Step_001.Foo;"]);
+    expect(r.tags.map((t) => t.name)).toEqual(["x", "y"]);
+    expect(codes(r).filter((c) => c !== "E404")).toEqual(["E400", "E400", "E401"]);
+    expect(r.outside.map((o) => `${o.kind}:${o.number}`)).toEqual(["step:3", "action:12", "step:17", "action:2", "transition:4", "step:16", "step:1"]);
   });
   it("E405 for qSFC keywords used as identifiers; Step_x is fine", () => {
     const r = act(["select := 1;", "Step_x := 1;", "Stepper := 1;"]);
@@ -468,7 +469,7 @@ describe("W400 / W401", () => {
 
 describe("robustness", () => {
   it("empty chart and steps without actions", () => {
-    expect(analyzeEmpty()).toEqual({ tags: [], diagnostics: [], calls: [] });
+    expect(analyzeEmpty()).toEqual({ tags: [], diagnostics: [], calls: [], outside: [] });
   });
   it("garbage ST never throws", () => {
     const garbage = ["))) ((( ]]] [[[", "x := := := ;;;", "'unterminated", "(* open", "a.b.c.d[1][2].e", "1.2.3 .. ..", "IF IF THEN THEN", "@ # $ % ^", "f(", "f(,,,)", ":= 1", "x :="];

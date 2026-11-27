@@ -125,7 +125,7 @@ describe("parse: io block", () => {
   it("E413: missing or malformed address", () => {
     const missing = only(src("io", "  start_btn", "end", chart), "E413");
     expect(missing[0]!.message).toBe("I/O point `start_btn` has no address");
-    for (const bad of ["Local1.I.Data.0", "Local:1:I.Data.", "Local::1", "1:I.Data.0", "Local:1:I.Data[x]", "Local:1:I-Data"]) {
+    for (const bad of ["Local:1:I.Data.", "Local::1", "1:I.Data.0", "Local:1:I.Data[x]", "Local:1:I-Data"]) {
       const d = only(src("io", `  x ${bad}`, "end", chart), "E413");
       expect(d, bad).toHaveLength(1);
       expect(d[0]!.message).toBe(`\`${bad}\` is not a valid I/O address`);

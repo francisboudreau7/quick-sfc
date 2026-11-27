@@ -14,8 +14,13 @@ import {
   type Sugar,
   type TagDecl,
   type TagType,
+  IO_ADDRESS_RE,
   isBitAddress,
+  TAG_PATH_RE,
   key,
+  type OperandKind,
+  operandName,
+  pinnedOperand,
   READABLE_MEMBERS,
   walk,
 } from "../model/ast.js";
@@ -29,13 +34,15 @@ const STEP_MEMBERS = [
 ];
 /** Readable members (SPEC §7.3, Phase 4c): `.active` `.done` `.time` `.first`. */
 const READABLE = Object.keys(READABLE_MEMBERS);
+/** Members of an SFC_ACTION tag (`Action_005.Q`). */
+const ACTION_MEMBERS = ["Status", "A", "Q", "PauseTimer", "PRE", "T", "Count"];
 const MEMBER_BY_KEY = new Map<string, string>([
   ...STEP_MEMBERS.map((m): [string, string] => [m.toLowerCase(), m]),
   ...Object.entries(READABLE_MEMBERS),
 ]);
 
 const QSFC_KEYWORDS = new Set([
-  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io",
+  "program", "sfc", "st", "call", "tag", "init", "step", "select", "parallel", "end", "course", "author", "io", "uses", "controller",
 ]);
 const RESERVED_RE = /^(step|tran|action)_\d+$/i;
 const MAX_TAG_NAME = 40;
@@ -115,14 +122,32 @@ function closest(name: string, candidates: string[], max: number): string | unde
   return best;
 }
 
-/** A `call name;` statement or a `JSR(name, ...)` call found in the ST (SPEC §4.5). */
+/**
+ * A `call name;` statement or a `JSR(name, ...)` call found in the ST (SPEC §4.5), or the routine
+ * of an `SFR(routine, step)` / `SFP(routine, Execute)` instruction (not a call).
+ */
 export interface CallRef {
   /** Called routine, as written. */
   name: string;
   span: Span;
-  via: "call" | "jsr";
+  via: "call" | "jsr" | "sfr" | "sfp";
+  /** SFR / SFP: the second argument (a step, or Execute / Pause), when it is a name. */
+  arg?: { text: string; span: Span };
   /** Routine the call is written in (as written; "" for a header-less first routine). */
   from: string;
+}
+
+/**
+ * A Studio operand named in the code that is not an element of the file (`Step_017.DN`): a step,
+ * transition or action of a routine that isn't in the file (SPEC §7.3). Not a tag of the file;
+ * its number is reserved, so no element of the file gets it (SPEC §8.2).
+ */
+export interface OutsideRef {
+  kind: OperandKind;
+  number: number;
+  /** As written, e.g. `Step_017`. */
+  name: string;
+  span: Span;
 }
 
 export interface TagAnalysis {
@@ -130,6 +155,15 @@ export interface TagAnalysis {
   diagnostics: Diagnostic[];
   /** Every routine call, in file order. Checked against the routines by src/validate. */
   calls: CallRef[];
+  /** Operands of other routines named in the code, in file order. */
+  outside: OutsideRef[];
+}
+
+/** The operand numbers `outside` reserves, per kind. */
+export function reservedOperands(outside: readonly OutsideRef[]): Record<OperandKind, Set<number>> {
+  const out: Record<OperandKind, Set<number>> = { step: new Set(), transition: new Set(), action: new Set() };
+  for (const o of outside) out[o.kind].add(o.number);
+  return out;
 }
 
 /**
@@ -142,12 +176,15 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
   const charts = program.routines.flatMap((r) => (r.kind === "sfc" ? [r.chart] : []));
   const diags: Diagnostic[] = [];
   const calls: CallRef[] = [];
+  const outside: OutsideRef[] = [];
   const recs = new Map<string, Rec>();
   const parent = new Map<string, string>();
 
   // ---- namespaces -------------------------------------------------------------------------
   const stepsByKey = new Map<string, { name: string; presetMs?: number }>();
   const transKeys = new Set<string>();
+  /** Elements whose name pins an operand number (`s3`, `tr7`, SPEC §8.2), by number. */
+  const pinnedBy: Record<"step" | "transition", Map<number, string>> = { step: new Map(), transition: new Map() };
   const routineKeys = new Set<string>();
   for (const r of program.routines) {
     const name = r.kind === "sfc" ? r.name?.text : r.name.text;
@@ -157,7 +194,13 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     for (const el of walk(chart.body)) {
       if (el.kind === "step") {
         if (!stepsByKey.has(key(el.name.text))) stepsByKey.set(key(el.name.text), { name: el.name.text, presetMs: el.presetMs });
-      } else if (el.kind === "transition") transKeys.add(key(el.name.text));
+        const n = pinnedOperand("step", el.name.text);
+        if (n !== undefined && !pinnedBy.step.has(n)) pinnedBy.step.set(n, el.name.text);
+      } else if (el.kind === "transition") {
+        transKeys.add(key(el.name.text));
+        const n = el.auto ? undefined : pinnedOperand("transition", el.name.text);
+        if (n !== undefined && !pinnedBy.transition.has(n)) pinnedBy.transition.set(n, el.name.text);
+      }
     }
   }
   /** Routine the unit being analyzed belongs to. */
@@ -209,6 +252,8 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
   // ---- io block (SPEC §7.6) ---------------------------------------------------------------
   // An I/O point makes its tag exist (an alias tag). A bit address is BOOL evidence.
   const ioByKey = new Map<string, IoEntry>();
+  /** `io` lines aliasing a tag member (`ejections  Step_017.Count`): checked once every tag is known. */
+  const aliasPaths: IoEntry[] = [];
   for (const e of program.io ?? []) {
     const k = key(e.name.text);
     const prev = ioByKey.get(k);
@@ -222,6 +267,7 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     ioByKey.set(k, e);
     const r = getRec(k);
     r.io = e;
+    if (!IO_ADDRESS_RE.test(e.address.text) && TAG_PATH_RE.test(e.address.text)) aliasPaths.push(e);
     if (!isBitAddress(e.address.text)) continue;
     const declared = declType.get(k);
     if (declared && declared !== "BOOL") {
@@ -459,12 +505,75 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
       return a.t;
     }
 
+    /**
+     * `Step_017.DN`, `Tran_005`, `Action_002.Q`: an element of a routine that isn't in the file
+     * (SPEC §7.3). Not a tag; members are checked; the number is reserved (`outside`).
+     */
+    outsideRef(
+      idTok: Tok,
+      op: { kind: OperandKind; number: number },
+      first: { kind: "member" | "bit"; tok: Tok } | { kind: "index"; open: Tok } | undefined,
+      sp: Span,
+    ): E {
+      if (op.kind !== "action") {
+        const mine = pinnedBy[op.kind].get(op.number);
+        if (mine !== undefined) {
+          diags.push(
+            error("E405", spanOf(idTok), `\`${idTok.t}\` is the ${op.kind} \`${mine}\` of this file: write \`${mine}\``,
+              "operand names are for steps and transitions of other routines"),
+          );
+          return E_UNK();
+        }
+      }
+      outside.push({ kind: op.kind, number: op.number, name: idTok.t, span: spanOf(idTok) });
+      if (op.kind === "transition") {
+        if (first) {
+          diags.push(error("E401", sp, `\`${idTok.t}\` is a transition (a BOOL): it has no members`));
+          return E_UNK();
+        }
+        return { cls: "bool", tags: [], real: false };
+      }
+      const members = op.kind === "step" ? STEP_MEMBERS : ACTION_MEMBERS;
+      if (!first || first.kind === "index") {
+        diags.push(
+          error("E400", sp, `\`${idTok.t}\` is ${op.kind === "step" ? "a step" : "an action"}; use \`${idTok.t}.${members === STEP_MEMBERS ? "X" : "A"}\` (active) or another member`),
+        );
+        return E_UNK();
+      }
+      if (first.kind === "bit" || !members.some((m) => m.toLowerCase() === first.tok.t.toLowerCase())) {
+        const sug = first.kind === "member" ? closest(first.tok.t, members, 2) : undefined;
+        diags.push(
+          error("E401", sp, `\`${idTok.t}.${first.tok.t}\`: ${op.kind === "step" ? "steps" : "actions"} have no member \`${first.tok.t}\`${sug ? ` (did you mean \`${sug}\`?)` : ""}`,
+            sug ? undefined : `valid members: ${members.join(", ")}`),
+        );
+      }
+      return E_UNK();
+    }
+
     ident(): E {
       const idTok = this.toks[this.pos++] as Tok;
       if (this.isP(this.peek(), "(")) {
         this.pos++;
         // JSR(routine, ...): the first argument is a routine, not a tag (SPEC §4.5)
         const target = this.peek();
+        // SFR(routine, step) / SFP(routine, Execute|Pause): a routine and a step (or a state), not tags
+        const fn = key(idTok.t);
+        if ((fn === "sfr" || fn === "sfp") && target && target.k === "id" && this.isP(this.toks[this.pos + 1], ",")) {
+          const ref: CallRef = { name: target.t, span: spanOf(target), via: fn, from: currentRoutine };
+          this.pos += 2;
+          const arg = this.peek();
+          const nx = this.toks[this.pos + 1];
+          if (arg && (arg.k === "id" || arg.k === "kw") && (nx === undefined || this.isP(nx, ")") || this.isP(nx, ","))) {
+            ref.arg = { text: arg.t, span: spanOf(arg) };
+            const op = fn === "sfr" ? operandName(arg.t) : undefined;
+            if (op?.kind === "step") outside.push({ kind: "step", number: op.number, name: arg.t, span: spanOf(arg) });
+            this.pos++;
+            if (this.isP(this.peek(), ",")) this.pos++;
+          }
+          calls.push(ref);
+          this.args();
+          return { cls: "call", tags: [], real: false };
+        }
         if (key(idTok.t) === "jsr" && target && target.k === "id" && !this.isP(this.toks[this.pos + 1], ".")) {
           calls.push({ name: target.t, span: spanOf(target), via: "jsr", from: currentRoutine });
           this.pos++;
@@ -513,6 +622,8 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
         if (!p) return idTok;
         return p.kind === "index" ? (p.close ?? p.open) : p.tok;
       };
+      const op = operandName(idTok.t);
+      if (op) return this.outsideRef(idTok, op, post[0], { line: idTok.line, col: idTok.col, endLine: lastTok().line, endCol: lastTok().end });
       const step = stepsByKey.get(k);
       if (step) {
         const first = post[0];
@@ -859,6 +970,41 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     }
   }
 
+  // ---- aliases of tag members (SPEC §7.6) and `sfc tags` (SPEC §7.7) ------------------------
+  for (const e of aliasPaths) {
+    const base = /^\w+/.exec(e.address.text)![0];
+    const baseSpan: Span = { ...e.address.span, endCol: e.address.span.col + base.length };
+    const op = operandName(base);
+    if (op) {
+      const mine = op.kind === "action" ? undefined : pinnedBy[op.kind].get(op.number);
+      if (mine !== undefined) {
+        diags.push(error("E405", baseSpan, `\`${base}\` is the ${op.kind} \`${mine}\` of this file: write \`${mine}\``));
+      } else outside.push({ kind: op.kind, number: op.number, name: base, span: baseSpan });
+    } else if (!stepsByKey.has(key(base)) && !transKeys.has(key(base)) && !(recs.get(key(base))?.decls.length || recs.get(key(base))?.io || recs.get(key(base))?.uses.length)) {
+      diags.push(
+        error("E413", baseSpan, `\`${e.address.text}\`: \`${base}\` is not a tag, a step or an I/O module`,
+          "an I/O path has a module part with `:` (Local:1:I.Data.0); a tag member starts with a tag or a step"),
+      );
+    } else if (e.scope === "controller") {
+      // a controller tag can't alias a program tag (Studio 5000)
+      const isElement = stepsByKey.has(key(base)) || transKeys.has(key(base));
+      const atController = isElement
+        ? (program.controllerElements ?? []).some((n) => key(n.text) === key(base))
+        : [...(recs.get(key(base))?.decls ?? []), ...(recs.get(key(base))?.io ? [recs.get(key(base))!.io!] : [])].some((d) => d.scope === "controller");
+      if (!atController) {
+        diags.push(
+          error("E418", baseSpan, `\`${e.name.text}\` is a controller tag: it can't alias \`${base}\`, a program tag`,
+            isElement ? `add \`${base}\` to \`sfc tags\`, or move \`${e.name.text}\` out of the \`controller\` block` : `move \`${base}\` into the \`controller\` block too`),
+        );
+      }
+    }
+  }
+  for (const n of program.controllerElements ?? []) {
+    if (!stepsByKey.has(key(n.text)) && !transKeys.has(key(n.text))) {
+      diags.push(error("E419", n.span, `\`${n.text}\` is not a step or a named transition of this file`, "`sfc tags` lists steps and transitions whose tags are controller tags"));
+    }
+  }
+
   // ---- unification groups and types -------------------------------------------------------
   const typedDecl = (r: Rec): TagDecl | undefined => r.decls.find((d) => d.type);
   const sortedRecs = [...recs.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
@@ -970,7 +1116,10 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     }
     // a `tag` line with a value makes the tag exist even when unused (SPEC §7.4: a timer set up
     // for later, or a Studio tag brought back by the import)
-    if (!r.uses.length && !r.io && !r.decls.some((d) => d.initial !== undefined)) {
+    // a declared tag is exported even when unused here if routines outside the file (`uses`) may
+    // use it, or if it is a controller tag (SPEC §7.7)
+    const kept = r.decls.length > 0 && (!!program.uses?.length || r.decls.some((d) => d.scope === "controller"));
+    if (!r.uses.length && !r.io && !r.decls.some((d) => d.initial !== undefined) && !kept) {
       if (r.decls.length && !flagged.has(r.key)) {
         diags.push(warning("W404", (firstDecl as TagDecl).name.span, `tag \`${canonical}\` is declared but never used`));
       }
@@ -986,6 +1135,18 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     };
     if (description !== undefined) info.description = description;
     if (r.io) info.address = r.io.address.text;
+    // scope (SPEC §7.7): the `controller` block; a tag is at one scope only
+    const scoped = [...r.decls.map((d) => ({ scope: d.scope, span: d.name.span })), ...(r.io ? [{ scope: r.io.scope, span: r.io.name.span }] : [])];
+    const ctl = scoped.find((x) => x.scope === "controller");
+    const prog = scoped.find((x) => x.scope === undefined);
+    if (ctl && prog) {
+      const later = cmpSpan(ctl.span, prog.span) > 0 ? ctl : prog;
+      const first = later === ctl ? prog : ctl;
+      diags.push(
+        error("E418", later.span, `\`${canonical}\` is declared ${later === ctl ? "in the `controller` block" : "as a program tag"} here and ${first === ctl ? "in the `controller` block" : "as a program tag"} at line ${first.span.line}`,
+          "a tag lives at one scope: keep one of the two lines"),
+      );
+    } else if (ctl) info.scope = "controller";
     const valued = r.decls.find((d) => d.valueSpan !== undefined);
     if (valued && r.io) {
       diags.push(error("E417", valued.valueSpan!, `\`${canonical}\` is an I/O point: its value comes from the module, it can't have one of its own`));
@@ -1030,5 +1191,5 @@ export function analyzeTags(input: Chart | ProgramNode): TagAnalysis {
     const y = b.name.toLowerCase();
     return x < y ? -1 : x > y ? 1 : 0;
   });
-  return { tags: infos, diagnostics: sortDiagnostics(diags), calls };
+  return { tags: infos, diagnostics: sortDiagnostics(diags), calls, outside };
 }

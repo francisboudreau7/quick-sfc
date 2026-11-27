@@ -20,6 +20,20 @@ export function rewriteStepRefs(text: string, operandByStepKey: Map<string, stri
 }
 
 /**
+ * Rewrites the step of `SFR(routine, step)` to its operand (`SFR(fill_seq, idle)` →
+ * `SFR(fill_seq, Step_000)`, SPEC §4.5); a step already written as an operand is kept.
+ */
+export function rewriteSfrSteps(text: string, operandByStepKey: Map<string, string>): string {
+  return mapIdentifiers(text, (word, i, j) => {
+    if (key(word) !== "sfr" || precededByDot(text, i)) return undefined;
+    const m = /^([ \t]*\([ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*,[ \t]*)([A-Za-z_][A-Za-z0-9_]*)/.exec(text.slice(j));
+    const operand = m ? operandByStepKey.get(key(m[2]!)) : undefined;
+    if (!m || operand === undefined) return undefined;
+    return { text: word + m[1] + operand, next: j + m[0].length };
+  });
+}
+
+/**
  * Rewrites the `call name` statement to Studio's `JSR(name,0)` (SPEC §4.5); the `;` and
  * everything else is copied unchanged. Skips ST strings and comments.
  */

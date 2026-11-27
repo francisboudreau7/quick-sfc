@@ -1,7 +1,7 @@
 import type { Chart, Sequence, SourceText, TagDecl, TagType } from "../../src/model/ast.js";
 import type { Diagnostic } from "../../src/model/diagnostics.js";
 import type { TagInfo } from "../../src/model/graph.js";
-import { analyzeTags } from "../../src/tags/index.js";
+import { analyzeTags, type OutsideRef } from "../../src/tags/index.js";
 
 export interface StepSpec {
   step: string;
@@ -100,6 +100,7 @@ export function chart(o: Opts): Chart {
 export interface Result {
   tags: TagInfo[];
   diagnostics: Diagnostic[];
+  outside: OutsideRef[];
   lines: string[];
 }
 

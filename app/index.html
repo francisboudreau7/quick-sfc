@@ -162,6 +162,7 @@
       <button type="button" class="panel-toggle" id="problems-toggle" aria-expanded="true" aria-controls="problem-list">
         <span class="chev" aria-hidden="true"></span>Problems <span class="count" id="problem-count">0</span>
       </button>
+      <button type="button" class="panel-action" id="problems-copy" title="Copy every problem as text (Ctrl+C on a problem copies that one)">Copy all</button>
     </h2>
     <ul class="problem-list" id="problem-list" aria-label="Problems"></ul>
   </section>
@@ -230,7 +231,8 @@
 <dialog class="tidy imp" id="imp" aria-labelledby="imp-title" aria-describedby="imp-note">
   <form method="dialog" class="tidy-form">
     <div class="tidy-head"><h2 id="imp-title">Open an L5X</h2><span class="tidy-file" id="imp-file"></span>
-      <label class="imp-program" id="imp-program-wrap" hidden>Program <select id="imp-program"></select></label></div>
+      <label class="imp-program" id="imp-program-wrap" hidden>Program <select id="imp-program"></select></label>
+      <label class="imp-program" id="imp-move-wrap" hidden><input type="checkbox" id="imp-move"> <span id="imp-move-text">Make the step tags program tags</span></label></div>
     <div class="tidy-routines">
       <table class="tidy-table">
         <caption class="sr-only">Routines of the program; choose an SFC routine to see it as Studio draws it</caption>

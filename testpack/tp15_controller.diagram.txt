@@ -1,0 +1,35 @@
+== st main (main) ==
+calls: cycle, seq
+
+  call cycle;
+  call seq;
+
+== sfc cycle ==
+called by: main
+
+╔═══════════╗ ◄ from T2
+║   idle    ║─[ SFR(seq, wait); ]
+╚═════╤═════╝
+      ┼ go: start_btn
+┌─────┴─────┐
+│ fill  2s  │─[ lamp [:=] 1; … ]
+└─────┬─────┘
+      ┼ fill.DN and fills >= cycles_max
+┌─────┴─────┐
+│ pause_seq │─[ SFP(seq, Pause); ]
+└─────┬─────┘
+      ┼ stop_req
+      → idle (T2)
+
+== sfc seq ==
+called by: main
+
+╔═════════════╗ ◄ from T3
+║    wait     ║
+╚══════╤══════╝
+       ┼ tick: wait.T > 1000
+┌──────┴──────┐
+│ work  500ms │
+└──────┬──────┘
+       ┼ work.DN
+       → wait (T3)

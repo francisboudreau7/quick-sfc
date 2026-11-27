@@ -482,6 +482,34 @@ Each phase ends with something usable, and with an **import test pack** sized so
 - **Status: built (2026-11-27), not committed.** As in SPEC §8.7: `src/import` (`importL5X`), CLI `qsfc import`, the app's File → Open an L5X… dialog (Studio sketch, highlighted .qsfc preview, notes, "Tidy it instead…"; a dropped .L5X opens it), tag values (§7.4), pins (§8.2). Every test pack file and fixture round-trips byte for byte; MainProgram.L5X imports with 0 errors, same wires and step operands, timer presets and values kept.
 - **Unverified until a Studio import:** a re-exported Studio chart (MainProgram → import → export) and the tag values (TIMER and BOOL/DINT shapes copied from Studio's own export; REAL from L5X_GUIDE 6c).
 
+### Phase 4d+: Importing real projects (found 2026-11-27 with GEMMA.L5X and the STATION2 MainProgram.L5X)
+Proposed before 4e. Each task says what goes wrong today (reproduced with `qsfc import` + `qsfc check`).
+
+**I1. Copy the problems' text** (app, small). The Problems panel can't be selected or copied. Make the text selectable, add "Copy" on each row (code, line:col, message, hint) and "Copy all".
+
+**I2. Steps of other routines in code** (`Step_000`, `Step_001.T`, `Step_017.DN`, `Step_016.Count`).
+- Today: E405 "reserved name" and E402 "type unknown… add `tag Step_017 : TIMER`". A step tag isn't a TIMER: it is an `SFC_STEP` (members X FS SA LS DN OV T TMax Count PRE…).
+- Fix: an operand name (`Step_<N>`, `Tran_<N>`, `Action_<N>`) that is not an element of the file is a reference to another routine (one that wasn't exported, or another program). It is typed `SFC_STEP` / `BOOL` / `SFC_ACTION`, with no E405 and no E402. Its number is **reserved**, so the automatic numbering skips it (a new step never becomes `Step_000` when the code already uses `Step_000`). An info line lists these outside references, since they must exist in the destination project.
+- When the step *is* in the file, the import already writes its name (`s0`), as today.
+
+**I3. SFC instructions and routines that aren't in the file.**
+- `SFR(PRODUCTION_NORMALE,s0);` gives E410 "is a routine, not a tag" and E400 "`s0` is a step; use `s0.X`". `SFR(routine, step)` and `SFP(routine, Execute|Pause)` (and `SFR`'s step as `Step_000`) are valid ST and must pass through. Their routine argument is a routine. The step argument is a step of that routine: a qSFC name is rewritten to its operand at export, and `Step_<N>` is kept.
+- `JSR(INIT);` to a routine missing from the export (`Use="Reference"`) is commented out today, and the note says "qSFC has no ? routines". Keep the line as is and know the routine as **outside** (no error). Both `JSR(x);` and `call x;` stay supported; the import doesn't turn one into the other.
+- The program's main routine is kept even when it isn't imported (`MainRoutine`, ladder). Today `flash_ER` becomes main, which gives the false W602 on `JSR(flash_ER)` and W600 "never called". W600 is off while some routines of the program are outside the file.
+- How an outside routine is declared in the text is still to choose: implicit, or a line such as `uses INIT, PRODUCTION_NORMALE`.
+
+**I4. Controller-scope tags.**
+- Today the import reads only the program's `<Tags>`. In STATION2 every tag is at controller scope (the `<Controller><Tags Use="Context">` block of the export), so the import loses step presets (`Step_042` PRE 200 ms, which gives the false W302 "`s42` has no preset"), values (`stop` = 1, which gives W400 "did you mean `e_stop`"), aliases (`e_stop`, `FM`, `ejections` → `Step_017.Count`) and descriptions (`Tran_042` "VERS AUTO").
+- Studio's L5X export already holds every controller tag the program uses, with values, so reading it needs no extra file. A tags **CSV** export has types, descriptions and aliases but no values: useful only for tags the L5X doesn't hold.
+- To decide: whether qSFC keeps the scope (e.g. a `controller` marker on `tag` / `io` lines, exported in the controller `<Tags Use="Context">`) or imports everything as program tags (simpler; Studio then has two tags with the same name at two scopes, and the program one wins inside the program).
+
+**I5. Also seen.** The `PulseRisingEdge` (P1) qualifier has no qSFC form yet (written as N, with a warning). A description over several lines (`PROCEDURE NORMALE AUTO` / `F1`) isn't a name, so the step becomes `s26` and the text should be kept as its description.
+
+- **Decided 2026-11-27:** do 4d+ before 4e. Controller tags in a `controller … end` block at the top of the file (`tag` lines, an `io` block, `sfc tags`). The import **mirrors the L5X**: SFC tags at controller scope are listed on `sfc tags`, and moving them to the program is an option, not the default (the usual practice is program scope; a project with controller-scope SFC tags is kept as is). Routines not in the file go on a `uses` line (typos in `JSR` are still caught), the main one marked `(main)`. An alias of a tag member goes in the `io` block (`ejections  Step_017.Count`).
+- **Status: built (2026-11-27), not committed.** As in SPEC §4.5 (`uses`, SFR / SFP: E603, E604), §7.3 (operands of other routines: not tags, members checked, numbers reserved; E405 when it is an element of the file), §7.6 (aliases of tag members), §7.7 (controller block: E223, E418, E419) and §8.7. I1: "Copy all" in the Problems header, a Copy button on each problem, Ctrl+C on a focused problem (text as the CLI prints it). I5: descriptions over several lines are kept on one line; a step named from its description whose operand would change is named `s<N>` instead. Import dialog: a check box "Make the N controller-scope step tags program tags" (CLI `--sfc-tags-at-program`). `legacy/tests/STATION2_MainProgram.L5X` imports with 0 errors (2 real W302); every SFC routine comes back with the same wires and operands, and the same controller tags (except 4 FBD-type tags: SCALE, FBD_LIMIT); `STATION2_GEMMA.L5X` (a routine export) imports with no warning and 0 problems.
+- **Still open:** the P1 qualifier (`PulseRisingEdge`, also P0) has no qSFC form (written as N with a warning; Q10 later); FBD types (SCALE, FBD_LIMIT) can't be declared.
+- **Unverified until a Studio import (tp15):** controller context tags created by a program import; a program L5X whose main routine and some called routines are not in it (`uses`); an alias of a step member without `Radix`. Replacing a program that has ladder routines would lose them: until Phase 5, import single routines back into such a project (a routine-level export is a later item).
+
 ### Phase 4e: Simulation (dry run), with SFC logic checks
 - Toggle inputs, step through scans, see active steps light up, timers count and tags change; no PLC needed.
 - Logic checks: selection legs whose conditions can be true together, a tag written in two parallel legs, an S action never reset, a step that can never be left.

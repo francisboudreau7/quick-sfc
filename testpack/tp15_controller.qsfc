@@ -1,0 +1,35 @@
+// tp15: controller tags, SFC tags at controller scope, SFR / SFP, an alias of a step member (Phase 4d+)
+controller
+  tag stop_req : BOOL = 1 "Stop at end of cycle"
+  tag cycles_max : DINT = 3
+  io
+    start_btn  Local:1:I.Data.0  "Start"
+    lamp       Local:1:O.Data.0
+    fills      fill.Count
+  end
+  sfc tags idle, fill, go
+end
+
+program tp15_controller
+
+st main
+  call cycle;
+  call seq;
+
+sfc cycle
+init idle
+  SFR(seq, wait);
+-- go: start_btn
+step fill 2s
+  on lamp
+  SFP(seq, Execute);
+-- fill.DN and fills >= cycles_max
+step pause_seq
+  SFP(seq, Pause);
+-- stop_req -> idle
+
+sfc seq
+init wait
+-- tick: wait.T > 1000
+step work 500ms
+-- work.DN -> wait

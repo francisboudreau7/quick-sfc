@@ -4,7 +4,7 @@
  *   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
  *   qsfc show   <file.qsfc>
  *   qsfc tidy   <in.L5X> [-o out.L5X]      (Phase 4a, SPEC §8.6; default out: <in>_tidy.L5X)
- *   qsfc import <in.L5X> [-o out.qsfc] [--program NAME]   (Phase 4d, SPEC §8.7; default out: <in>.qsfc)
+ *   qsfc import <in.L5X> [-o out.qsfc] [--program NAME] [--sfc-tags-at-program]   (SPEC §8.7; default out: <in>.qsfc)
  * Exit codes: 0 OK (warnings allowed; tidy: the file was written, even if some routines were
  * skipped; import: the file was written, even with notes), 1 errors in the chart (tidy: no SFC
  * routine could be tidied, nothing written; import: nothing could be imported),
@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import { compile, exportL5X, showAscii } from "../compile.js";
 import { formatDiagnostic, hasErrors, type Diagnostic } from "../model/diagnostics.js";
-import { importL5X } from "../import/index.js";
+import { importL5X, type ImportOptions } from "../import/index.js";
 import { tidyL5X } from "../tidy/index.js";
 
 const USAGE = `usage:
@@ -22,7 +22,7 @@ const USAGE = `usage:
   qsfc export <file.qsfc> [-o out.L5X] [--program NAME] [--version 32.01]
   qsfc show   <file.qsfc>
   qsfc tidy   <in.L5X> [-o out.L5X]
-  qsfc import <in.L5X> [-o out.qsfc] [--program NAME]`;
+  qsfc import <in.L5X> [-o out.qsfc] [--program NAME] [--sfc-tags-at-program]`;
 
 interface Args {
   command: string;
@@ -30,6 +30,8 @@ interface Args {
   out?: string;
   program?: string;
   version?: string;
+  /** import: step and transition tags at controller scope become program tags (SPEC §7.7). */
+  sfcTagsAtProgram?: boolean;
 }
 
 function parseArgs(argv: string[]): Args | string {
@@ -42,6 +44,7 @@ function parseArgs(argv: string[]): Args | string {
     if (a === "-o" || a === "--out") args.out = value();
     else if (a === "--program") args.program = value();
     else if (a === "--version") args.version = value();
+    else if (a === "--sfc-tags-at-program" && command === "import") args.sfcTagsAtProgram = true;
     else if (a.startsWith("-")) return `unknown option ${a}\n${USAGE}`;
     else if (args.file === undefined) args.file = a;
     else return `unexpected argument ${a}\n${USAGE}`;
@@ -154,7 +157,7 @@ function tidy(args: Args): number {
 /** `qsfc import`: the notes on stderr (warnings first), the .qsfc file written. */
 function importCommand(args: Args): number {
   if (args.version !== undefined) {
-    console.error(`import takes only -o and --program
+    console.error(`import takes only -o, --program and --sfc-tags-at-program
 ${USAGE}`);
     return 2;
   }
@@ -165,7 +168,10 @@ ${USAGE}`);
     console.error(`cannot read ${args.file}: ${(e as Error).message}`);
     return 2;
   }
-  const result = importL5X(text, args.program !== undefined ? { program: args.program } : {});
+  const options: ImportOptions = {};
+  if (args.program !== undefined) options.program = args.program;
+  if (args.sfcTagsAtProgram) options.sfcTagsAtProgram = true;
+  const result = importL5X(text, options);
   if (result.error) {
     console.error(`${basename(args.file)}: ${result.error}`);
     if (result.programs.length > 1) console.error(`programs in the file: ${result.programs.join(", ")} (choose one with --program)`);

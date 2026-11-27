@@ -80,19 +80,37 @@ describe("importL5X", () => {
     expect(r.source).toContain("-- after 3s -> a");
   });
 
-  it("comments out a JSR to a routine it can't import", () => {
+  it("names a routine it can't import on the uses line and keeps the calls to it (SPEC §4.5)", () => {
     const xml = l5x(readFileSync("testpack/tp08_routines.qsfc", "utf8")).replace('<Routine Name="alarms" Type="ST">', '<Routine Name="alarms" Type="RLL">');
     const r = importL5X(xml);
     expect(r.errors).toBe(0);
     expect(r.routines.find((x) => x.name === "alarms")).toMatchObject({ imported: false, type: "RLL" });
-    expect(r.source).toContain("// JSR(alarms,0);  (not imported: alarms)");
+    expect(r.source).toMatch(/^uses alarms$/m);
+    expect(r.source).toContain("  JSR(alarms,0);");
     expect(warnings(r).join("\n")).toContain("ladder routines come with Phase 5");
+    const again = exportL5X(r.source, { fileName: "x.qsfc" });
+    expect(again.diagnostics).toEqual([]);
+    expect(again.text).toContain("JSR(alarms,0);");
   });
 
-  it("says when the main routine isn't imported", () => {
+  it("keeps a main routine it can't import as the main one: uses main (main)", () => {
     const xml = l5x(readFileSync("testpack/tp08_routines.qsfc", "utf8")).replace('<Routine Name="main" Type="ST">', '<Routine Name="main" Type="RLL">');
     const r = importL5X(xml);
-    expect(warnings(r).join("\n")).toContain("the main routine main was not imported, so fill_seq becomes the main routine");
+    expect(r.source).toMatch(/^uses main \(main\)$/m);
+    expect(warnings(r).join("\n")).not.toContain("becomes the main routine");
+    const again = exportL5X(r.source, { fileName: "x.qsfc" });
+    expect(again.text).toContain('MainRoutineName="main"');
+  });
+
+  it("a routine export (GEMMA.L5X shape): referenced routines on uses, outside steps kept as written", () => {
+    const xml = l5x("sfc PRODUCTION_NORMALE\ninit a\n-- go\nstep b\n-- x -> a\n\nst INIT\n  y := 1;\n\nsfc GEMMA\ninit c\n  call INIT;\n  SFR(PRODUCTION_NORMALE, a);\n-- b.T > 5 or z\nstep d\n-- w -> c\n")
+      .replace(/<Routine Name="(PRODUCTION_NORMALE|INIT)" Type="\w+">[\s\S]*?<\/Routine>/g, '<Routine Use="Reference" Name="$1">\r\n</Routine>');
+    const r = importL5X(xml);
+    expect(r.errors).toBe(0);
+    expect(r.source).toContain("\nuses PRODUCTION_NORMALE (main), INIT\n");
+    expect(r.source).toContain("SFR(PRODUCTION_NORMALE, Step_000);");
+    expect(r.source).toContain("Step_001.T > 5");
+    expect(r.notes.map((n) => n.text).join("\n")).toContain("not in this export");
   });
 
   it("writes text boxes as comments and a Stop as the end of the chain", () => {
